@@ -666,31 +666,20 @@ while true; do
         if whiptail --title "Shutdown" --defaultno --yesno "Are you sure you want to shutdown?" 8 78; then sudo shutdown now; fi
         ;;
       📦)
-        # Use conditional assignments similar to _MB to avoid unbound-variable crashes
-        if [[ -f /etc/systemd/system/validator.service ]]; then
-          getClient && getCurrentVersion && _VC="Validator client: $CLIENT $VERSION"
-        else
-          _VC="Validator client: Not Installed"
+        test -f /etc/systemd/system/validator.service && getClient && getCurrentVersion && _VC="Validator client: $CLIENT $VERSION"
+        test -f /etc/systemd/system/consensus.service && _CL=$(curl -s -X GET "${API_BN_ENDPOINT}/eth/v1/node/version" -H "accept: application/json" | jq -r '.data.version')
+        test -f /etc/systemd/system/execution.service && _EL=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":2}' "${EL_RPC_ENDPOINT}" | jq -r '.result')
+        [[ $EL == "Erigon-Caplin" ]] && _CL=$(curl -s -X GET "${API_BN_ENDPOINT}/eth/v1/node/version" -H "accept: application/json" | jq -r '.data.version')
+        _MB=$(if [[ -f /etc/systemd/system/mevboost.service ]]; then printf "Mev-boost: $(mev-boost --version 2>&1 | sed 's/.*\s\([0-9]*\.[0-9]*\).*/\1/')"; else printf "Mev-boost: Not Installed"; fi)
+        if [[ -z "${_VC}" ]] ; then
+          _VC="Validator client: Not installed."
         fi
-
-        if [[ -f /etc/systemd/system/consensus.service ]]; then
-          _CL=$(curl -s -X GET "${API_BN_ENDPOINT}/eth/v1/node/version" -H "accept: application/json" | jq -r '.data.version')
-          [[ -z "${_CL}" ]] && _CL="Not installed or still starting up."
-        else
+        if [[ -z $_CL ]] ; then
           _CL="Not installed or still starting up."
         fi
-
-        if [[ -f /etc/systemd/system/execution.service ]]; then
-          _EL=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":2}' "${EL_RPC_ENDPOINT}" | jq -r '.result')
-          [[ -z "${_EL}" ]] && _EL="Not installed or still starting up."
-        else
+        if [[ -z $_EL ]] ; then
           _EL="Not installed or still starting up."
         fi
-
-        [[ $EL == "Erigon-Caplin" ]] && _CL=$(curl -s -X GET "${API_BN_ENDPOINT}/eth/v1/node/version" -H "accept: application/json" | jq -r '.data.version')
-
-        _MB=$(if [[ -f /etc/systemd/system/mevboost.service ]]; then printf "Mev-boost: $(mev-boost --version 2>&1 | sed 's/.*\s\([0-9]*\.[0-9]*\).*/\1/')"; else printf "Mev-boost: Not Installed"; fi)
-
         whiptail --title "Installed versions" --msgbox "Consensus client: ${_CL}\nExecution client: ${_EL}\n${_VC}\n${_MB}\nEthPillar: $EP_VERSION" 12 78
         ;;
       📊)

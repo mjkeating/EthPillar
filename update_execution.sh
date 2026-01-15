@@ -148,19 +148,6 @@ function updateClient(){
 	fi
 	case $EL in
 	  Nethermind)
-		# [[ "${_arch}" == "amd64" ]] && _architecture="x64" || _architecture="arm64"
-		# RELEASE_URL="https://api.github.com/repos/NethermindEth/nethermind/$_URL_SUFFIX"
-		# BINARIES_URL=$(curl -s "$RELEASE_URL" | jq -r ".assets[] | select(.name) | .browser_download_url" | grep --ignore-case "${_platform}"-"${_architecture}")
-		# info "✅ Downloading URL: $BINARIES_URL"
-		# cd "$HOME" || true
-		# wget -O nethermind.zip "$BINARIES_URL" || error "❌ Unable to wget file"
-		# unzip -o nethermind.zip -d "$HOME"/nethermind || error "❌ Unable to unzip file"
-		# rm nethermind.zip
-		# sudo systemctl stop execution
-		# sudo rm -rf /usr/local/bin/nethermind
-		# sudo mv "$HOME"/nethermind /usr/local/bin/nethermind || error "❌ Unable to move file"
-		# sudo systemctl start execution
-	    # ;;
 		[[ "${_arch}" == "amd64" ]] && _architecture="x64" || _architecture="arm64"
 
 		# Force lowercase platform (important!)

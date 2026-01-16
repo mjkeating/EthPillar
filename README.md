@@ -22,14 +22,14 @@ We haven't heard from CoinCashew for a while, so we are making updates and bug f
 
 To get the updates from this repo you'll need to do the following only once:
 
-After installing EthPillar normally, run these two commands:
+After installing EthPillar normally (see below) or if you have an existing install, run these two commands:
 
 ```bash
 cd ~/git/ethpillar
 git remote set-url origin https://github.com/mjkeating/EthPillar.git
 ```
 
-Then, from EthPillar run **System Administration → Update EthPillar** and it will pull the latest from this repo.
+Then, from EthPillar run **System Administration → Update EthPillar** and it will update from this repo.
 
 Hopefully, we'll see CoinCashew return soon!
 

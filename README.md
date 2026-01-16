@@ -18,7 +18,7 @@
 ## Switching to this fork for updates!
 
 This is a fork of CoinCashew's excellent staking tool at https://github.com/coincashew/ethpillar.  
-We haven't heard from CoinCashew for a while, so we are making updates and bug fixes here.
+We haven't heard from CoinCashew for a while, so this is a place where fixes and updates can be made.
 
 To get the updates from this repo you'll need to do the following only once:
 
@@ -29,7 +29,7 @@ cd ~/git/ethpillar
 git remote set-url origin https://github.com/mjkeating/EthPillar.git
 ```
 
-Then, from EthPillar run **System Administration → Update EthPillar** and it will update from this repo.
+After this, from EthPillar you can run **System Administration → Update EthPillar** and it will update from this repo.
 
 Hopefully, we'll see CoinCashew return soon!
 

@@ -33,7 +33,7 @@ After this, from EthPillar you can run **System Administration → Update EthPil
 
 Hopefully, we'll see CoinCashew return soon!
 
-**Note:** This fork is now at version **5.2.5** with fixes for Nethermind, and MEV-Boost updating.
+**Note:** This fork is now at version **5.2.6** - includes fixes for Nethermind and MEV-Boost updating. Also, Improved versions display.
 
 ---
 

@@ -21,8 +21,9 @@ function getCurrentVersion(){
     INSTALLED=$(mev-boost --version 2>&1)  # capture stderr too, just in case
     if [[ -n $INSTALLED ]] ; then
         # shellcheck disable=SC2001
-        # Extract major.minor.patch, optional leading 'v', ignore any suffix/commit info
-        VERSION=$(echo "$INSTALLED" | sed 's/.*v\?\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/')
+		# Extract major.minor or major.minor.patch, optional leading 'v', ignore suffix/commit info
+		# Patch part is optional to handle versions like 1.11 (no patch)
+		VERSION=$(echo "$INSTALLED" | sed 's/.*v\?\([0-9]\+\.[0-9]\+\(\.[0-9]\+\)\?\).*/\1/')
         # Fallback if sed fails or no match
         if [[ -z $VERSION || $VERSION == "$INSTALLED" ]]; then
             VERSION="unknown"

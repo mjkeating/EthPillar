@@ -41,7 +41,7 @@ MEV_MIN_BID = os.getenv('MEV_MIN_BID')
 
 # 3. Parse Args
 parser = argparse.ArgumentParser(description='Node Install Options :: CoinCashew.com', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument("--network", type=str, choices=valid_networks, default="")
+parser.add_argument("--network", type=common.network_type, choices=common.VALID_NETWORKS, default="")
 parser.add_argument("--jwtsecret", type=str, default=JWTSECRET_PATH)
 parser.add_argument("--graffiti", type=str, default=GRAFFITI)
 parser.add_argument("--fee_address", type=str, default="")
@@ -55,6 +55,9 @@ parser.add_argument("--vc_only_bn_address", type=str)
 parser.add_argument("--skip_prompts", type=str, default="")
 parser.add_argument("--install_config", type=str, choices=valid_install_configs, default="")
 args = parser.parse_args()
+
+if args.fee_address:
+    FEE_RECIPIENT_ADDRESS = args.fee_address
 
 # 4. Interactive Prompts
 if not args.network and not args.skip_prompts:
@@ -107,11 +110,11 @@ if install_config in ["Lido CSM Staking Node", "Lido CSM Validator Client Only"]
     GRAFFITI = os.getenv('CSM_GRAFFITI')
     MEV_MIN_BID = os.getenv('CSM_MEV_MIN_BID')
     if eth_network == "mainnet":
-        FEE_RECIPIENT_ADDRESS = os.getenv('CSM_FEE_RECIPIENT_ADDRESS_MAINNET')
+        if not args.fee_address: FEE_RECIPIENT_ADDRESS = os.getenv('CSM_FEE_RECIPIENT_ADDRESS_MAINNET')
     elif eth_network == "holesky":
-        FEE_RECIPIENT_ADDRESS = os.getenv('CSM_FEE_RECIPIENT_ADDRESS_HOLESKY')
+        if not args.fee_address: FEE_RECIPIENT_ADDRESS = os.getenv('CSM_FEE_RECIPIENT_ADDRESS_HOLESKY')
     elif eth_network == "hoodi":
-        FEE_RECIPIENT_ADDRESS = os.getenv('CSM_FEE_RECIPIENT_ADDRESS_HOODI')
+        if not args.fee_address: FEE_RECIPIENT_ADDRESS = os.getenv('CSM_FEE_RECIPIENT_ADDRESS_HOODI')
 
 if eth_network == "ephemery":
     MEVBOOST_ENABLED = False

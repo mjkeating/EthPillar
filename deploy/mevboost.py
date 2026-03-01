@@ -4,7 +4,7 @@ import tarfile
 import subprocess
 from tqdm import tqdm
 from deploy.service_generators import generate_mevboost_service
-from deploy.common import write_service_file, get_machine_architecture, get_computer_platform
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, get_computer_platform
 
 def install_mevboost(eth_network, mev_min_bid, relay_options):
     """Install MEV-Boost binary and service.
@@ -43,7 +43,7 @@ def install_mevboost(eth_network, mev_min_bid, relay_options):
 
     # Download the latest release binary
     print(f">> Downloading mevboost > URL: {download_url}")
-    download_path = "/tmp/mev-boost.tar.gz"
+    download_path = f"{DOWNLOAD_DIR}/mev-boost.tar.gz"
 
     try:
         # Download the file

@@ -10,17 +10,46 @@ $scripts = @(
     "deploy-teku-besu.py"
 )
 
-$jobs = @()
+$variations = @(
+    "--network HOLESKY --mev --config `"Solo Staking Node`"",
+    "--network SEPOLIA --config `"Full Node Only`"",
+    "--network HOLESKY --mev --config `"Lido CSM Staking Node`"",
+    "--network HOLESKY --mev --config `"Lido CSM Validator Client Only`" --vc_only_bn_address http://192.168.1.123:5052",
+    "--network HOLESKY --mev --config `"Validator Client Only`" --vc_only_bn_address http://192.168.1.123:5052",
+    "--network HOLESKY --mev --config `"Failover Staking Node`""
+)
 
-# Start background jobs for parallel execution
+$jobs = @()
+$maxConcurrent = 5
+
 foreach ($script in $scripts) {
-    Write-Host "Starting background test for $script..."
-    $scriptBlock = {
-        param($s, $p)
-        docker run --rm -v "$p`:/ethpillar" ethpillar-rebuild python3 /ethpillar/tests/integration/run_inside_docker.py $s
+    foreach ($var in $variations) {
+        
+        # Skip caplin for Holesky as it's not supported
+        if ($script -eq "deploy-caplin-erigon.py" -and $var -match "holesky") {
+            Write-Host "Skipping Holesky test for Caplin ($script) as it's unsupported." -ForegroundColor Yellow
+            continue
+        }
+
+        Write-Host "Starting background test for $script [ $var ]..." -ForegroundColor Cyan
+        
+        $job = Start-Job -ScriptBlock {
+            param($ScriptToRun, $VariationArgs, $WorkingDir)
+            Set-Location -Path $WorkingDir
+            
+            # Using Invoke-Expression to correctly handle the quoted arguments inside variation
+            Invoke-Expression "docker run --rm -v `"$WorkingDir`:/ethpillar`" ethpillar-rebuild python3 /ethpillar/tests/integration/run_inside_docker.py $ScriptToRun $VariationArgs"
+            if ($LASTEXITCODE -ne 0) { throw "Integration test failed for $ScriptToRun $VariationArgs" }
+        } -ArgumentList $script, $var, $pwd.Path
+        
+        $jobs += $job
+        
+        $runningJobs = $jobs | Where-Object { $_.State -eq 'Running' }
+        while ($runningJobs.Count -ge $maxConcurrent) {
+            Start-Sleep -Seconds 2
+            $runningJobs = $jobs | Where-Object { $_.State -eq 'Running' }
+        }
     }
-    $job = Start-Job -ScriptBlock $scriptBlock -ArgumentList $script, $pwd.Path
-    $jobs += $job
 }
 
 Write-Host "Waiting for all parallel tests to complete..."
@@ -31,6 +60,11 @@ $jobs | Wait-Job | Receive-Job
 $failed = $false
 foreach ($job in $jobs) {
     if ($job.State -ne 'Completed') {
+        $scriptName = "Unknown"
+        if ($job.ChildJobs.Count -gt 0 -and $job.ChildJobs[0].JobParameters.ArgumentList.Count -gt 0) {
+            $scriptName = $job.ChildJobs[0].JobParameters.ArgumentList[0]
+        }
+        Write-Host "❌ Job for $scriptName failed with state: $($job.State)" -ForegroundColor Red
         $failed = $true
     }
 }

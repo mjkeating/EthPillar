@@ -10,6 +10,14 @@ import os
 import pytest
 from unittest.mock import patch, MagicMock, call, mock_open
 
+# Mock consolemenu before it's imported by deploy modules
+sys.modules["consolemenu"] = MagicMock()
+sys.modules["consolemenu.items"] = MagicMock()
+sys.modules["consolemenu.format"] = MagicMock()
+sys.modules["consolemenu.menu_component"] = MagicMock()
+sys.modules["consolemenu.screen"] = MagicMock()
+
+
 # Ensure the project root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -280,15 +288,33 @@ class TestMevboostGuardConditions:
 
 
 # ═══════════════════════════════════════════════
-# Test finish_install system calls
+# Test all installation configurations
 # ═══════════════════════════════════════════════
 
-class TestFinishInstall:
-    """Test that finish_install makes the correct system calls."""
-
-    @patch('subprocess.run')
-    def test_daemon_reload(self, mock_run):
-        """finish_install should call systemctl daemon-reload."""
-        import subprocess
-        subprocess.run(['sudo', 'systemctl', 'daemon-reload'])
-        mock_run.assert_called_once_with(['sudo', 'systemctl', 'daemon-reload'])
+@pytest.mark.parametrize("install_config", [
+    'Solo Staking Node', 
+    'Full Node Only', 
+    'Lido CSM Staking Node', 
+    'Lido CSM Validator Client Only', 
+    'Validator Client Only', 
+    'Failover Staking Node'
+])
+@patch('subprocess.run')
+@patch('os.system')
+def test_all_install_configs_logic(mock_system, mock_run, install_config):
+    """Test that each installation configuration invokes the expected system setup."""
+    from deploy.common import setup_node
+    
+    validator_only = "Validator Client Only" in install_config
+    setup_node("/secrets/jwtsecret", validator_only=validator_only)
+    
+    if validator_only:
+        # Should NOT have created JWT dirs or run openssl
+        assert mock_run.call_count == 4 # Only apt commands
+        for c in mock_run.call_args_list:
+            assert 'openssl' not in str(c)
+    else:
+        # Should have created JWT dirs and run openssl
+        assert mock_run.call_count == 7
+        assert any('mkdir -p' in str(c) for c in mock_run.call_args_list)
+        assert any('openssl' in str(c) for c in mock_run.call_args_list)

@@ -3,7 +3,7 @@ import requests
 import subprocess
 from tqdm import tqdm
 from deploy.service_generators import generate_nimbus_bn_service, generate_nimbus_vc_service
-from deploy.common import write_service_file, get_machine_architecture
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR
 from client_requirements import validate_version_for_network
 
 def download_nimbus(eth_network):
@@ -46,7 +46,7 @@ def download_nimbus(eth_network):
 
     # Download the latest release binary
     print(f">> Downloading Nimbus > URL: {download_url}")
-    download_path = f"/tmp/{filename}"
+    download_path = f"{DOWNLOAD_DIR}/{filename}"
 
     try:
         # Download the file

@@ -3,7 +3,7 @@ import requests
 import subprocess
 from tqdm import tqdm
 from deploy.service_generators import generate_teku_bn_service, generate_teku_vc_service
-from deploy.common import write_service_file
+from deploy.common import write_service_file, DOWNLOAD_DIR
 from client_requirements import validate_version_for_network
 
 def download_teku(eth_network):
@@ -42,7 +42,7 @@ def download_teku(eth_network):
 
     # Download the latest release binary
     print(f">> Downloading Teku > URL: {download_url}")
-    download_path = f"/tmp/{filename}"
+    download_path = f"{DOWNLOAD_DIR}/{filename}"
 
     try:
         # Download the file
@@ -66,7 +66,7 @@ def download_teku(eth_network):
 
     # Extract the binary to /usr/local/bin/teku using sudo
     subprocess.run(["sudo", "mkdir", "-p", "/usr/local/bin/teku"])
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/usr/local/bin", "--strip-components=1"])
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/usr/local/bin/teku", "--strip-components=1"])
 
     # Remove the tar file
     os.remove(download_path)

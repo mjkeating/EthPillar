@@ -56,6 +56,9 @@ parser.add_argument("--skip_prompts", type=str, default="")
 parser.add_argument("--install_config", type=str, choices=valid_install_configs, default="")
 args = parser.parse_args()
 
+if args.fee_address:
+    FEE_RECIPIENT_ADDRESS = args.fee_address
+
 # 4. Interactive Prompts
 if not args.network and not args.skip_prompts:
     index = SelectionMenu.get_selection(valid_networks, title='Validator Install Quickstart :: CoinCashew.com', subtitle='Installs Besu EL / Lodestar BN / Lodestar VC / MEVboost\nSelect Ethereum network:')
@@ -107,11 +110,11 @@ if install_config in ["Lido CSM Staking Node", "Lido CSM Validator Client Only"]
     GRAFFITI = os.getenv('CSM_GRAFFITI')
     MEV_MIN_BID = os.getenv('CSM_MEV_MIN_BID')
     if eth_network == "mainnet":
-        FEE_RECIPIENT_ADDRESS = os.getenv('CSM_FEE_RECIPIENT_ADDRESS_MAINNET')
+        if not args.fee_address: FEE_RECIPIENT_ADDRESS = os.getenv('CSM_FEE_RECIPIENT_ADDRESS_MAINNET')
     elif eth_network == "holesky":
-        FEE_RECIPIENT_ADDRESS = os.getenv('CSM_FEE_RECIPIENT_ADDRESS_HOLESKY')
+        if not args.fee_address: FEE_RECIPIENT_ADDRESS = os.getenv('CSM_FEE_RECIPIENT_ADDRESS_HOLESKY')
     elif eth_network == "hoodi":
-        FEE_RECIPIENT_ADDRESS = os.getenv('CSM_FEE_RECIPIENT_ADDRESS_HOODI')
+        if not args.fee_address: FEE_RECIPIENT_ADDRESS = os.getenv('CSM_FEE_RECIPIENT_ADDRESS_HOODI')
 
 if eth_network == "ephemery":
     MEVBOOST_ENABLED = False

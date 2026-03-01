@@ -3,7 +3,7 @@ import requests
 import subprocess
 from tqdm import tqdm
 from deploy.service_generators import generate_nethermind_service
-from deploy.common import write_service_file, get_machine_architecture
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR
 from client_requirements import validate_version_for_network
 
 def download_and_install_nethermind(eth_network, el_p2p_port, el_rpc_port, 
@@ -54,7 +54,7 @@ def download_and_install_nethermind(eth_network, el_p2p_port, el_rpc_port,
 
     # Download the latest release binary
     print(f">> Downloading Nethermind > URL: {download_url}")
-    download_path = f"/tmp/{filename}"
+    download_path = f"{DOWNLOAD_DIR}/{filename}"
 
     try:
         # Download the file

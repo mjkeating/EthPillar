@@ -12,6 +12,7 @@ from consolemenu import *
 from consolemenu.items import *
 
 INSTALL_DIR = "/usr/local/bin"
+DOWNLOAD_DIR = "/tmp"
 
 def clear_screen():
     if os.name == 'posix':  # Unix-based systems (e.g., Linux, macOS)
@@ -47,6 +48,16 @@ def is_valid_eth_address(address):
 def validate_beacon_node_address(ip_port):
     pattern = r"^(http|https|ws):\/\/((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(:?\d{1,5})?$"
     return bool(re.match(pattern, ip_port))
+
+VALID_NETWORKS = ['MAINNET', 'HOODI', 'EPHEMERY', 'HOLESKY', 'SEPOLIA']
+
+def network_type(s):
+    """Argparse type for case-insensitive network selection."""
+    s_upper = s.upper()
+    if s_upper not in VALID_NETWORKS:
+         import argparse
+         raise argparse.ArgumentTypeError(f"Invalid network: {s}. Choose from {VALID_NETWORKS}")
+    return s_upper
 
 def setup_ephemery_network(genesis_repository):
     testnet_dir = "/opt/ethpillar/testnet"

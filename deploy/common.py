@@ -11,6 +11,8 @@ import random
 from consolemenu import *
 from consolemenu.items import *
 
+INSTALL_DIR = "/usr/local/bin"
+
 def clear_screen():
     if os.name == 'posix':  # Unix-based systems (e.g., Linux, macOS)
         os.system('clear')

@@ -1,15 +1,20 @@
 """
 EthPillar Docker Integration Runner
 This script runs INSIDE the container to verify the deploy scripts.
-It executes each script with --skip_prompts and verifies the resulting state.
+It executes a specific script with --skip_prompts and verifies the resulting state.
 """
 import subprocess
 import os
 import pwd
 import sys
-import platform
 
-# 🔍 Verification helpers
+# Import INSTALL_DIR from common so the path is maintained centrally
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+try:
+    from deploy.common import INSTALL_DIR
+except ImportError:
+    INSTALL_DIR = "/usr/local/bin"
+
 def check_user(username):
     try:
         pwd.getpwnam(username)
@@ -18,94 +23,148 @@ def check_user(username):
         return False
 
 def check_binary(binary_name):
-    # Search for binary in /usr/local/bin
-    return os.path.isfile(f"/usr/local/bin/{binary_name}")
+    # Some binaries extract to subfolders
+    subfolder_paths = {
+        "besu": os.path.join(INSTALL_DIR, "besu", "bin", "besu"),
+        "lodestar": os.path.join(INSTALL_DIR, "lodestar", "lodestar"),
+        "nethermind": os.path.join(INSTALL_DIR, "nethermind", "nethermind"),
+        "teku": os.path.join(INSTALL_DIR, "teku") # Teku is just a directory we check
+    }
+
+    # Direct check
+    if os.path.isfile(os.path.join(INSTALL_DIR, binary_name)) or os.path.isdir(os.path.join(INSTALL_DIR, binary_name)):
+        return True
+    
+    # Subfolder fallback
+    if binary_name in subfolder_paths:
+        path = subfolder_paths[binary_name]
+        return os.path.isfile(path) or os.path.isdir(path)
+    
+    return False
 
 def check_service(service_name):
-    # Check if systemd file exists in /etc/systemd/system
-    path = f"/etc/systemd/system/{service_name}.service"
-    return os.path.isfile(path)
+    return os.path.isfile(f"/etc/systemd/system/{service_name}.service")
 
-DEPLOY_SCRIPTS = [
-    "deploy-caplin-erigon.py",
-    "deploy-lighthouse-reth.py",
-    "deploy-lodestar-besu.py",
-    "deploy-nimbus-nethermind.py",
-    "deploy-teku-besu.py"
-]
+def parse_expected_artifacts(script_name):
+    binaries = []
+    services = []
+    users = []
+
+    # Simple heuristic to determine expected artifacts
+    if "besu" in script_name:
+        binaries.append("besu")
+        users.append("execution")
+        services.append("execution")
+    if "reth" in script_name:
+        binaries.append("reth")
+        users.append("execution")
+        services.append("execution")
+    if "erigon" in script_name:
+        binaries.append("erigon")
+        users.append("execution")
+        services.append("execution")
+    if "nethermind" in script_name:
+        binaries.append("nethermind")
+        users.append("execution")
+        services.append("execution")
+        
+    if "lighthouse" in script_name:
+        binaries.append("lighthouse")
+        users.extend(["consensus"])
+        services.extend(["consensus"])
+    if "teku" in script_name:
+        binaries.append("teku")
+        users.extend(["consensus"])
+        services.extend(["consensus"])
+    if "lodestar" in script_name:
+        binaries.append("lodestar")
+        users.extend(["consensus"])
+        services.extend(["consensus"])
+    if "nimbus" in script_name:
+        binaries.extend(["nimbus_beacon_node"])
+        users.extend(["consensus"])
+        services.extend(["consensus"])
+        
+    # Caplin does not use external consensus client binaries or services
+    if "caplin" in script_name:
+        pass # All bundled in erigon
+
+        # Actually Caplin-Erigon script DOES install MEV-boost
+        binaries.append("mev-boost")
+        users.append("mevboost")
+        services.append("mevboost")
+
+    return list(set(binaries)), list(set(users)), list(set(services))
 
 def run_script(script_name):
-    print(f"\n🚀 Running: python3 {script_name} --skip_prompts --network holesky")
-    # Using python executable directly
+    # Some scripts don't support HOLESKY so we'll test on SEPOLIA to be safe and compatible with old versions
+    network = "SEPOLIA" 
+    
+    print(f"\n🚀 Running: python3 {script_name} --skip_prompts true --network {network} --fee_address 0x1234567890123456789012345678901234567890")
+    
     result = subprocess.run([
         sys.executable, script_name, 
         "--skip_prompts", "true", 
-        "--network", "HOLESKY",
+        "--network", network,
         "--fee_address", "0x1234567890123456789012345678901234567890"
-    ], capture_output=False) # Showing output to the console for user visibility
+    ], capture_output=False)
     
     if result.returncode != 0:
         print(f"❌ Script {script_name} failed with return code {result.returncode}")
-        # Note: In Docker, scripts might fail at the very end when trying to start services with systemctl.
-        # We handle this by continuing and verifying the artifacts (binaries, users, services).
         return False
     print(f"✅ Script {script_name} completed successfully.")
     return True
 
-def verify_all():
-    print("\n🔍 Verifying System State...")
+def verify_script(script_name):
+    print(f"\n🔍 Verifying Artifacts for {script_name}...")
     print("-" * 40)
     
-    # Check binaries
-    binaries = ["mev-boost", "besu", "reth", "erigon", "teku", "lodestar", "nimbus_beacon_node", "lighthouse"]
-    for b in binaries:
+    expected_binaries, expected_users, expected_services = parse_expected_artifacts(script_name)
+    success = True
+    
+    for b in expected_binaries:
         present = check_binary(b)
         status = "✅" if present else "❌"
-        # Special check for besu which is in /usr/local/bin/besu/bin/besu
-        if not present and b == "besu":
-            present = os.path.isfile("/usr/local/bin/besu/bin/besu")
-            status = "✅" if present else "❌"
-        # Special check for Teku which is a folder
-        if not present and b == "teku":
-            present = os.path.isdir("/usr/local/bin/teku")
-            status = "✅" if present else "❌"
-        if not present and b == "lodestar":
-            present = os.path.isfile("/usr/local/bin/lodestar/lodestar")
-            status = "✅" if present else "❌"
-        # Special check for Nethermind which is in /usr/local/bin/nethermind/nethermind
-        if not present and b == "nethermind":
-            present = os.path.isfile("/usr/local/bin/nethermind/nethermind")
-            status = "✅" if present else "❌"
         print(f"{status} Binary: {b}")
-        
-    # Check users
-    users = ["execution", "consensus", "validator", "mevboost"]
-    for u in users:
+        if not present:
+            success = False
+            
+    for u in expected_users:
         present = check_user(u)
         status = "✅" if present else "❌"
         print(f"{status} User  : {u}")
-        
-    # Check services
-    services = ["execution", "consensus", "validator", "mevboost"]
-    for s in services:
+        if not present:
+            success = False
+            
+    for s in expected_services:
         present = check_service(s)
         status = "✅" if present else "❌"
         print(f"{status} Service: {s}")
+        if not present:
+            success = False
+
+    print(f"\n[DEBUG] {INSTALL_DIR} contents:")
+    subprocess.run(["ls", "-F", INSTALL_DIR])
     
-    # Debug: List /usr/local/bin
-    print("\n[DEBUG] /usr/local/bin contents:")
-    subprocess.run(["ls", "-F", "/usr/local/bin"])
+    if not success:
+        print(f"\n❌ Verification FAILED for {script_name}.")
+        sys.exit(1)
+    else:
+        print(f"\n✅ Verification PASSED for {script_name}.")
 
 if __name__ == "__main__":
-    # In Docker, we need a dummy .env file if it's missing (scripts use dotenv)
     if not os.path.exists(".env"):
         with open(".env", "w") as f:
             f.write("MEVBOOST=true\n")
             
-    # Run all scripts sequentially
-    for script in DEPLOY_SCRIPTS:
-        run_script(script)
-            
-    # Final verification
-    verify_all()
-    print("\n🐳 Integration Test run inside Docker complete.")
+    if len(sys.argv) < 2:
+        print("Usage: python run_inside_docker.py <script_name>")
+        sys.exit(1)
+        
+    target_script = sys.argv[1]
+    
+    if not run_script(target_script):
+        sys.exit(1)
+        
+    verify_script(target_script)
+    print(f"\n🐳 Integration Test run inside Docker complete for {target_script}.")

@@ -21,7 +21,7 @@ from config import *
 
 # 1. Boilerplate
 common.clear_screen()
-valid_networks = ['MAINNET','HOODI','EPHEMERY', 'SEPOLIA']
+valid_networks = ['MAINNET','HOODI','EPHEMERY', 'HOLESKY', 'SEPOLIA']
 valid_install_configs = ['Solo Staking Node', 'Full Node Only', 'Lido CSM Staking Node', 'Lido CSM Validator Client Only' ,'Validator Client Only', 'Failover Staking Node']
 
 load_dotenv("env")

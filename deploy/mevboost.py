@@ -1,6 +1,7 @@
 import os
 import requests
 import tarfile
+import subprocess
 from tqdm import tqdm
 from deploy.service_generators import generate_mevboost_service
 from deploy.common import write_service_file, get_machine_architecture, get_computer_platform
@@ -16,12 +17,9 @@ def install_mevboost(eth_network, mev_min_bid, relay_options):
     platform_arch = get_computer_platform()
 
     # Step 1: Create mevboost service account
-    os.system("sudo useradd --no-create-home --shell /bin/false mevboost")
+    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "mevboost"])
 
     # Step 2: Install mevboost
-    # Change to the home folder
-    os.chdir(os.path.expanduser("~"))
-
     # Define the Github API endpoint to get the latest release
     url = 'https://api.github.com/repos/flashbots/mev-boost/releases/latest'
 
@@ -45,6 +43,7 @@ def install_mevboost(eth_network, mev_min_bid, relay_options):
 
     # Download the latest release binary
     print(f">> Downloading mevboost > URL: {download_url}")
+    download_path = "/tmp/mev-boost.tar.gz"
 
     try:
         # Download the file
@@ -54,29 +53,27 @@ def install_mevboost(eth_network, mev_min_bid, relay_options):
         block_size = 1024
         t = tqdm(total=total_size, unit='B', unit_scale=True)
 
-        tar_filename = "mev-boost.tar.gz"
-        # Save the binary to the home folder
-        with open(tar_filename, "wb") as f:
+        with open(download_path, "wb") as f:
             for chunk in response.iter_content(block_size):
                 if chunk:
                     t.update(len(chunk))
                     f.write(chunk)
         t.close()
-        print(f">> Successfully downloaded: {asset_name}")
+        print(f">> Successfully downloaded: mev-boost.tar.gz")
 
     except requests.exceptions.RequestException as e:
         print(f"Error: Unable to download file. Try again later. {e}")
         exit(1)
 
-    # Extract the binary to the home folder
-    with tarfile.open("mev-boost.tar.gz", "r:gz") as tar:
-        tar.extractall()
+    # Extract the binary
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/usr/local/bin"])
 
-    # Move the binary to /usr/local/bin using sudo
-    os.system(f"sudo mv mev-boost /usr/local/bin")
+    # Ensure +x permissions, update owner
+    subprocess.run(["sudo", "chmod", "a+x", "/usr/local/bin/mev-boost"])
+    subprocess.run(["sudo", "chown", "mevboost:mevboost", "/usr/local/bin/mev-boost"])
 
-    # Remove files
-    os.system(f"rm mev-boost.tar.gz LICENSE README.md")
+    # Remove the downloaded .tar.gz file
+    os.remove(download_path)
 
     # Generate Service File Content
     service_content = generate_mevboost_service(eth_network, mev_min_bid, relay_options)

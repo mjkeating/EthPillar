@@ -435,7 +435,7 @@ WantedBy=multi-user.target
 def generate_lighthouse_bn_service(eth_network, sync_url, jwtsecret_path,
                                    cl_rest_port, cl_p2p_port, cl_p2p_port_2,
                                    cl_max_peer_count,
-                                   mev_parameters='',
+                                   fee_parameters='', mev_parameters='',
                                    network_override=None):
     """Generate Lighthouse beacon node systemd service file content."""
     if network_override:

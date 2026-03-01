@@ -1,23 +1,21 @@
 import os
 import requests
 import subprocess
-import tarfile
-import platform
 from tqdm import tqdm
 from deploy.service_generators import generate_reth_service
-from deploy.common import write_service_file, get_computer_platform
+from deploy.common import write_service_file, get_raw_architecture
 from client_requirements import validate_version_for_network
 
-def download_and_install_reth(eth_network, el_p2p_port, el_p2p_port_2, 
-                              el_rpc_port, el_max_peer_count, jwtsecret_path,
-                              network_override=None, sync_parameters=''):
+def download_and_install_reth(eth_network, el_p2p_port, el_p2p_port_2,
+                                el_rpc_port, el_max_peer_count, jwtsecret_path,
+                                network_override=None, sync_parameters=''):
     """Download and install Reth binary and service.
 
     Returns:
         reth_version: The version string of the installed Reth
         service_file_path: The path to the created service file
     """
-    platform_arch = get_computer_platform()
+    binary_arch = get_raw_architecture()
 
     # Create User and directories
     subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "execution"])
@@ -37,22 +35,23 @@ def download_and_install_reth(eth_network, el_p2p_port, el_p2p_port_2,
         print(error_msg)
         exit(1)
 
-    # Search for the asset
     assets = response.json()['assets']
     download_url = None
-    tar_filename = None
+    filename = None
+    # Reth asset: reth-v1.2.3-x86_64-unknown-linux-gnu.tar.gz
     for asset in assets:
-        if asset['name'].endswith(f'{platform.machine().lower()}-unknown-{platform_arch.lower()}-gnu.tar.gz') and asset['name'].startswith(f"reth-{reth_version}"):
+        if asset['name'].endswith(f'{binary_arch}-unknown-linux-gnu.tar.gz'):
             download_url = asset['browser_download_url']
-            tar_filename = asset['name']
+            filename = asset['name']
             break
 
-    if download_url is None or tar_filename is None:
+    if download_url is None:
         print("Error: Could not find the download URL for the latest release.")
         exit(1)
 
     # Download the latest release binary
     print(f">> Downloading Reth > URL: {download_url}")
+    download_path = f"/tmp/{filename}"
 
     try:
         # Download the file
@@ -62,32 +61,30 @@ def download_and_install_reth(eth_network, el_p2p_port, el_p2p_port_2,
         block_size = 1024
         t = tqdm(total=total_size, unit='B', unit_scale=True)
 
-        # Save the binary to the home folder
-        with open(f"{tar_filename}", "wb") as f:
+        with open(download_path, "wb") as f:
             for chunk in response.iter_content(block_size):
                 if chunk:
                     t.update(len(chunk))
                     f.write(chunk)
         t.close()
-        print(f">> Successfully downloaded: {tar_filename}")
+        print(f">> Successfully downloaded: {filename}")
 
     except requests.exceptions.RequestException as e:
         print(f"Error: Unable to download file. Try again later. {e}")
         exit(1)
 
-    # Extract the binary to the home folder
-    with tarfile.open(tar_filename, "r:gz") as tar:
-        tar.extractall()
+    # Extract the binary to /usr/local/bin/ using sudo
+    # Reth tarball contains just the binary at root
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/usr/local/bin"])
 
-    # Move the binary to /usr/local/bin using sudo
-    os.system(f"sudo mv reth /usr/local/bin")
+    # Find the extracted reth binary and rename it
+    subprocess.run(["sudo", "sh", "-c", "mv /usr/local/bin/reth-* /usr/local/bin/reth"])
 
-    # Remove the downloaded .tar.gz file
-    os.remove(f"{tar_filename}")
-
-    # Ensure +x permissions, update owner
+    # Ensure +x permissions
     subprocess.run(["sudo", "chmod", "a+x", "/usr/local/bin/reth"])
-    subprocess.run(["sudo", "chown", "execution:execution", "/usr/local/bin/reth"])
+
+    # Remove the tar file
+    os.remove(download_path)
 
     # Generate Service File Content
     service_content = generate_reth_service(

@@ -27,6 +27,9 @@ def get_machine_architecture():
         print(f'Unsupported machine architecture: {machine_arch}')
         exit(1)
 
+def get_raw_architecture():
+    return platform.machine()
+
 def get_computer_platform():
     platform_name = platform.system()
     if platform_name == "Linux":
@@ -115,7 +118,10 @@ def finish_install(install_config, eth_network, sync_url,
                    skip_prompts, cl_rest_port):
     
     # Reload the systemd daemon
-    subprocess.run(['sudo', 'systemctl', 'daemon-reload'])
+    try:
+        subprocess.run(['sudo', 'systemctl', 'daemon-reload'], capture_output=True)
+    except Exception:
+        pass
 
     print(f'##########################\n')
     print(f'## Installation Summary ##\n')
@@ -175,22 +181,26 @@ def finish_install(install_config, eth_network, sync_url,
             if consensus_service_path:
                 services.append('consensus')
             if services:
-                os.system(f'sudo systemctl start {" ".join(services)}')
+                os.system(f'sudo systemctl start {" ".join(services)} > /dev/null 2>&1')
             if mevboost_enabled:
-                os.system(f'sudo systemctl start mevboost')
+                os.system(f'sudo systemctl start mevboost > /dev/null 2>&1')
 
     # Prompt to enable autostart services
-    answer = PromptUtils(Screen()).prompt_for_yes_or_no(f"\nConfigure node to autostart:\nWould you like this node to autostart when system boots up?")
-    if answer:
-        if not validator_only:
-            services = []
-            if execution_service_path:
-                services.append('execution')
-            if consensus_service_path:
-                services.append('consensus')
-            if services:
-                os.system(f'sudo systemctl enable {" ".join(services)}')
-        if validator_enabled:
-            os.system(f'sudo systemctl enable validator')
-        if mevboost_enabled and not validator_only:
-            os.system(f'sudo systemctl enable mevboost')
+    if not skip_prompts:
+        answer = PromptUtils(Screen()).prompt_for_yes_or_no(f"\nConfigure node to autostart:\nWould you like this node to autostart when system boots up?")
+        if answer:
+            if not validator_only:
+                services = []
+                if execution_service_path:
+                    services.append('execution')
+                if consensus_service_path:
+                    services.append('consensus')
+                if services:
+                    os.system(f'sudo systemctl enable {" ".join(services)} > /dev/null 2>&1')
+            if validator_enabled:
+                os.system(f'sudo systemctl enable validator > /dev/null 2>&1')
+            if mevboost_enabled and not validator_only:
+                os.system(f'sudo systemctl enable mevboost > /dev/null 2>&1')
+
+    if skip_prompts:
+        exit(0)

@@ -249,10 +249,17 @@ if __name__ == "__main__":
         f.write("CSM_FEE_RECIPIENT_ADDRESS_HOLESKY=0xCSM1234567890123456789012345678901234567890\n")
         f.write("CSM_FEE_RECIPIENT_ADDRESS_MAINNET=0xCSM1234567890123456789012345678901234567890\n")
             
-    target_script = args.script_name
-    
-    if not run_script(target_script, args.network, "0x1234567890123456789012345678901234567890", args.vc_only_bn_address):
-        sys.exit(1)
-        
-    verify_script(target_script)
-    print(f"\n🐳 Integration Test run inside Docker complete for {target_script} (MEV={args.mev}).")
+    try:
+        target_script = args.script_name
+        if not run_script(target_script, args.network, "0x1234567890123456789012345678901234567890", args.vc_only_bn_address):
+            sys.exit(1)
+        verify_script(target_script)
+        print(f"\n🐳 Integration Test run inside Docker complete for {target_script} (MEV={args.mev}).")
+    finally:
+        # Cleanup artifacts that might have leaked to the host via volume mount
+        for f in [".env"] + [path for path in os.listdir(".") if path.endswith((".tar.gz", ".tar.xz", ".zip"))]:
+            try:
+                if os.path.exists(f):
+                    os.remove(f)
+            except:
+                pass

@@ -1,3 +1,7 @@
 *.pyc
 __pycache__/
 .pytest_cache/
+.env
+*.tar.gz
+*.tar.xz
+*.zip

@@ -87,7 +87,7 @@ def download_and_install_erigon(eth_network: str, el_p2p_port: str, el_rpc_port:
     service_content = generate_erigon_service(
         eth_network, el_p2p_port, el_rpc_port, el_max_peer_count,
         jwtsecret_path, cl_p2p_port, cl_rest_port, cl_max_peer_count_cl,
-        checkpoint_sync_url, mev_parameters
+        checkpoint_sync_url, mev_parameters=mev_parameters
     )
     
     service_file_path = '/etc/systemd/system/execution.service'

@@ -8,8 +8,7 @@ import json
 import tarfile
 import tempfile
 import random
-from consolemenu import *
-from consolemenu.items import *
+from consolemenu import PromptUtils, Screen
 from typing import Optional, List, Any
 
 
@@ -236,10 +235,10 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
 
     print(f'Installation Configuration: \n{install_config}\n')
 
-    if execution_client:
+    if execution_client and execution_version:
         print(f'{execution_client.capitalize()} Version: \n{execution_version}\n')
 
-    if consensus_client:
+    if consensus_client and consensus_version:
         print(f'{consensus_client.capitalize()} Version: \n{consensus_version}\n')
 
     if mevboost_enabled and not validator_only:
@@ -279,7 +278,9 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
 
     # Prompt to start services
     if not validator_only:
-        message = f"\nInstallation successful!\nSyncing a {consensus_client.capitalize()}/{execution_client.capitalize()} node for validator duties can be as quick as a few hours.\nWould you like to start syncing now?"
+        e_client = (execution_client or "execution").capitalize()
+        c_client = (consensus_client or "consensus").capitalize()
+        message = f"\nInstallation successful!\nSyncing a {c_client}/{e_client} node for validator duties can be as quick as a few hours.\nWould you like to start syncing now?"
         answer = PromptUtils(Screen()).prompt_for_yes_or_no(message)
         if answer:
             services = []

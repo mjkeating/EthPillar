@@ -116,11 +116,19 @@ def setup_node(jwt_secret_path, validator_only=False):
     # Chrony timesync package
     subprocess.run(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'])
 
+import tempfile
+    
 def write_service_file(content, target_path, temp_filename='temp.service'):
-    with open(temp_filename, 'w') as f:
+    # Prepend PID to avoid race conditions when multiple containers share the same mapped volume directory
+    import os
+    actual_temp_filename = f"{os.getpid()}_{temp_filename}"
+    with open(actual_temp_filename, 'w') as f:
         f.write(content)
-    os.system(f'sudo cp {temp_filename} {target_path}')
-    os.remove(temp_filename)
+    os.system(f'sudo cp {actual_temp_filename} {target_path}')
+    try:
+        os.remove(actual_temp_filename)
+    except FileNotFoundError:
+        pass
 
 def finish_install(install_config, eth_network, sync_url, 
                    execution_client, execution_version, execution_service_path,
@@ -158,10 +166,10 @@ def finish_install(install_config, eth_network, sync_url,
 
     if validator_only and bn_address:
         print(f'Beacon Node Address: {bn_address}\n')
-        # This part seems specific to some scripts but not others? 
-        # Actually it's in multiple.
-        os.chdir(os.path.expanduser("~/git/ethpillar"))
-        os.system(f'cp .env.overrides.example .env.overrides')
+        target_dir = os.path.expanduser("~/git/ethpillar")
+        if os.path.exists(target_dir):
+            os.chdir(target_dir)
+            os.system(f'cp .env.overrides.example .env.overrides')
 
     if not node_only:
         print(f'Validator Fee Recipient Address: {fee_recipient_address}\n')

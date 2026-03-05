@@ -25,6 +25,10 @@ def download_and_install_nethermind(eth_network, el_p2p_port, el_rpc_port,
     subprocess.run(["sudo", "mkdir", "-p", "/var/lib/nethermind"])
     subprocess.run(["sudo", "chown", "-R", "execution:execution", "/var/lib/nethermind"])
 
+    # Ensure home directory exists for .NET bundle extraction if WorkingDirectory isn't enough
+    subprocess.run(["sudo", "mkdir", "-p", "/home/execution"])
+    subprocess.run(["sudo", "chown", "execution:execution", "/home/execution"])
+
     # Define the Github API endpoint to get the latest release
     url = 'https://api.github.com/repos/NethermindEth/nethermind/releases/latest'
 

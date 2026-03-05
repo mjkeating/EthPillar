@@ -85,9 +85,8 @@ def install_teku_bn(eth_network, checkpoint_sync_url, jwtsecret_path,
     write_service_file(service_content, service_file_path, 'consensus_temp.service')
     return service_file_path
 
-def install_teku_vc(teku_version, eth_network, cl_rest_port, graffiti, fee_recipient_address,
+def install_teku_vc(teku_version, eth_network, cl_rest_port, graffiti, bn_addr_flag,
                    fee_parameters='', mev_parameters=''):
-    bn_addr_flag = f"--beacon-node-api-endpoint=http://127.0.0.1:{cl_rest_port}"
     service_content = generate_teku_vc_service(
         eth_network, graffiti, bn_addr_flag,
         fee_parameters, mev_parameters

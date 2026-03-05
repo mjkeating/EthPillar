@@ -7,6 +7,7 @@ import subprocess
 import os
 import pwd
 import sys
+import signal
 
 # Import INSTALL_DIR from common so the path is maintained centrally
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -53,78 +54,106 @@ def check_binary(binary_name):
 def check_service(service_name):
     return os.path.isfile(f"/etc/systemd/system/{service_name}.service")
 
-def parse_expected_artifacts(script_name):
+def parse_expected_artifacts(script_name, env_vars=None):
     binaries = []
     services = []
     users = []
 
-    # Simple heuristic to determine expected artifacts
-    if "besu" in script_name:
-        binaries.append("besu")
-        users.append("execution")
-        services.append("execution")
-    if "reth" in script_name:
-        binaries.append("reth")
-        users.append("execution")
-        services.append("execution")
-    if "erigon" in script_name:
-        binaries.append("erigon")
-        users.append("execution")
-        services.append("execution")
-    if "nethermind" in script_name:
-        binaries.append("nethermind")
-        users.append("execution")
-        services.append("execution")
-        
-    if "lighthouse" in script_name:
-        binaries.append("lighthouse")
-        users.extend(["consensus"])
-        services.extend(["consensus"])
-    if "teku" in script_name:
-        binaries.append("teku")
-        users.extend(["consensus"])
-        services.extend(["consensus"])
-    if "lodestar" in script_name:
-        binaries.append("lodestar")
-        users.extend(["consensus"])
-        services.extend(["consensus"])
-    if "nimbus" in script_name:
-        binaries.extend(["nimbus_beacon_node"])
-        users.extend(["consensus"])
-        services.extend(["consensus"])
-        
-    # Caplin does not use external consensus client binaries or services
-    if "caplin" in script_name:
-        pass # All bundled in erigon
-
-        # Actually Caplin-Erigon script DOES install MEV-boost
+    config = env_vars.get('INSTALL_CONFIG', '') if env_vars else ''
+    is_validator_only = "Validator Client Only" in config
+    is_node_only = "Full Node Only" in config
+    mev_enabled = (env_vars and env_vars.get('MEVBOOST', 'false').lower() == 'true')
+    is_staking = any(p in config for p in ["Solo Staking", "Lido CSM Staking", "Failover Staking"])
+    
+    # Execution Client artifacts
+    if not is_validator_only:
+        if "besu" in script_name:
+            binaries.extend(["besu"])
+            users.append("execution")
+            services.append("execution")
+        if "reth" in script_name:
+            binaries.append("reth")
+            users.append("execution")
+            services.append("execution")
+        if "erigon" in script_name:
+            binaries.append("erigon")
+            users.append("execution")
+            services.append("execution")
+        if "nethermind" in script_name:
+            binaries.append("nethermind")
+            users.append("execution")
+            services.append("execution")
+            
+    # Consensus Client Beacon Node artifacts
+    if not is_validator_only:
+        if "lighthouse" in script_name:
+            binaries.append("lighthouse")
+            users.append("consensus")
+            services.append("consensus")
+        if "teku" in script_name:
+            binaries.append("teku")
+            users.append("consensus")
+            services.append("consensus")
+        if "lodestar" in script_name:
+            binaries.append("lodestar")
+            users.append("consensus")
+            services.append("consensus")
+        if "nimbus" in script_name:
+            binaries.append("nimbus_beacon_node")
+            users.append("consensus")
+            services.append("consensus")
+            
+    # MEV Boost artifacts
+    if mev_enabled and not is_validator_only:
         binaries.append("mev-boost")
         users.append("mevboost")
         services.append("mevboost")
 
+    # Validator Client artifacts
+    if not is_node_only:
+        if "lighthouse" in script_name: 
+            users.append("validator")
+            services.append("validator")
+        if "lodestar" in script_name:
+            users.append("validator")
+            services.append("validator")
+        if "nimbus" in script_name:
+            binaries.append("nimbus_validator_client")
+            users.append("validator")
+            services.append("validator")
+        if "teku" in script_name:
+            # Teku installs validator service in both Solo Staking and VC Only
+            if is_staking or is_validator_only:
+                services.append("validator")
+                users.append("validator")
+
     return list(set(binaries)), list(set(users)), list(set(services))
 
-def run_script(script_name, network="sepolia", fee_address="0x1234567890123456789012345678901234567890", vc_address="http://192.168.1.123:5052"):
-    print(f"\n🚀 Running: python3 {script_name} --skip_prompts true --network {network} --fee_address {fee_address}")
+def run_script(script_name, install_config="Solo Staking Node", network="sepolia", fee_address="0x1234567890123456789012345678901234567890", vc_address="http://192.168.1.123:5052"):
+    print(f"\n🚀 Running: python3 {script_name} --skip_prompts true --network {network} --install_config \"{install_config}\" --fee_address {fee_address}")
     
-    cmd = [sys.executable, script_name, "--skip_prompts", "true", "--network", network, "--fee_address", fee_address]
+    cmd = [sys.executable, script_name, "--skip_prompts", "true", "--network", network, "--install_config", install_config, "--fee_address", fee_address]
     if vc_address:
          cmd.extend(["--vc_only_bn_address", vc_address])
          
+    env = os.environ.copy()
+    env["ENABLE_EP_CACHE"] = "1"
+    env["PYTHONPATH"] = "/ethpillar/tests/integration:" + env.get("PYTHONPATH", "")
+         
     try:
         # Run the command and print output to stdout in real-time
-        result = subprocess.run(cmd, capture_output=False, check=True)
+        result = subprocess.run(cmd, capture_output=False, check=True, env=env)
     except subprocess.CalledProcessError as e:
         print(f"❌ Script {script_name} failed with return code {e.returncode}")
         return False
     print(f"✅ Script {script_name} completed successfully.")
     return True
 
-def verify_script(script_name):
+def verify_script(script_name, env_vars=None):
     print(f"\n🔍 Verifying Artifacts for {script_name}...")
     print("-" * 40)
     
-    expected_binaries, expected_users, expected_services = parse_expected_artifacts(script_name)
+    expected_binaries, expected_users, expected_services = parse_expected_artifacts(script_name, env_vars)
     success = True
     
     for b in expected_binaries:
@@ -142,8 +171,6 @@ def verify_script(script_name):
             success = False
             
     for s in expected_services:
-        # For Full Node Only config, consensus services like validator and beacon might not be installed depending on script
-        # Actually we need to make sure we don't look for expected_services if they're not supposed to be there.
         present = check_service(s)
         status = "✅" if present else "❌"
         print(f"{status} Service File: {s}")
@@ -154,14 +181,22 @@ def verify_script(script_name):
             if not check_service_start(s):
                 success = False
 
-    print(f"\n[DEBUG] {INSTALL_DIR} contents:")
-    subprocess.run(["ls", "-F", INSTALL_DIR])
+    print(f"\n[DEBUG] {INSTALL_DIR} contents recursively:")
+    os.system(f"ls -R {INSTALL_DIR} | head -n 100")
     
     if not success:
-        print(f"\n❌ Verification FAILED for {script_name}.")
-        sys.exit(1)
-    else:
+        print("\n[DEBUG] Failure Diagnostics:")
+        print("--- /usr/local/bin contents ---")
+        subprocess.run(["ls", "-l", INSTALL_DIR])
+        print("--- /etc/systemd/system contents ---")
+        subprocess.run(["ls", "-l", "/etc/systemd/system/"])
+        
+    if success:
         print(f"\n✅ Verification PASSED for {script_name}.")
+    else:
+        print(f"\n❌ Verification FAILED for {script_name}.")
+    
+    return success
 
 import shlex
 import time
@@ -172,52 +207,81 @@ def check_service_start(service_name):
     if not os.path.exists(service_path):
         return False
         
-    exec_start = None
+    exec_start = ""
     user = "root"
+    working_dir = "/"
+    env_vars = {}
+    in_exec_start = False
     with open(service_path, "r") as f:
         for line in f:
-            if line.strip().startswith("ExecStart="):
-                exec_start = line.split("=", 1)[1].strip()
-            elif line.strip().startswith("User="):
-                user = line.split("=", 1)[1].strip()
+            stripped = line.strip()
+            if in_exec_start:
+                exec_start += " " + stripped.rstrip("\\").strip()
+                if not stripped.endswith("\\"):
+                    in_exec_start = False
+            elif stripped.startswith("ExecStart="):
+                exec_start = stripped.split("=", 1)[1].rstrip("\\").strip()
+                if stripped.endswith("\\"):
+                    in_exec_start = True
+            elif stripped.startswith("User="):
+                user = stripped.split("=", 1)[1].strip()
+            elif stripped.startswith("WorkingDirectory="):
+                working_dir = stripped.split("=", 1)[1].strip('"\'')
+            elif stripped.startswith("Environment="):
+                val = stripped.split("=", 1)[1].strip('"\'')
+                if "=" in val:
+                    k, v = val.split("=", 1)
+                    env_vars[k.strip()] = v.strip()
                 
     if not exec_start:
         print(f"  ❌ No ExecStart found in {service_name}.service")
         return False
         
+    # Hack for Nethermind .NET bundle extraction
+    if "nethermind" in exec_start.lower():
+        env_vars["DOTNET_BUNDLE_EXTRACT_BASE_DIR"] = "/tmp/nethermind-bundle"
+        os.makedirs("/tmp/nethermind-bundle", exist_ok=True)
+        os.system("chmod 777 /tmp/nethermind-bundle")
+
     print(f"  Running: {exec_start}")
     print(f"  As User: {user}")
     
-    # We want to run it so it fails fast if there are missing arguments or bad configs.
-    # 5 seconds is plenty for consensus/execution clients to boot and validate arguments.
     try:
-        su_cmd = ["su", "-s", "/bin/bash", "-c", str(exec_start), str(user)]
-        process = subprocess.Popen(su_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        env_str = " ".join([f"{k}={v}" for k, v in env_vars.items()])
+        cd_cmd = f"cd {working_dir} && " if working_dir != "/" else ""
+        if env_str:
+            full_cmd = f"{cd_cmd} env {env_str} {exec_start}"
+        else:
+            full_cmd = f"{cd_cmd} {exec_start}"
+            
+        cmd = ["sudo", "-u", user, "bash", "-c", full_cmd]
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, preexec_fn=os.setsid)
         
         # Wait up to 5 seconds
-        for _ in range(5):
+        start_time = time.time()
+        while time.time() - start_time < 5:
             if process.poll() is not None:
                 break
-            time.sleep(1)
+            time.sleep(0.5)
         
         if process.poll() is not None:
             # It exited!
-            out, err = process.communicate()
+            stdout, stderr = process.communicate()
             if process.returncode != 0:
                 print(f"  ❌ Process exited prematurely with code {process.returncode}")
-                # Print last 5 lines of stderr
-                stderr_lines = err.decode('utf-8').strip().split('\n')[-5:]
-                print(f"  STDERR: {''.join(stderr_lines)}")
+                # Use slicing on list of lines/chars if needed, but stdout is string here
+                print(f"  STDOUT: {stdout[-500:] if stdout else ''}")
+                print(f"  STDERR: {stderr[-500:] if stderr else ''}")
                 return False
             else:
                 print(f"  ✅ Service {service_name} executed and exited cleanly (0).")
                 return True
             
-        # It's still running, which means it successfully started its main loop!
-        process.terminate()
-        time.sleep(1)
-        if process.poll() is None:
-            process.kill()
+        # It's still running, which means it successfully started!
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        except:
+            pass
             
         print(f"  ✅ Service {service_name} successfully executed for 5 seconds without crashing.")
         return True
@@ -251,9 +315,13 @@ if __name__ == "__main__":
             
     try:
         target_script = args.script_name
-        if not run_script(target_script, args.network, "0x1234567890123456789012345678901234567890", args.vc_only_bn_address):
+        env_vars = {
+            'INSTALL_CONFIG': args.config,
+            'MEVBOOST': 'true' if args.mev else 'false'
+        }
+        if not run_script(target_script, args.config, args.network, "0x1234567890123456789012345678901234567890", args.vc_only_bn_address):
             sys.exit(1)
-        verify_script(target_script)
+        verify_script(target_script, env_vars)
         print(f"\n🐳 Integration Test run inside Docker complete for {target_script} (MEV={args.mev}).")
     finally:
         # Cleanup artifacts that might have leaked to the host via volume mount

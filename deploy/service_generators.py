@@ -132,7 +132,7 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 WorkingDirectory=/var/lib/nethermind
-Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/lib/nethermind"
+Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/lib/nethermind/bundle-extract"
 ExecStart=/usr/local/bin/nethermind/nethermind {_network} --datadir="/var/lib/nethermind" --Network.DiscoveryPort {el_p2p_port} --Network.P2PPort {el_p2p_port} --Network.MaxActivePeers {el_max_peer_count} --JsonRpc.Port {el_rpc_port} --Metrics.Enabled true --Metrics.ExposePort 6060 --JsonRpc.JwtSecretFile {jwtsecret_path} --Pruning.Mode=Hybrid --Pruning.FullPruningTrigger=VolumeFreeSpace --Pruning.FullPruningThresholdMb=300000 {sync_parameters}
 
 [Install]
@@ -329,6 +329,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
+Environment="TMPDIR=/var/lib/lodestar/tmp"
 WorkingDirectory=/usr/local/bin/lodestar
 ExecStart=/usr/local/bin/lodestar/lodestar beacon {_network} --dataDir=/var/lib/lodestar --checkpointSyncUrl={sync_url} --execution.urls=http://127.0.0.1:8551 --jwt-secret={jwtsecret_path} --rest.port={cl_rest_port} --port={cl_p2p_port} --targetPeers={cl_max_peer_count} --metrics=true --metrics.port=8008 {fee_parameters} {mev_parameters}
 
@@ -361,6 +362,8 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=300
 LimitNOFILE=65536
+Environment="TMPDIR=/var/lib/lodestar_validator/tmp"
+WorkingDirectory=/usr/local/bin/lodestar
 ExecStart=/usr/local/bin/lodestar/lodestar validator {_network} --dataDir=/var/lib/lodestar_validator --metrics=true --metrics.port=8009 --graffiti={graffiti} {beacon_node_address} {fee_parameters} {mev_parameters}
 
 [Install]
@@ -379,6 +382,8 @@ def generate_nimbus_bn_service(eth_network, jwtsecret_path,
     """Generate Nimbus beacon node systemd service file content."""
     if network_override:
         _network = network_override
+    elif eth_network == "ephemery":
+        _network = "--network=/opt/ethpillar/testnet/config.yaml"
     else:
         _network = f'--network={eth_network}'
 
@@ -406,12 +411,13 @@ WantedBy=multi-user.target
 def generate_nimbus_vc_service(eth_network, graffiti, beacon_node_address,
                                fee_parameters='', mev_parameters=''):
     """Generate Nimbus validator client systemd service file content."""
+    _network = "--network=/opt/ethpillar/testnet/config.yaml" if eth_network == "ephemery" else f"--network={eth_network}"
     return f'''[Unit]
 Description=Nimbus Validator Client service for {eth_network.upper()}
 Wants=network-online.target
 After=network-online.target
 Documentation=https://docs.coincashew.com
-
+ 
 [Service]
 Type=simple
 User=validator
@@ -421,7 +427,7 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 LimitNOFILE=65536
-ExecStart=/usr/local/bin/nimbus_validator_client --data-dir=/var/lib/nimbus_validator --metrics --metrics-port=8009 --non-interactive --doppelganger-detection=off --graffiti={graffiti} {beacon_node_address} {fee_parameters} {mev_parameters}
+ExecStart=/usr/local/bin/nimbus_validator_client --data-dir=/var/lib/nimbus_validator --metrics --metrics-port=8009 --non-interactive --doppelganger-detection=off --graffiti={graffiti} {beacon_node_address} {_network} {fee_parameters} {mev_parameters}
 
 [Install]
 WantedBy=multi-user.target

@@ -68,12 +68,18 @@ def download_lodestar(eth_network):
         print(f"Error: Unable to download file. Try again later. {e}")
         exit(1)
 
-    # Extract the binary to /usr/local/bin/lodestar using sudo
+    # The archive usually unpacks a lodestar directory or bare files.
+    # We want the binary to end up at /usr/local/bin/lodestar/lodestar
     subprocess.run(["sudo", "mkdir", "-p", "/usr/local/bin/lodestar"])
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/usr/local/bin/lodestar", "--strip-components=1"])
+    subprocess.run(["sudo", "mkdir", "-p", "/tmp/lodestar_extract"])
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/tmp/lodestar_extract"])
+    # Move the lodestar binary correctly
+    os.system("if [ -f /tmp/lodestar_extract/lodestar ]; then sudo mv /tmp/lodestar_extract/lodestar /usr/local/bin/lodestar/lodestar; fi")
+    os.system("if [ -f /tmp/lodestar_extract/bin/lodestar ]; then sudo mv /tmp/lodestar_extract/bin/lodestar /usr/local/bin/lodestar/lodestar; fi")
 
-    # Remove the tar file
+    # Remove the tar file and temporary extraction directory
     os.remove(download_path)
+    subprocess.run(["sudo", "rm", "-rf", "/tmp/lodestar_extract"])
     return lodestar_version
 
 def install_lodestar_bn(eth_network, checkpoint_sync_url, jwtsecret_path,
@@ -88,9 +94,8 @@ def install_lodestar_bn(eth_network, checkpoint_sync_url, jwtsecret_path,
     write_service_file(service_content, service_file_path, 'consensus_temp.service')
     return service_file_path
 
-def install_lodestar_vc(lodestar_version, eth_network, cl_rest_port, graffiti, fee_recipient_address,
+def install_lodestar_vc(lodestar_version, eth_network, cl_rest_port, graffiti, bn_addr_flag,
                        fee_parameters='', mev_parameters=''):
-    bn_addr_flag = f"--beaconNodes=http://127.0.0.1:{cl_rest_port}"
     service_content = generate_lodestar_vc_service(
         eth_network, graffiti, bn_addr_flag,
         fee_parameters, mev_parameters

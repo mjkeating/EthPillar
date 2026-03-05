@@ -16,6 +16,10 @@ def download_nimbus(eth_network):
     subprocess.run(["sudo", "chown", "-R", "consensus:consensus", "/var/lib/nimbus"])
     subprocess.run(["sudo", "mkdir", "-p", "/var/lib/nimbus_validator"])
     subprocess.run(["sudo", "chown", "-R", "validator:validator", "/var/lib/nimbus_validator"])
+    
+    # Install dependencies for Nimbus
+    print(f">> Installing Nimbus dependencies")
+    subprocess.run(["sudo", "apt-get", "-y", "-qq", "install", "libnss3", "libsqlite3-0"])
 
     # Define the Github API endpoint to get the latest release
     url = 'https://api.github.com/repos/status-im/nimbus-eth2/releases/latest'
@@ -93,9 +97,8 @@ def install_nimbus_bn(eth_network, jwtsecret_path,
     write_service_file(service_content, service_file_path, 'consensus_temp.service')
     return service_file_path
 
-def install_nimbus_vc(nimbus_version, eth_network, cl_rest_port, graffiti, fee_recipient_address,
+def install_nimbus_vc(nimbus_version, eth_network, cl_rest_port, graffiti, bn_addr_flag,
                      fee_parameters='', mev_parameters=''):
-    bn_addr_flag = f"--beacon-node=http://127.0.0.1:{cl_rest_port}"
     service_content = generate_nimbus_vc_service(
         eth_network, graffiti, bn_addr_flag,
         fee_parameters, mev_parameters

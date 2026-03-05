@@ -116,8 +116,8 @@ if install_config in ["Lido CSM Staking Node", "Lido CSM Validator Client Only"]
     elif eth_network == "hoodi":
         if not args.fee_address: FEE_RECIPIENT_ADDRESS = os.getenv('CSM_FEE_RECIPIENT_ADDRESS_HOODI')
 
-if eth_network == "ephemery":
-    MEVBOOST_ENABLED = False
+# if eth_network == "ephemery":
+#     MEVBOOST_ENABLED = False
 
 # Prompt for Fee Recipient if needed
 if not NODE_ONLY and not FEE_RECIPIENT_ADDRESS and not args.skip_prompts:
@@ -176,9 +176,8 @@ if VALIDATOR_ENABLED:
     fee_params = f'--suggested-fee-recipient={FEE_RECIPIENT_ADDRESS}'
     mev_params = '--payload-builder=true' if MEVBOOST_ENABLED else ''
     bn_addr = f'--beacon-node={bn_address}' if VALIDATOR_ONLY else f'--beacon-node=http://{CL_IP_ADDRESS}:{args.cl_rest_port}'
-    
     val_path = nimbus.install_nimbus_vc(
-        eth_network, args.graffiti, bn_addr, fee_params, mev_params
+        cl_ver, eth_network, args.cl_rest_port, args.graffiti, bn_addr, fee_params, mev_params
     )
 
 # 6. Finish

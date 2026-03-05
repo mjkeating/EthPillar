@@ -1,5 +1,6 @@
 import sys
 import os
+from typing import Any, Callable, Dict, Optional
 
 if os.environ.get('ENABLE_EP_CACHE') == '1':
     try:
@@ -9,9 +10,14 @@ if os.environ.get('ENABLE_EP_CACHE') == '1':
         import tempfile
         import shutil
 
-        original_get = requests.get
+        original_get: Callable = requests.get
 
-        def cached_get(url, *args, **kwargs):
+        def cached_get(url: str, *args: Any, **kwargs: Any) -> Any:
+            """
+            Intercepts requests.get calls and serves content from a local cache 
+            if the URL points to GitHub API or release assets.  This is mainly to avoid 
+            Github's rate limits.
+            """
             cache_dir = "/ethpillar/tests/integration/cache"
             os.makedirs(cache_dir, exist_ok=True)
             

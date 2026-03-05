@@ -1,3 +1,10 @@
+#!/bin/bash
+# EthPillar Integration Test Orchestrator (Linux/WSL)
+# ==================================================
+#
+# This script builds the test Docker image and runs the full matrix of client
+# and network combinations. It generates an HTML report in the results directory.
+#
 # Create results directory
 timestamp=$(date +"%Y-%m-%d_%H-%M-%S")
 results_dir="$(pwd)/tests/integration/results/run_$timestamp"

@@ -1,3 +1,11 @@
+<#
+EthPillar Integration Test Orchestrator (Windows)
+================================================
+
+This script builds the test Docker image and runs the full matrix of client 
+and network combinations. It manages parallel execution and generates 
+an HTML report in the results directory.
+#>
 # Create results directory
 $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $resultsDir = Join-Path $pwd.Path "tests/integration/results/run_$timestamp"

@@ -1,13 +1,23 @@
 """
 EthPillar Docker Integration Runner
-This script runs INSIDE the container to verify the deploy scripts.
-It executes a specific script with --skip_prompts and verifies the resulting state.
+==================================
+
+This script is designed to run INSIDE a Docker container. It performs the following:
+1. Executes a specific EthPillar deployment script with --skip_prompts.
+2. Verifies that the expected binaries, services, and users were created.
+EthPillar Search Path Customizer
+================================
+
+This module is automatically loaded by Python (via sitecustomize) inside the
+integration test containers. It implements a local caching layer for the
+'requests' library to mitigate GitHub API rate limiting.
 """
 import subprocess
 import os
 import pwd
 import sys
 import signal
+from typing import List, Dict, Optional, Any, Union, Tuple
 
 # Import INSTALL_DIR from common so the path is maintained centrally
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -24,14 +34,19 @@ except ImportError:
         def network_type(s):
             return s.upper()
 
-def check_user(username):
+def check_user(username: str) -> bool:
+    """Checks if a system user exists."""
     try:
         pwd.getpwnam(username)
         return True
     except KeyError:
         return False
 
-def check_binary(binary_name):
+def check_binary(binary_name: str) -> bool:
+    """
+    Checks if a binary or directory exists in the installation path.
+    Handles subfolder extraction for specific clients like Besu and Lodestar.
+    """
     # Some binaries extract to subfolders
     subfolder_paths = {
         "besu": os.path.join(INSTALL_DIR, "besu", "bin", "besu"),
@@ -51,10 +66,15 @@ def check_binary(binary_name):
     
     return False
 
-def check_service(service_name):
+def check_service(service_name: str) -> bool:
+    """Checks if a systemd service file exists in the standard location."""
     return os.path.isfile(f"/etc/systemd/system/{service_name}.service")
 
-def parse_expected_artifacts(script_name, env_vars=None):
+def parse_expected_artifacts(script_name: str, env_vars: Optional[Dict[str, str]] = None) -> Tuple[List[str], List[str], List[str]]:
+    """
+    Parses the expected binaries, services, and users based on the script name
+    and environment variables (configuration).
+    """
     binaries = []
     services = []
     users = []

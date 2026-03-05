@@ -1,13 +1,7 @@
-"""
-Pure functions for generating systemd service file content.
-
-Each function takes configuration parameters and returns the service file
-content as a string. These functions have no side effects and are easily
-testable.
-"""
+from typing import List, Dict, Optional
 
 
-def generate_mevboost_service(eth_network, mev_min_bid, relay_options):
+def generate_mevboost_service(eth_network: str, mev_min_bid: str, relay_options: List[Dict[str, str]]) -> str:
     """Generate MEV-Boost systemd service file content.
 
     Args:
@@ -52,9 +46,9 @@ def generate_mevboost_service(eth_network, mev_min_bid, relay_options):
     return '\n'.join(lines)
 
 
-def generate_besu_service(eth_network, el_p2p_port, el_rpc_port,
-                          el_max_peer_count, jwtsecret_path,
-                          network_override=None):
+def generate_besu_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
+                          el_max_peer_count: str, jwtsecret_path: str,
+                          network_override: Optional[str] = None) -> str:
     """Generate Besu execution client systemd service file content.
 
     Args:
@@ -95,9 +89,9 @@ WantedBy=multi-user.target
 '''
 
 
-def generate_nethermind_service(eth_network, el_p2p_port, el_rpc_port,
-                                el_max_peer_count, jwtsecret_path,
-                                network_override=None, sync_parameters=''):
+def generate_nethermind_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
+                                el_max_peer_count: str, jwtsecret_path: str,
+                                network_override: Optional[str] = None, sync_parameters: str = '') -> str:
     """Generate Nethermind execution client systemd service file content.
 
     Args:
@@ -140,9 +134,9 @@ WantedBy=multi-user.target
 '''
 
 
-def generate_reth_service(eth_network, el_p2p_port, el_p2p_port_2,
-                          el_rpc_port, el_max_peer_count, jwtsecret_path,
-                          network_override=None, sync_parameters=''):
+def generate_reth_service(eth_network: str, el_p2p_port: str, el_p2p_port_2: str,
+                          el_rpc_port: str, el_max_peer_count: str, jwtsecret_path: str,
+                          network_override: Optional[str] = None, sync_parameters: str = '') -> str:
     """Generate Reth execution client systemd service file content.
 
     Args:
@@ -185,12 +179,12 @@ WantedBy=multi-user.target
 '''
 
 
-def generate_erigon_service(eth_network, el_p2p_port, el_rpc_port,
-                            el_max_peer_count, jwtsecret_path,
-                            cl_p2p_port, cl_rest_port, cl_max_peer_count,
-                            sync_url,
-                            network_override=None, sync_parameters='',
-                            mev_parameters=''):
+def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
+                            el_max_peer_count: str, jwtsecret_path: str,
+                            cl_p2p_port: str, cl_rest_port: str, cl_max_peer_count: str,
+                            sync_url: str,
+                            network_override: Optional[str] = None, sync_parameters: str = '',
+                            mev_parameters: str = '') -> str:
     """Generate Erigon+Caplin integrated execution-consensus systemd service file content.
 
     Args:
@@ -249,10 +243,24 @@ WantedBy=multi-user.target
 # Teku consensus client
 # ──────────────────────────────────────────────
 
-def generate_teku_bn_service(eth_network, sync_url, jwtsecret_path,
-                             cl_rest_port, cl_p2p_port, cl_max_peer_count,
-                             fee_parameters='', mev_parameters=''):
-    """Generate Teku beacon node systemd service file content."""
+def generate_teku_bn_service(eth_network: str, sync_url: str, jwtsecret_path: str,
+                             cl_rest_port: str, cl_p2p_port: str, cl_max_peer_count: str,
+                             fee_parameters: str = '', mev_parameters: str = '') -> str:
+    """Generate Teku beacon node systemd service file content.
+
+    Args:
+        eth_network: Network name
+        sync_url: Checkpoint sync URL
+        jwtsecret_path: Path to JWT secret file
+        cl_rest_port: CL REST port
+        cl_p2p_port: CL P2P port
+        cl_max_peer_count: CL max peer count
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+
+    Returns:
+        Service file content as a string
+    """
     return f'''[Unit]
 Description=Teku Beacon Node Consensus Client service for {eth_network.upper()}
 Wants=network-online.target
@@ -276,9 +284,20 @@ WantedBy=multi-user.target
 '''
 
 
-def generate_teku_vc_service(eth_network, graffiti, beacon_node_address,
-                             fee_parameters='', mev_parameters=''):
-    """Generate Teku validator client systemd service file content."""
+def generate_teku_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
+                             fee_parameters: str = '', mev_parameters: str = '') -> str:
+    """Generate Teku validator client systemd service file content.
+
+    Args:
+        eth_network: Network name
+        graffiti: Graffiti string
+        beacon_node_address: Beacon node address
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+
+    Returns:
+        Service file content as a string
+    """
     return f'''[Unit]
 Description=Teku Validator Client service for {eth_network.upper()}
 Wants=network-online.target
@@ -305,11 +324,26 @@ WantedBy=multi-user.target
 # Lodestar consensus client
 # ──────────────────────────────────────────────
 
-def generate_lodestar_bn_service(eth_network, sync_url, jwtsecret_path,
-                                 cl_rest_port, cl_p2p_port, cl_max_peer_count,
-                                 fee_parameters='', mev_parameters='',
-                                 network_override=None):
-    """Generate Lodestar beacon node systemd service file content."""
+def generate_lodestar_bn_service(eth_network: str, sync_url: str, jwtsecret_path: str,
+                                 cl_rest_port: str, cl_p2p_port: str, cl_max_peer_count: str,
+                                 fee_parameters: str = '', mev_parameters: str = '',
+                                 network_override: Optional[str] = None) -> str:
+    """Generate Lodestar beacon node systemd service file content.
+
+    Args:
+        eth_network: Network name
+        sync_url: Checkpoint sync URL
+        jwtsecret_path: Path to JWT secret file
+        cl_rest_port: CL REST port
+        cl_p2p_port: CL P2P port
+        cl_max_peer_count: CL max peer count
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+        network_override: Optional network flag override
+
+    Returns:
+        Service file content as a string
+    """
     if network_override:
         _network = network_override
     else:
@@ -338,10 +372,22 @@ WantedBy=multi-user.target
 '''
 
 
-def generate_lodestar_vc_service(eth_network, graffiti, beacon_node_address,
-                                 fee_parameters='', mev_parameters='',
-                                 network_override=None):
-    """Generate Lodestar validator client systemd service file content."""
+def generate_lodestar_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
+                                 fee_parameters: str = '', mev_parameters: str = '',
+                                 network_override: Optional[str] = None) -> str:
+    """Generate Lodestar validator client systemd service file content.
+
+    Args:
+        eth_network: Network name
+        graffiti: Graffiti string
+        beacon_node_address: Beacon node address
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+        network_override: Optional network flag override
+
+    Returns:
+        Service file content as a string
+    """
     if network_override:
         _network = network_override
     else:
@@ -375,11 +421,25 @@ WantedBy=multi-user.target
 # Nimbus consensus client
 # ──────────────────────────────────────────────
 
-def generate_nimbus_bn_service(eth_network, jwtsecret_path,
-                               cl_rest_port, cl_p2p_port, cl_max_peer_count,
-                               fee_parameters='', mev_parameters='',
-                               network_override=None):
-    """Generate Nimbus beacon node systemd service file content."""
+def generate_nimbus_bn_service(eth_network: str, jwtsecret_path: str,
+                               cl_rest_port: str, cl_p2p_port: str, cl_max_peer_count: str,
+                               fee_parameters: str = '', mev_parameters: str = '',
+                               network_override: Optional[str] = None) -> str:
+    """Generate Nimbus beacon node systemd service file content.
+
+    Args:
+        eth_network: Network name
+        jwtsecret_path: Path to JWT secret file
+        cl_rest_port: CL REST port
+        cl_p2p_port: CL P2P port
+        cl_max_peer_count: CL max peer count
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+        network_override: Optional network flag override
+
+    Returns:
+        Service file content as a string
+    """
     if network_override:
         _network = network_override
     elif eth_network == "ephemery":
@@ -408,9 +468,20 @@ WantedBy=multi-user.target
 '''
 
 
-def generate_nimbus_vc_service(eth_network, graffiti, beacon_node_address,
-                               fee_parameters='', mev_parameters=''):
-    """Generate Nimbus validator client systemd service file content."""
+def generate_nimbus_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
+                               fee_parameters: str = '', mev_parameters: str = '') -> str:
+    """Generate Nimbus validator client systemd service file content.
+
+    Args:
+        eth_network: Network name
+        graffiti: Graffiti string
+        beacon_node_address: Beacon node address
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+
+    Returns:
+        Service file content as a string
+    """
     _network = "--network=/opt/ethpillar/testnet/config.yaml" if eth_network == "ephemery" else f"--network={eth_network}"
     return f'''[Unit]
 Description=Nimbus Validator Client service for {eth_network.upper()}
@@ -438,12 +509,28 @@ WantedBy=multi-user.target
 # Lighthouse consensus client
 # ──────────────────────────────────────────────
 
-def generate_lighthouse_bn_service(eth_network, sync_url, jwtsecret_path,
-                                   cl_rest_port, cl_p2p_port, cl_p2p_port_2,
-                                   cl_max_peer_count,
-                                   fee_parameters='', mev_parameters='',
-                                   network_override=None):
-    """Generate Lighthouse beacon node systemd service file content."""
+def generate_lighthouse_bn_service(eth_network: str, sync_url: str, jwtsecret_path: str,
+                                   cl_rest_port: str, cl_p2p_port: str, cl_p2p_port_2: str,
+                                   cl_max_peer_count: str,
+                                   fee_parameters: str = '', mev_parameters: str = '',
+                                   network_override: Optional[str] = None) -> str:
+    """Generate Lighthouse beacon node systemd service file content.
+
+    Args:
+        eth_network: Network name
+        sync_url: Checkpoint sync URL
+        jwtsecret_path: Path to JWT secret file
+        cl_rest_port: CL REST port
+        cl_p2p_port: CL P2P port
+        cl_p2p_port_2: CL secondary P2P port
+        cl_max_peer_count: CL max peer count
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+        network_override: Optional network flag override
+
+    Returns:
+        Service file content as a string
+    """
     if network_override:
         _network = network_override
     else:
@@ -470,10 +557,22 @@ WantedBy=multi-user.target
 '''
 
 
-def generate_lighthouse_vc_service(eth_network, graffiti, beacon_node_address,
-                                   fee_parameters='', mev_parameters='',
-                                   network_override=None):
-    """Generate Lighthouse validator client systemd service file content."""
+def generate_lighthouse_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
+                                   fee_parameters: str = '', mev_parameters: str = '',
+                                   network_override: Optional[str] = None) -> str:
+    """Generate Lighthouse validator client systemd service file content.
+
+    Args:
+        eth_network: Network name
+        graffiti: Graffiti string
+        beacon_node_address: Beacon node address
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+        network_override: Optional network flag override
+
+    Returns:
+        Service file content as a string
+    """
     if network_override:
         _network = network_override
     else:

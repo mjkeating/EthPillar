@@ -6,7 +6,7 @@ from deploy.service_generators import generate_lighthouse_bn_service, generate_l
 from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, get_raw_architecture
 from client_requirements import validate_version_for_network
 
-def download_lighthouse(eth_network):
+def download_lighthouse(eth_network: str) -> str:
     binary_arch = get_raw_architecture()
 
     # Create User and directories
@@ -76,9 +76,9 @@ def download_lighthouse(eth_network):
     os.remove(download_path)
     return lh_version
 
-def install_lighthouse_bn(eth_network, checkpoint_sync_url, jwtsecret_path,
-                         cl_rest_port, cl_p2p_port, cl_p2p_port_2, cl_max_peer_count,
-                         fee_parameters='', mev_parameters=''):
+def install_lighthouse_bn(eth_network: str, checkpoint_sync_url: str, jwtsecret_path: str,
+                         cl_rest_port: str, cl_p2p_port: str, cl_p2p_port_2: str, cl_max_peer_count: str,
+                         fee_parameters: str = '', mev_parameters: str = '') -> str:
     service_content = generate_lighthouse_bn_service(
         eth_network, checkpoint_sync_url, jwtsecret_path,
         cl_rest_port, cl_p2p_port, cl_p2p_port_2, cl_max_peer_count,
@@ -88,8 +88,22 @@ def install_lighthouse_bn(eth_network, checkpoint_sync_url, jwtsecret_path,
     write_service_file(service_content, service_file_path, 'consensus_temp.service')
     return service_file_path
 
-def install_lighthouse_vc(lh_version, eth_network, cl_rest_port, graffiti, beacon_node_address,
-                         fee_parameters='', mev_parameters=''):
+def install_lighthouse_vc(lh_version: str, eth_network: str, cl_rest_port: str, graffiti: str, beacon_node_address: str,
+                         fee_parameters: str = '', mev_parameters: str = '') -> str:
+    """Generate and write Lighthouse validator client service file.
+
+    Args:
+        lh_version: Installed Lighthouse version.
+        eth_network: Network name.
+        cl_rest_port: Consensus client REST port.
+        graffiti: Graffiti string.
+        beacon_node_address: Beacon node address URL.
+        fee_parameters: Optional fee recipient parameters.
+        mev_parameters: Optional MEV relay parameters.
+
+    Returns:
+        The path to the created service file.
+    """
     service_content = generate_lighthouse_vc_service(
         eth_network, graffiti, beacon_node_address,
         fee_parameters, mev_parameters

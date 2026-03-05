@@ -2,13 +2,14 @@ import os
 import requests
 import subprocess
 from tqdm import tqdm
+from typing import Tuple, Optional
 from deploy.service_generators import generate_besu_service
 from deploy.common import write_service_file, DOWNLOAD_DIR
 from client_requirements import validate_version_for_network
 
-def download_and_install_besu(eth_network, el_p2p_port, el_rpc_port, 
-                                el_max_peer_count, jwtsecret_path,
-                                network_override=None):
+def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: str, 
+                                el_max_peer_count: str, jwtsecret_path: str,
+                                network_override: Optional[str] = None) -> Tuple[str, str]:
     """Download and install Besu binary and service.
 
     Returns:

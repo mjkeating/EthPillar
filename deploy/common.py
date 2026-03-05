@@ -10,17 +10,26 @@ import tempfile
 import random
 from consolemenu import *
 from consolemenu.items import *
+from typing import Optional, List, Any
+
 
 INSTALL_DIR = "/usr/local/bin"
 DOWNLOAD_DIR = "/tmp"
 
-def clear_screen():
+def clear_screen() -> None:
+    """Clear the terminal screen based on the operating system."""
     if os.name == 'posix':  # Unix-based systems (e.g., Linux, macOS)
         os.system('clear')
     elif os.name == 'nt':   # Windows
         os.system('cls')
 
-def get_machine_architecture():
+
+def get_machine_architecture() -> str:
+    """Get the machine architecture mapped to amd64 or arm64.
+
+    Returns:
+        Mapped architecture string.
+    """
     machine_arch = platform.machine()
     if machine_arch == "x86_64":
         return "amd64"
@@ -30,10 +39,18 @@ def get_machine_architecture():
         print(f'Unsupported machine architecture: {machine_arch}')
         exit(1)
 
-def get_raw_architecture():
+
+def get_raw_architecture() -> str:
+    """Get the raw machine architecture string."""
     return platform.machine()
 
-def get_computer_platform():
+
+def get_computer_platform() -> str:
+    """Get the operating system platform name.
+
+    Returns:
+        Platform name string (e.g. 'Linux').
+    """
     platform_name = platform.system()
     if platform_name == "Linux":
         return platform_name
@@ -41,28 +58,62 @@ def get_computer_platform():
         print(f'Unsupported platform: {platform_name}')
         exit(1)
 
-def is_valid_eth_address(address):
+
+def is_valid_eth_address(address: str) -> bool:
+    """Validate if a string is a valid Ethereum address.
+
+    Args:
+        address: The address string to validate.
+
+    Returns:
+        True if valid, False otherwise.
+    """
     pattern = re.compile("^0x[a-fA-F0-9]{40}$")
     return bool(pattern.match(address))
 
-def validate_beacon_node_address(ip_port):
+
+def validate_beacon_node_address(ip_port: str) -> bool:
+    """Validate if a string is a valid beacon node address URL.
+
+    Args:
+        ip_port: The URL string to validate.
+
+    Returns:
+        True if valid, False otherwise.
+    """
     pattern = r"^(http|https|ws):\/\/((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(:?\d{1,5})?$"
     return bool(re.match(pattern, ip_port))
 
 VALID_NETWORKS = ['MAINNET', 'HOODI', 'EPHEMERY', 'HOLESKY', 'SEPOLIA']
 
-def network_type(s):
-    """Argparse type for case-insensitive network selection."""
+def network_type(s: str) -> str:
+    """Argparse type for case-insensitive network selection.
+
+    Args:
+        s: The network name string.
+
+    Returns:
+        Uppercase network name.
+
+    Raises:
+        argparse.ArgumentTypeError: If the network is invalid.
+    """
     s_upper = s.upper()
     if s_upper not in VALID_NETWORKS:
          import argparse
          raise argparse.ArgumentTypeError(f"Invalid network: {s}. Choose from {VALID_NETWORKS}")
     return s_upper
 
-def setup_ephemery_network(genesis_repository):
+
+def setup_ephemery_network(genesis_repository: str) -> None:
+    """Setup ephemery network by downloading genesis files.
+
+    Args:
+        genesis_repository: GitHub repository for genesis files.
+    """
     testnet_dir = "/opt/ethpillar/testnet"
 
-    def get_github_release(repo):
+    def get_github_release(repo: str) -> Optional[str]:
         url = f"https://api.github.com/repos/{repo}/releases/latest"
         response = requests.get(url)
         if response.status_code == 200:
@@ -71,7 +122,7 @@ def setup_ephemery_network(genesis_repository):
         else:
             return None
 
-    def download_genesis_release(genesis_release):
+    def download_genesis_release(genesis_release: str) -> None:
         # remove old genesis and setup dir
         if os.path.exists(testnet_dir):
             subprocess.run(['sudo', 'rm', '-rf', testnet_dir], check=True)
@@ -97,7 +148,14 @@ def setup_ephemery_network(genesis_repository):
     else:
         print(f"Failed to retrieve genesis release for {genesis_repository}")
 
-def setup_node(jwt_secret_path, validator_only=False):
+
+def setup_node(jwt_secret_path: str, validator_only: bool = False) -> None:
+    """Setup node dependencies and JWT secret.
+
+    Args:
+        jwt_secret_path: Path to save the JWT secret.
+        validator_only: If True, only setup validator-specific parts.
+    """
     if not validator_only:
         # Create JWT directory
         subprocess.run([f'sudo mkdir -p $(dirname {jwt_secret_path})'], shell=True)
@@ -116,11 +174,15 @@ def setup_node(jwt_secret_path, validator_only=False):
     # Chrony timesync package
     subprocess.run(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'])
 
-import tempfile
-    
-def write_service_file(content, target_path, temp_filename='temp.service'):
+def write_service_file(content: str, target_path: str, temp_filename: str = 'temp.service') -> None:
+    """Write service content to a target path using a temporary file.
+
+    Args:
+        content: The service file content.
+        target_path: The final destination path.
+        temp_filename: Temporary filename to use.
+    """
     # Prepend PID to avoid race conditions when multiple containers share the same mapped volume directory
-    import os
     actual_temp_filename = f"{os.getpid()}_{temp_filename}"
     with open(actual_temp_filename, 'w') as f:
         f.write(content)
@@ -130,13 +192,37 @@ def write_service_file(content, target_path, temp_filename='temp.service'):
     except FileNotFoundError:
         pass
 
-def finish_install(install_config, eth_network, sync_url, 
-                   execution_client, execution_version, execution_service_path,
-                   consensus_client, consensus_version, consensus_service_path,
-                   mevboost_enabled, mevboost_version, mevboost_service_path,
-                   validator_enabled, validator_service_path,
-                   validator_only, bn_address, node_only, fee_recipient_address,
-                   skip_prompts, cl_rest_port):
+def finish_install(install_config: str, eth_network: str, sync_url: str,
+                   execution_client: Optional[str], execution_version: Optional[str], execution_service_path: Optional[str],
+                   consensus_client: Optional[str], consensus_version: Optional[str], consensus_service_path: Optional[str],
+                   mevboost_enabled: bool, mevboost_version: Optional[str], mevboost_service_path: Optional[str],
+                   validator_enabled: bool, validator_service_path: Optional[str],
+                   validator_only: bool, bn_address: Optional[str], node_only: bool, fee_recipient_address: Optional[str],
+                   skip_prompts: bool, cl_rest_port: str) -> None:
+    """Display installation summary and optionally start/enable services.
+
+    Args:
+        install_config: Formatted configuration string.
+        eth_network: Network name.
+        sync_url: Checkpoint sync URL.
+        execution_client: Execution client name.
+        execution_version: Execution client version.
+        execution_service_path: Path to execution service file.
+        consensus_client: Consensus client name.
+        consensus_version: Consensus client version.
+        consensus_service_path: Path to consensus service file.
+        mevboost_enabled: Whether MEV-Boost is enabled.
+        mevboost_version: MEV-Boost version.
+        mevboost_service_path: Path to MEV-Boost service file.
+        validator_enabled: Whether validator is enabled.
+        validator_service_path: Path to validator service file.
+        validator_only: Whether this is a validator-only install.
+        bn_address: Beacon node address.
+        node_only: Whether this is a node-only install.
+        fee_recipient_address: Fee recipient address.
+        skip_prompts: Whether to skip interactive prompts.
+        cl_rest_port: Consensus client REST port.
+    """
     
     # Reload the systemd daemon
     try:

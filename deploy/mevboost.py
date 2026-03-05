@@ -3,10 +3,11 @@ import requests
 import tarfile
 import subprocess
 from tqdm import tqdm
+from typing import List, Dict, Tuple
 from deploy.service_generators import generate_mevboost_service
 from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, get_computer_platform
 
-def install_mevboost(eth_network, mev_min_bid, relay_options):
+def install_mevboost(eth_network: str, mev_min_bid: str, relay_options: List[Dict[str, str]]) -> Tuple[str, str]:
     """Install MEV-Boost binary and service.
 
     Returns:

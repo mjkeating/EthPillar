@@ -5,8 +5,17 @@ from tqdm import tqdm
 from deploy.service_generators import generate_teku_bn_service, generate_teku_vc_service
 from deploy.common import write_service_file, DOWNLOAD_DIR
 from client_requirements import validate_version_for_network
+from typing import Optional
 
-def download_teku(eth_network):
+def download_teku(eth_network: str) -> str:
+    """Download and install Teku binary.
+
+    Args:
+        eth_network: Network name.
+
+    Returns:
+        Installed Teku version.
+    """
     # Create User and directories
     subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "consensus"])
     subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "validator"])
@@ -72,9 +81,24 @@ def download_teku(eth_network):
     os.remove(download_path)
     return teku_version
 
-def install_teku_bn(eth_network, checkpoint_sync_url, jwtsecret_path,
-                   cl_rest_port, cl_p2p_port, cl_max_peer_count,
-                   fee_parameters='', mev_parameters=''):
+def install_teku_bn(eth_network: str, checkpoint_sync_url: str, jwtsecret_path: str,
+                   cl_rest_port: str, cl_p2p_port: str, cl_max_peer_count: str,
+                   fee_parameters: str = '', mev_parameters: str = '') -> str:
+    """Generate and write Teku beacon node service file.
+
+    Args:
+        eth_network: Network name.
+        checkpoint_sync_url: Checkpoint sync URL.
+        jwtsecret_path: Path to JWT secret file.
+        cl_rest_port: Consensus client REST port.
+        cl_p2p_port: Consensus client P2P port.
+        cl_max_peer_count: Consensus client max peer count.
+        fee_parameters: Optional fee recipient parameters.
+        mev_parameters: Optional MEV relay parameters.
+
+    Returns:
+        The path to the created service file.
+    """
     # Match call in deploy-teku-besu.py (6 positional arguments)
     service_content = generate_teku_bn_service(
         eth_network, checkpoint_sync_url, jwtsecret_path,
@@ -85,8 +109,22 @@ def install_teku_bn(eth_network, checkpoint_sync_url, jwtsecret_path,
     write_service_file(service_content, service_file_path, 'consensus_temp.service')
     return service_file_path
 
-def install_teku_vc(teku_version, eth_network, cl_rest_port, graffiti, bn_addr_flag,
-                   fee_parameters='', mev_parameters=''):
+def install_teku_vc(teku_version: str, eth_network: str, cl_rest_port: str, graffiti: str, bn_addr_flag: str,
+                   fee_parameters: str = '', mev_parameters: str = '') -> str:
+    """Generate and write Teku validator client service file.
+
+    Args:
+        teku_version: Installed Teku version.
+        eth_network: Network name.
+        cl_rest_port: Consensus client REST port.
+        graffiti: Graffiti string.
+        bn_addr_flag: Beacon node address flag.
+        fee_parameters: Optional fee recipient parameters.
+        mev_parameters: Optional MEV relay parameters.
+
+    Returns:
+        The path to the created service file.
+    """
     service_content = generate_teku_vc_service(
         eth_network, graffiti, bn_addr_flag,
         fee_parameters, mev_parameters

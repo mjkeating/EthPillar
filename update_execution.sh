@@ -41,7 +41,7 @@ function selectCustomTag(){
 	    _repo="NethermindEth/nethermind"
 	    ;;
 	  Besu)
-	    _repo="hyperledger/besu"
+	    _repo="besu-eth/besu"
 	    ;;
 	  Erigon)
 	    _repo="erigontech/erigon"
@@ -113,8 +113,8 @@ function getLatestVersion(){
 	    CHANGES_URL="https://github.com/NethermindEth/nethermind/releases"
 	    ;;
 	  Besu)
-	    TAG_URL="https://api.github.com/repos/hyperledger/besu/releases/latest"
-	    CHANGES_URL="https://github.com/hyperledger/besu/releases"
+	    TAG_URL="https://api.github.com/repos/besu-eth/besu/releases/latest"
+	    CHANGES_URL="https://github.com/besu-eth/besu/releases"
 	    ;;
 	  Erigon)
 	    TAG_URL="https://api.github.com/repos/erigontech/erigon/releases/latest"
@@ -181,9 +181,9 @@ function updateClient(){
 		;;
 	  Besu)
 		updateJRE
-		RELEASE_URL="https://api.github.com/repos/hyperledger/besu/$_URL_SUFFIX"
+		RELEASE_URL="https://api.github.com/repos/besu-eth/besu/$_URL_SUFFIX"
 		TAG=$(curl -s "$RELEASE_URL" | jq -r .tag_name)
-		BINARIES_URL="https://github.com/hyperledger/besu/releases/download/$TAG/besu-$TAG.tar.gz"
+		BINARIES_URL="https://github.com/besu-eth/besu/releases/download/$TAG/besu-$TAG.tar.gz"
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O besu.tar.gz "$BINARIES_URL" || error "❌ Unable to wget file"

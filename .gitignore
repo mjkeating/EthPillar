@@ -1,1 +1,9 @@
+*.pyc
 __pycache__/
+.pytest_cache/
+.env
+*.tar.gz
+*.tar.xz
+*.zip
+tests/integration/results/
+tests/integration/cache/

@@ -15,25 +15,27 @@
 
 ---
 
-## Switching to this fork for updates!
+## ⚠️ Important for Existing Installations
 
-This is a fork of CoinCashew's excellent staking tool at https://github.com/coincashew/ethpillar.  
-We haven't heard from CoinCashew for a while, so this is a place where fixes and updates can be made.
+This is the **actively maintained fork** of CoinCashew’s EthPillar [](https://github.com/coincashew/ethpillar).
 
-To get the updates from this repo you'll need to do the following only once:
+If you installed EthPillar before March 2026 (and have never switched), your installation is still pointing to the original (inactive) repo.
 
-After installing EthPillar normally (see below) or if you have an existing install, run these two commands:
+**Switch once** with these two commands:
 
 ```bash
 cd ~/git/ethpillar
 git remote set-url origin https://github.com/mjkeating/EthPillar.git
 ```
 
-After this, from EthPillar you can run **System Administration → Update EthPillar** and it will update from this repo.
+After switching, use **System Administration → Update EthPillar** inside the TUI to pull the latest changes.
+New users can skip this step — the installer below already points to this fork.
 
-Hopefully, we'll see CoinCashew return soon!
+This fork is now at version 5.3.0, which includes:
 
-**Note:** This fork is now at version **5.2.8** - it includes fixes for Nethermind, Besu, and MEV-Boost updating. Also, improved versions display.
+- Major Python deployment refactor (modular architecture, full type hints, comprehensive tests via PR #2)
+- Installer now defaults to this maintained fork
+- Continued client updates and improvements
 
 ---
 
@@ -58,7 +60,7 @@ EthPillar is a free, open-source tool to set up and manage your Ethereum node wi
 Open a terminal and run:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/coincashew/EthPillar/main/install.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/mjkeating/EthPillar/main/install.sh)"
 ```
 
 ---
@@ -109,10 +111,10 @@ _Main Menu_
 
 ## 🛠️ Installation
 
-### Option 1: Automated One-Liner
+### Option 1: Automated One-Liner (Recommended)
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/coincashew/EthPillar/main/install.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/mjkeating/EthPillar/main/install.sh)"
 ```
 
 ### Option 2: Manual Install
@@ -120,7 +122,7 @@ _Main Menu_
 ```bash
 sudo apt-get update && sudo apt-get install git curl ccze bc tmux
 mkdir -p ~/git/ethpillar
-git clone https://github.com/coincashew/ethpillar.git ~/git/ethpillar
+git clone https://github.com/mjkeating/EthPillar.git ~/git/ethpillar
 sudo ln -s ~/git/ethpillar/ethpillar.sh /usr/local/bin/ethpillar
 ethpillar
 ```

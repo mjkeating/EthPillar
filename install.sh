@@ -1,19 +1,19 @@
 #!/bin/bash
 
-# Author: coincashew.eth | coincashew.com
+# Author: mjkeating (maintained fork) | Original by coincashew.eth
 # License: GNU GPL
-# Source: https://github.com/coincashew/ethpillar
+# Source: https://github.com/mjkeating/EthPillar
 #
 # Made for home and solo stakers 🏠🥩
 
 # 🫶 Make improvements and suggestions on GitHub:
-#    * https://github.com/coincashew/ethpillar
+#    * https://github.com/mjkeating/EthPillar
 # 🙌 Ask questions on Discord:
-#    * https://discord.gg/dEpAVWgFNB
+#    * https://discord.gg/g63MpHvt
 
 set -u
 
-# enable  command completion
+# enable command completion
 set -o history -o histexpand
 
 abort() {
@@ -99,9 +99,11 @@ linux_install_pre() {
 }
 
 linux_install_installer() {
-    ohai "Cloning ethpillar into ~/git/ethpillar"
+    ohai "Cloning EthPillar into ~/git/ethpillar"
     mkdir -p ~/git/ethpillar
-    git clone https://github.com/coincashew/ethpillar.git ~/git/ethpillar/ 2> /dev/null || (cd ~/git/ethpillar ; git fetch origin main ; git checkout main ; git pull)
+    # Updated to use this maintained fork
+    git clone https://github.com/mjkeating/EthPillar.git ~/git/ethpillar/ 2> /dev/null || \
+      (cd ~/git/ethpillar ; git fetch origin main ; git checkout main ; git pull)
     chmod +x ~/git/ethpillar/*.sh
     ohai "Installing ethpillar"
     if [ -f /usr/local/bin/ethpillar ]; then 

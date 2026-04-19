@@ -31,11 +31,12 @@ git remote set-url origin https://github.com/mjkeating/EthPillar.git
 After switching, use **System Administration → Update EthPillar** inside the TUI to pull the latest changes.
 New users can skip this step — the installer below already points to this fork.
 
-This fork is now at version 5.3.0, which includes:
+This fork is now at version 5.3.1, which includes:
 
 - Major Python deployment refactor (modular architecture, full type hints, comprehensive tests via PR #2)
 - Installer now defaults to this maintained fork
 - Continued client updates and improvements
+- Note: fixed network selection regression in deploy scripts after Python refactor (v5.3.1)
 
 ---
 

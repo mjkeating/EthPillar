@@ -67,7 +67,7 @@ function resyncClient(){
 		esac
 		sudo systemctl stop execution
 		sudo rm -rf /var/lib/reth/*
-		sudo reth download --chain "$_chain" --datadir=/var/lib/reth --storage.v2 --resumable --full
+		sudo reth download --chain="$_chain" --datadir=/var/lib/reth --storage.v2 --resumable --full
 		sudo chown -R execution:execution /var/lib/reth
 		sudo systemctl restart execution
 	    ;;

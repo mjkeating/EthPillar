@@ -43,7 +43,7 @@ MEV_MIN_BID = os.getenv('MEV_MIN_BID')
 
 # 3. Parse Args
 parser = argparse.ArgumentParser(description='Node Install Options :: CoinCashew.com', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument("--network", type=common.network_type, choices=common.VALID_NETWORKS, default="")
+parser.add_argument("--network", type=str, default="", help="Ethereum network")
 parser.add_argument("--jwtsecret", type=str, default=JWTSECRET_PATH)
 parser.add_argument("--graffiti", type=str, default=GRAFFITI)
 parser.add_argument("--fee_address", type=str, default="")

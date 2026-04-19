@@ -7,6 +7,7 @@
 # Made for home and solo stakers 🏠🥩
 
 BASE_DIR=$(pwd)
+source $BASE_DIR/functions.sh
 
 function getClient(){
     EL=$(cat /etc/systemd/system/execution.service | grep Description= | awk -F'=' '{print $2}' | awk '{print $1}')
@@ -57,8 +58,17 @@ function resyncClient(){
 		sudo systemctl restart execution
 	    ;;
   	  Reth)
+		getNetwork
+		case $NETWORK in
+		  Holesky)   _chain="holesky" ;;
+		  Hoodi)     _chain="hoodi" ;;
+		  Sepolia)   _chain="sepolia" ;;
+		  *)         _chain="mainnet" ;;
+		esac
 		sudo systemctl stop execution
 		sudo rm -rf /var/lib/reth/*
+		sudo reth download --chain "$_chain" --datadir=/var/lib/reth --storage.v2 --resumable --full
+		sudo chown -R execution:execution /var/lib/reth
 		sudo systemctl restart execution
 	    ;;
 	  esac

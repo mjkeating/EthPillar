@@ -59,6 +59,16 @@ function resyncClient(){
 	    ;;
   	  Reth)
 		getNetwork
+		getExecutionDatadir
+		getExecutionStaticFiles
+
+		_datadir=${DATADIR:-/var/lib/reth}
+		_static_files_arg=""
+		
+		if [ -n "$STATIC_FILES" ]; then
+		    _static_files_arg="--datadir.static-files=$STATIC_FILES"
+		fi
+
 		case $NETWORK in
 		  Holesky)   _chain="holesky" ;;
 		  Hoodi)     _chain="hoodi" ;;
@@ -66,9 +76,29 @@ function resyncClient(){
 		  *)         _chain="mainnet" ;;
 		esac
 		sudo systemctl stop execution
-		sudo rm -rf /var/lib/reth/*
-		sudo reth download --chain="$_chain" --datadir=/var/lib/reth --storage.v2 --resumable --full
-		sudo chown -R execution:execution /var/lib/reth
+		sudo rm -rf $_datadir/*
+		if [ -n "$STATIC_FILES" ]; then
+		    sudo rm -rf $STATIC_FILES/*
+		fi
+
+		# Reth doesn't serve official snapshots for other chains without a custom provider URL
+		if [ "$_chain" == "mainnet" ]; then
+			read -r -d '' _prompt_msg <<-'EOF' || true
+			Would you like to perform a snapshot download?
+			This is much faster than a standard P2P full sync.
+
+			Note: You will enter an interactive menu to choose download components.
+			EOF
+
+			if whiptail --title "Reth Snapshot Download" --yesno "$_prompt_msg" 12 78; then
+				sudo reth download --chain="$_chain" --datadir=$_datadir $_static_files_arg    # enters the 'reth download' TUI, allowing user to select snapshot components to download
+				sudo chown -R execution:execution $_datadir
+				if [ -n "$STATIC_FILES" ]; then
+				    sudo chown -R execution:execution $STATIC_FILES
+				fi
+			fi
+		fi
+
 		sudo systemctl restart execution
 	    ;;
 	  esac

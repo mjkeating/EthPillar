@@ -274,12 +274,14 @@ getClient(){
 
 # Get execution client datadir from systemd config (for reth)
 getExecutionDatadir(){
-    DATADIR=$(test -f /etc/systemd/system/execution.service && grep -oP '(?<=--datadir=)[^\s]+' /etc/systemd/system/execution.service || echo "")
+    local svc_file=${EXEC_SERVICE_FILE:-/etc/systemd/system/execution.service}
+    DATADIR=$(test -f "$svc_file" && grep -oP '(?<=--datadir=)[^\s]+' "$svc_file" || echo "")
 }
 
 # Get execution client static files directory from systemd config (for reth)
 getExecutionStaticFiles(){
-    STATIC_FILES=$(test -f /etc/systemd/system/execution.service && grep -oP '(?<=--datadir.static-files=)[^\s]+' /etc/systemd/system/execution.service || echo "")
+    local svc_file=${EXEC_SERVICE_FILE:-/etc/systemd/system/execution.service}
+    STATIC_FILES=$(test -f "$svc_file" && grep -oP '(?<=--datadir.static-files=)[^\s]+' "$svc_file" || echo "")
 }
 
 # Get list of validator public keys

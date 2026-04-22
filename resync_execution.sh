@@ -91,7 +91,8 @@ function resyncClient(){
 			EOF
 
 			if whiptail --title "Reth Snapshot Download" --yesno "$_prompt_msg" 12 78; then
-				sudo reth download --chain="$_chain" --datadir=$_datadir $_static_files_arg    # enters the 'reth download' TUI, allowing user to select snapshot components to download
+				# Enters the 'reth download' TUI, allowing user to select snapshot components to download
+				sudo reth download --chain="$_chain" --datadir=$_datadir $_static_files_arg
 				sudo chown -R execution:execution $_datadir
 				if [ -n "$STATIC_FILES" ]; then
 				    sudo chown -R execution:execution $STATIC_FILES

@@ -85,7 +85,7 @@ function resyncClient(){
 		if [ "$_chain" == "mainnet" ]; then
 			read -r -d '' _prompt_msg <<-'EOF' || true
 			Would you like to perform a snapshot download?
-			This is much faster than a standard P2P full sync.
+			This is faster than a standard P2P full sync.
 
 			Note: You will enter an interactive menu to choose download components.
 			EOF

@@ -170,12 +170,15 @@ function updateClient(){
 	  Teku)
 		updateJRE
 		RELEASE_URL="https://api.github.com/repos/ConsenSys/teku/$_URL_SUFFIX"
-		LATEST_TAG=$(curl -s "$RELEASE_URL" | jq -r ".tag_name")
+		# Get the tag and strip any leading 'v' for the artifact URL
+		_RAW_TAG=$(curl -s "$RELEASE_URL" | jq -r ".tag_name")
+		LATEST_TAG=${_RAW_TAG#v}
 		BINARIES_URL="https://artifacts.consensys.net/public/teku/raw/names/teku.tar.gz/versions/${LATEST_TAG}/teku-${LATEST_TAG}.tar.gz"
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O teku.tar.gz "$BINARIES_URL" || error "❌ Unable to wget file"
 		tar -xzvf teku.tar.gz -C "$HOME" || error "❌ Unable to untar file"
+		# Directory name inside tarball usually matches the version
 		mv teku-"${LATEST_TAG}" teku
 		rm teku.tar.gz
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus

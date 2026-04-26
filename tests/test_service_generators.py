@@ -18,6 +18,7 @@ from deploy.service_generators import (
     generate_nethermind_service,
     generate_reth_service,
     generate_erigon_service,
+    generate_erigon_standalone_service,
     generate_teku_bn_service,
     generate_teku_vc_service,
     generate_lodestar_bn_service,
@@ -263,6 +264,88 @@ class TestErigonService:
             SYNC_URL
         )
         assert "--caplin.mev-relay-url" not in result
+
+
+# ═══════════════════════════════════════════════
+# Erigon Standalone (no Caplin) service tests
+# ═══════════════════════════════════════════════
+
+class TestErigonStandaloneService:
+    """Test Erigon standalone execution client service file generation (without Caplin)."""
+
+    def test_mainnet_service(self):
+        result = generate_erigon_standalone_service(
+            "mainnet", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH
+        )
+        assert "Description=Erigon Execution Layer Client service for MAINNET" in result
+        assert "--chain=mainnet" in result
+        assert f"--port={EL_P2P_PORT}" in result
+        assert f"--http.port={EL_RPC_PORT}" in result
+        assert f"--maxpeers={EL_MAX_PEER_COUNT}" in result
+        assert f"--authrpc.jwtsecret={JWTSECRET_PATH}" in result
+        assert "--externalcl" in result
+        assert "User=execution" in result
+
+    def test_holesky_service(self):
+        result = generate_erigon_standalone_service(
+            "holesky", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH
+        )
+        assert "Description=Erigon Execution Layer Client service for HOLESKY" in result
+        assert "--chain=holesky" in result
+        assert "--externalcl" in result
+
+    def test_no_caplin_flags(self):
+        """Standalone service must NOT contain any Caplin-specific flags."""
+        result = generate_erigon_standalone_service(
+            "mainnet", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH
+        )
+        assert "--caplin.enable-upnp" not in result
+        assert "--caplin.discovery.port" not in result
+        assert "--beacon.api.port" not in result
+        assert "--caplin.checkpoint-sync-url" not in result
+
+    def test_ephemery_network_override(self):
+        custom_override = "--chain /opt/ephemery/genesis.json --bootnodes enr1,enr2"
+        result = generate_erigon_standalone_service(
+            "ephemery", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH,
+            network_override=custom_override
+        )
+        assert "--chain /opt/ephemery/genesis.json" in result
+        assert "--chain=ephemery" not in result
+
+    def test_sync_parameters_appended(self):
+        sync_params = "--prune.mode=full"
+        result = generate_erigon_standalone_service(
+            "mainnet", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH,
+            sync_parameters=sync_params
+        )
+        assert "--prune.mode=full" in result
+        # Also confirm --externalcl still present
+        assert "--externalcl" in result
+
+    def test_service_structure(self):
+        result = generate_erigon_standalone_service(
+            "mainnet", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH
+        )
+        assert result.startswith("[Unit]")
+        assert "[Service]" in result
+        assert "[Install]" in result
+        assert "WantedBy=multi-user.target" in result
+        assert "Restart=on-failure" in result
+        assert "KillSignal=SIGINT" in result
+        assert "TimeoutStopSec=900" in result
+
+    def test_different_from_integrated(self):
+        """Standalone description must differ from the integrated Erigon-Caplin description."""
+        standalone = generate_erigon_standalone_service(
+            "mainnet", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH
+        )
+        integrated = generate_erigon_service(
+            "mainnet", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT,
+            JWTSECRET_PATH, CL_P2P_PORT, CL_REST_PORT, CL_MAX_PEER_COUNT, SYNC_URL
+        )
+        assert "Erigon Execution Layer Client" in standalone
+        assert "Erigon-Caplin Integrated" in integrated
 
 
 # ═══════════════════════════════════════════════

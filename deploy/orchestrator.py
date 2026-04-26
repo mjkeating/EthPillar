@@ -46,7 +46,7 @@ def resolve_role_flags(role: str, network: str) -> Dict[str, bool]:
     elif role == "Full Node Only":
         flags["node_only"] = True
     elif role == "Validator Client Only" or role == "Lido CSM Validator Client Only":
-        flags["mevboost"] = True
+        flags["mevboost"] = False
         flags["validator"] = True
         flags["validator_only"] = True
     elif role == "Failover Staking Node":

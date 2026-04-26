@@ -27,9 +27,9 @@ if [[ ${#} -eq 0 ]]; then
   exit 1
 elif [[ ${#} -ge 2 ]]; then
   skip_prompt="$2"
-  extra_args="${@:3}"
+  extra_args=("${@:3}")
 else
-  extra_args=""
+  extra_args=()
 fi
 install_file="$1"
 # Accept only deploy-*.py and disallow slashes (except deploy/ prefix)
@@ -147,13 +147,13 @@ linux_install_validator-install() {
         git clone https://github.com/coincashew/ethpillar.git "${ETHPILLAR_DIR}"
     fi
     ohai "Installing validator-install"
-    if [ -n "$extra_args" ]; then
-        $python "${ETHPILLAR_DIR}/${install_file}" --skip_prompts "$skip_prompt" $extra_args
+    if [ ${#extra_args[@]} -gt 0 ]; then
+        $python "${ETHPILLAR_DIR}/${install_file}" --skip_prompts "$skip_prompt" "${extra_args[@]}"
     else
         $python "${ETHPILLAR_DIR}/${install_file}"
     fi
     ohai "Allowing user to view journalctl logs"
-    sudo usermod -a -G systemd-journal $USER
+    sudo usermod -a -G systemd-journal ${USER:-root}
     ohai "Install complete!"
     exit_on_error $?
 }

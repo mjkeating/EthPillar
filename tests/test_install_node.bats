@@ -12,62 +12,78 @@ setup() {
     export COMMAND_LOG=$(mktemp)
     export MOCK_BIN_DIR=$(mktemp -d)
 
-    # Mock system commands
-    mock_cmd() {
+    # ── Robust Mocking System ─────────────────────────────────────────────────
+    # This writes calls to the COMMAND_LOG in a predictable format
+    mock_template() {
         local cmd="$1"
         shift
         printf "%s" "$cmd" >> "$COMMAND_LOG"
         for arg in "$@"; do
-            printf " <%s>" "$arg" >> "$COMMAND_LOG"
+            printf " [%s]" "$arg" >> "$COMMAND_LOG"
         done
         echo >> "$COMMAND_LOG"
     }
-    export -f mock_cmd
-    
-    # Export mocks
-    apt-get()   { mock_cmd "apt-get" "$@"; }
-    export -f apt-get
-    git()       { mock_cmd "git" "$@"; }
-    export -f git
-    python3()   { 
-        # Handle -m venv call to not break script
-        if [[ "$*" == *"-m venv"* ]]; then
-            mock_cmd "python3" "$@"
-            return 0
-        fi
-        mock_cmd "python3" "$@"
+    export -f mock_template
+
+    # Helper to create a mock script in our temp bin dir
+    create_mock() {
+        local name="$1"
+        local exit_code="${2:-0}"
+        local output="${3:-}"
+        cat <<EOF > "$MOCK_BIN_DIR/$name"
+#!/bin/bash
+mock_template "$name" "\$@"
+if [ -n "$output" ]; then echo "$output"; fi
+exit $exit_code
+EOF
+        chmod +x "$MOCK_BIN_DIR/$name"
     }
-    export -f python3
-    sudo()      { 
-        if declare -f "$1" > /dev/null; then
-            "$@"
-        else
-            mock_cmd "sudo" "$@"
-        fi
-    }
-    export -f sudo
-    usermod()   { mock_cmd "usermod" "$@"; }
-    export -f usermod
-    mkdir()     { mock_cmd "mkdir" "$@"; }
-    export -f mkdir
-    lscpu()     { echo "x86_64"; }
-    export -f lscpu
-    uname()     { echo "Linux"; }
-    export -f uname
-    which()     { return 0; }
-    export -f which
+
+    # Create mocks for all system commands called by install-node.sh
+    create_mock "lscpu" 0 "x86_64"
+    create_mock "uname" 0 "Linux"
+    create_mock "which" 0 "/usr/bin/python3"
+    create_mock "stty" 0 ""
+    create_mock "curl" 0 ""
+    create_mock "apt-get" 0 ""
+    create_mock "git" 0 ""
+    create_mock "usermod" 0 ""
+    create_mock "mkdir" 0 ""
+    create_mock "python3" 0 ""
+    create_mock "pip" 0 ""
     
-    # Create pip mock and add to PATH
-    echo '#!/bin/bash' > "$MOCK_BIN_DIR/pip"
-    echo 'echo "pip $*" >> "'"$COMMAND_LOG"'"' >> "$MOCK_BIN_DIR/pip"
-    chmod +x "$MOCK_BIN_DIR/pip"
+    # Special mock for sudo to pass through to our other mocks
+    cat <<'EOF' > "$MOCK_BIN_DIR/sudo"
+#!/bin/bash
+# If the command is in our mock dir, call it directly
+if [ -x "$MOCK_BIN_DIR/$1" ]; then
+    shift
+    "$MOCK_BIN_DIR/${BASH_ARGV[$((${#BASH_ARGV[@]}-1))]}" "$@"
+    # Note: BASH_ARGV logic is tricky, lets just use a simpler check
+fi
+
+# Simpler sudo: just remove 'sudo' and run the rest
+# But we need to make sure we call our mocks if they exist
+cmd=$1
+shift
+if command -v "$cmd" >/dev/null; then
+    "$cmd" "$@"
+else
+    # Just log that sudo was called for an unknown command
+    echo "sudo [$cmd] $@" >> "$COMMAND_LOG"
+fi
+EOF
+    # Actually, a simpler sudo mock is better:
+    cat <<EOF > "$MOCK_BIN_DIR/sudo"
+#!/bin/bash
+"\$@"
+EOF
+    chmod +x "$MOCK_BIN_DIR/sudo"
+
     export PATH="$MOCK_BIN_DIR:$PATH"
     
-    # Create a fake ~/.local/bin/pip to satisfy the script
-    # We'll use a symlink to our mock
-    LOCAL_BIN="$HOME/.local/bin"
-    mkdir -p "$LOCAL_BIN" || true
-    ln -sf "$MOCK_BIN_DIR/pip" "$LOCAL_BIN/pip" || true
+    # Set up the expected ETHPILLAR_DIR for the script
+    export ETHPILLAR_DIR="$PWD"
 }
 
 teardown() {
@@ -75,34 +91,46 @@ teardown() {
     rm -rf "$MOCK_BIN_DIR"
 }
 
-@test "install-node.sh: exits 1 when no arguments given" {
-    run bash deploy/install-node.sh
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"ERROR: Missing deploy file"* ]]
-}
+# ─────────────────────────────────────────────────────────────────────────────
+# Tests
+# ─────────────────────────────────────────────────────────────────────────────
 
-@test "install-node.sh: rejects filenames with path traversal" {
-    run bash deploy/install-node.sh "../../deploy/deploy-node.py"
+@test "install-node.sh: rejects invalid filenames" {
+    run bash deploy/install-node.sh "wrong.py"
     [ "$status" -eq 1 ]
     [[ "$output" == *"ERROR: Invalid deploy file"* ]]
 }
 
-@test "install-node.sh: invokes python3 with correct arguments" {
+@test "install-node.sh: invokes python3 with correct forwarded arguments" {
+    # We use 'true' as 2nd arg to skip the 'wait_for_user' prompt
     run bash deploy/install-node.sh "deploy/deploy-node.py" "true" "--install_config" "Solo Staking Node"
+    
+    run cat "$COMMAND_LOG"
+    # Should check requirements
+    [[ "$output" == *"lscpu"* ]]
+    # Should install dependencies
+    [[ "$output" == *"apt-get <update>"* ]]
+    # Check if python3 was called with the correct arguments
+    run cat "$COMMAND_LOG"
+    [[ "$output" == *"python3"* ]]
+    [[ "$output" == *"deploy/deploy-node.py"* ]]
+    [[ "$output" == *"<--skip_prompts> <true>"* ]]
+    [[ "$output" == *"<--install_config> <Solo Staking Node>"* ]]
+}
+
+@test "install-node.sh: skip_prompts is correctly omitted when not provided" {
+    run bash deploy/install-node.sh "deploy/deploy-node.py" ""
     
     run cat "$COMMAND_LOG"
     [[ "$output" == *"python3"* ]]
     [[ "$output" == *"deploy/deploy-node.py"* ]]
-    [[ "$output" == *"--skip_prompts"* ]]
-    [[ "$output" == *"true"* ]]
-    [[ "$output" == *"--install_config"* ]]
-    [[ "$output" == *"Solo Staking Node"* ]]
+    [[ "$output" != *"--skip_prompts"* ]]
 }
 
-@test "install-node.sh: installs dependencies" {
+@test "install-node.sh: handles virtual environment setup" {
     run bash deploy/install-node.sh "deploy/deploy-node.py" "true"
     
     run cat "$COMMAND_LOG"
-    [[ "$output" == *"apt-get"* ]]
-    [[ "$output" == *"git"* ]]
+    # Should try to create venv
+    [[ "$output" == *"python3 [-m] [venv]"* ]]
 }

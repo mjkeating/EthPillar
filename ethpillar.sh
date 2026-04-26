@@ -1645,11 +1645,7 @@ function installNode(){
               runScript plugins/aztec/plugin_aztec.sh -i
               exit 0
             else
-              local _SKIP_BANNER="true"
-              if [[ "$_ROLE" == "Custom Setup" || "$_ROLE" == "Validator Client Only" || "$_ROLE" == "Lido CSM Validator Client Only" ]]; then
-                _SKIP_BANNER="false"
-              fi
-              runScript deploy/install-node.sh "deploy/deploy-node.py" "$_SKIP_BANNER" "--install_config \"$_ROLE\""
+              runScript deploy/install-node.sh "--install_config \"$_ROLE\""
             fi
           fi
   fi

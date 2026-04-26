@@ -63,7 +63,7 @@ if args.fee_address:
 skip_prompts = args.skip_prompts.lower() == 'true'
 
 # 1. Network selection
-if not args.network and not skip_prompts:
+if not args.network:
     index = SelectionMenu.get_selection(valid_networks, title='Validator Install Quickstart', subtitle='Select Ethereum network:')
     if index == len(valid_networks): exit(0)
     eth_network = valid_networks[index].lower()
@@ -71,7 +71,7 @@ else:
     eth_network = args.network.lower()
 
 # 2. Role selection
-if not args.install_config and not skip_prompts:
+if not args.install_config:
     index = SelectionMenu.get_selection(VALID_ROLES, title='Validator Install Quickstart', subtitle='What type of installation would you like?', show_exit_option=False)
     role = VALID_ROLES[index]
 else:
@@ -86,7 +86,7 @@ vc_name = None
 
 if flags['validator_only']:
     # VC Only Path
-    if not args.vc and not skip_prompts:
+    if not args.vc:
         vc_menu = get_vc_menu()
         index = SelectionMenu.get_selection(vc_menu, title='Validator Client Selection', subtitle='Select your Validator Client:', show_exit_option=False)
         vc_name = vc_menu[index]
@@ -94,45 +94,38 @@ if flags['validator_only']:
         vc_name = args.vc or args.cc # Fallback to --cc if --vc not passed
 elif role == "Custom Setup":
     # Custom Path
-    if not skip_prompts:
-        # EC
-        ec_menu = get_ec_menu()
-        index = SelectionMenu.get_selection(ec_menu, title='Custom Setup', subtitle='Step 1: Select your Execution Client', show_exit_option=False)
-        ec_name = ec_menu[index]
-        # CC
-        cc_menu = get_cc_menu(ec_name)
-        index = SelectionMenu.get_selection(cc_menu, title='Custom Setup', subtitle='Step 2: Select your Consensus Client', show_exit_option=False)
-        cc_name = cc_menu[index]
-        
-        # VC
-        val_prompt = SelectionMenu.get_selection(["Yes", "No"], title='Custom Setup', subtitle='Step 3: Do you want a Validator Client?', show_exit_option=False)
-        if val_prompt == 0:
-            flags['validator'] = True
-            vc_opts = get_vc_options_for_cc(cc_name)
-            if len(vc_opts) == 4: # No "Same as CC"
-                index = SelectionMenu.get_selection(vc_opts, title='Validator Client', subtitle='Select your Validator Client:', show_exit_option=False)
-                vc_name = vc_opts[index]
-            else:
-                index = SelectionMenu.get_selection(vc_opts, title='Validator Client', subtitle='Use same client as CC?', show_exit_option=False)
-                vc_name = resolve_vc_name(cc_name, vc_opts[index])
+    # EC
+    ec_menu = get_ec_menu()
+    index = SelectionMenu.get_selection(ec_menu, title='Custom Setup', subtitle='Step 1: Select your Execution Client', show_exit_option=False)
+    ec_name = ec_menu[index]
+    # CC
+    cc_menu = get_cc_menu(ec_name)
+    index = SelectionMenu.get_selection(cc_menu, title='Custom Setup', subtitle='Step 2: Select your Consensus Client', show_exit_option=False)
+    cc_name = cc_menu[index]
+    
+    # VC
+    val_prompt = SelectionMenu.get_selection(["Yes", "No"], title='Custom Setup', subtitle='Step 3: Do you want a Validator Client?', show_exit_option=False)
+    if val_prompt == 0:
+        flags['validator'] = True
+        vc_opts = get_vc_options_for_cc(cc_name)
+        if len(vc_opts) == 4: # No "Same as CC"
+            index = SelectionMenu.get_selection(vc_opts, title='Validator Client', subtitle='Select your Validator Client:', show_exit_option=False)
+            vc_name = vc_opts[index]
         else:
-            flags['validator'] = False
-            vc_name = None
-
-        # MEV
-        mev_prompt = SelectionMenu.get_selection(["Yes", "No"], title='Custom Setup', subtitle='Step 4: Do you want MEV-Boost?', show_exit_option=False)
-        flags['mevboost'] = (mev_prompt == 0)
-        
+            index = SelectionMenu.get_selection(vc_opts, title='Validator Client', subtitle='Use same client as CC?', show_exit_option=False)
+            vc_name = resolve_vc_name(cc_name, vc_opts[index])
     else:
-        ec_name = args.ec
-        cc_name = args.cc
-        vc_name = args.vc if args.vc else cc_name if args.with_validator else None
-        flags['validator'] = args.with_validator or bool(args.vc)
-        flags['mevboost'] = args.with_mevboost
+        flags['validator'] = False
+        vc_name = None
+
+    # MEV
+    mev_prompt = SelectionMenu.get_selection(["Yes", "No"], title='Custom Setup', subtitle='Step 4: Do you want MEV-Boost?', show_exit_option=False)
+    flags['mevboost'] = (mev_prompt == 0)
+
 
 else:
     # Predefined role (Solo/Full/Failover/CSM) -> Combo Menu
-    if not args.combo and not args.ec and not skip_prompts:
+    if not args.combo and not args.ec:
         combo_menu = get_combo_menu()
         index = SelectionMenu.get_selection(combo_menu, title='Client Configuration', subtitle='Pick your combination:', show_exit_option=False)
         combo_choice = combo_menu[index]
@@ -152,20 +145,20 @@ else:
 
 # 4. Role-specific prompts
 beacon_node_address = args.vc_only_bn_address
-if flags['validator_only'] and not beacon_node_address and not skip_prompts:
+if flags['validator_only'] and not beacon_node_address:
     beacon_node_address = input("What is your beacon node URL? (e.g. http://192.168.1.5:5052): ").strip()
     if not beacon_node_address:
         print("Beacon node address is required for VC-only setup.")
         exit(1)
 
 # Fee recipient prompt for non-CSM roles with validator
-if flags['validator'] and not FEE_RECIPIENT_ADDRESS and not skip_prompts:
+if flags['validator'] and not FEE_RECIPIENT_ADDRESS:
     if "Lido CSM" not in role:
         FEE_RECIPIENT_ADDRESS = input("What is your fee recipient address? (0x...): ").strip()
 
 # Sync URL
 sync_url = ""
-if not flags['validator_only'] and not skip_prompts:
+if not flags['validator_only']:
     try:
         sync_urls_list = getattr(config, f"{eth_network}_sync_urls", [])
         if sync_urls_list:

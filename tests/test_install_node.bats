@@ -68,19 +68,15 @@ teardown() {
     rm -rf "/tmp/test_home"
 }
 
-@test "install-node.sh: rejects invalid filenames" {
-    run bash deploy/install-node.sh "wrong.py"
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"ERROR: Invalid deploy file"* ]]
+@test "install-node.sh: uses default script if none provided" {
+    run bash deploy/install-node.sh "true"
+    [ "$status" -eq 0 ]
+    grep -q "python3 .*deploy-node.py" "$COMMAND_LOG"
 }
 
 @test "install-node.sh: invokes python3 with correct arguments" {
-    run bash deploy/install-node.sh "deploy/deploy-node.py" "true" "--install_config" "Solo Staking Node"
-    
-    if [ "$status" -ne 0 ]; then
-        echo "Output: $output"
-        cat "$COMMAND_LOG"
-    fi
+    # Test simplified call (no script name, no "true")
+    run bash deploy/install-node.sh "--install_config" "Solo Staking Node"
     
     [ "$status" -eq 0 ]
     grep -q "python3 .*deploy-node.py" "$COMMAND_LOG"
@@ -88,7 +84,7 @@ teardown() {
 }
 
 @test "install-node.sh: installs dependencies" {
-    run bash deploy/install-node.sh "deploy/deploy-node.py" "true"
+    run bash deploy/install-node.sh "--some-arg"
     [ "$status" -eq 0 ]
     
     grep -q "apt-get update" "$COMMAND_LOG"

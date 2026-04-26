@@ -13,7 +13,10 @@ set -u
 set -o history -o histexpand
 
 python="python3"
+install_file="deploy/deploy-node.py"
 skip_prompt=""
+extra_args=()
+
 SOURCE="${BASH_SOURCE[0]}"
 while [ -h "$SOURCE" ]; do
   DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
@@ -22,21 +25,27 @@ while [ -h "$SOURCE" ]; do
 done
 export ETHPILLAR_DIR="$( cd -P "$( dirname "$SOURCE" )/.." && pwd )"
 
-if [[ ${#} -eq 0 ]]; then
-  echo "ERROR: Missing deploy file. Example ./install-node.sh deploy-node.py"
-  exit 1
-elif [[ ${#} -ge 2 ]]; then
-  skip_prompt="$2"
-  extra_args=("${@:3}")
-else
-  extra_args=()
+# If arguments are passed, we likely want to skip the intro banner
+if [[ ${#} -gt 0 ]]; then
+  skip_prompt="true"
 fi
-install_file="$1"
-# Accept only deploy-*.py and disallow slashes (except deploy/ prefix)
-if [[ "$install_file" != deploy-*.py && "$install_file" != deploy/deploy-*.py ]]; then
-  echo "ERROR: Invalid deploy file: $install_file"
-  exit 1
-fi
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    deploy-*.py|deploy/deploy-*.py)
+      install_file="$1"
+      shift
+      ;;
+    true|false)
+      skip_prompt="$1"
+      shift
+      ;;
+    *)
+      extra_args+=("$1")
+      shift
+      ;;
+  esac
+done
 
 abort() {
   printf "%s\n" "$1"

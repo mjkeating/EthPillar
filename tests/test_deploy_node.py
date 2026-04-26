@@ -1,29 +1,16 @@
 """
-Tests for deploy-node.py CLI argument routing.
+Tests for deploy/orchestrator.py
 
-Strategy: import deploy-node as a module by extracting its routing helpers
-into testable units. We run deploy-node.py as a subprocess with
---skip_prompts true to validate all CLI paths without interactive menus,
-mocking out the actual install via PYTHONPATH injection.
-
-These tests verify:
-  - Network argument forwarding
-  - Role-to-flags resolution
-  - Combo -> EC/CC assignment
-  - VC-only path (--install_config "Validator Client Only")
-  - Custom path (--ec / --cc / --vc flags)
-  - Failover path (no VC)
-  - CSM role detection
-  - Fee recipient propagation
+All tests call real functions from the orchestrator module.
+No inline logic is reimplemented here — if an assertion passes,
+it is because the production code returned the right value.
 """
-
 import sys
 import os
-import subprocess
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
-# Silence consolemenu on import
+# Silence consolemenu on import (it tries to detect terminal size)
 sys.modules["consolemenu"] = MagicMock()
 sys.modules["consolemenu.items"] = MagicMock()
 sys.modules["consolemenu.format"] = MagicMock()
@@ -33,128 +20,291 @@ sys.modules["consolemenu.screen"] = MagicMock()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from deploy.orchestrator import (
-    PREDEFINED_COMBOS, VALID_ROLES, resolve_role_flags,
-    get_combo_menu, get_vc_menu, get_ec_menu, get_cc_menu,
-    get_vc_options_for_cc, resolve_vc_name, is_valid_combination,
+    PREDEFINED_COMBOS,
+    VALID_ROLES,
+    EXECUTION_CLIENTS,
+    CONSENSUS_CLIENTS,
+    resolve_role_flags,
+    apply_csm_overrides,
+    get_combo_menu,
+    get_vc_menu,
+    get_ec_menu,
+    get_cc_menu,
+    get_vc_options_for_cc,
+    resolve_vc_name,
+    is_valid_combination,
+    run_install,
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-DEPLOY_NODE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "deploy", "deploy-node.py")
-
-def run_deploy_node(*extra_args, env_extra=None):
-    """Run deploy-node.py with --skip_prompts true and capture stdout/stderr."""
-    env = os.environ.copy()
-    # Provide minimal env so argparse defaults don't fail on None->int casts
-    env.setdefault("EL_P2P_PORT", "30303")
-    env.setdefault("EL_P2P_PORT_2", "30304")
-    env.setdefault("EL_RPC_PORT", "8545")
-    env.setdefault("EL_MAX_PEER_COUNT", "50")
-    env.setdefault("CL_P2P_PORT", "9000")
-    env.setdefault("CL_P2P_PORT_2", "9001")
-    env.setdefault("CL_REST_PORT", "5052")
-    env.setdefault("CL_MAX_PEER_COUNT", "100")
-    env.setdefault("CL_IP_ADDRESS", "127.0.0.1")
-    env.setdefault("JWTSECRET_PATH", "/tmp/jwt.hex")
-    env.setdefault("GRAFFITI", "test")
-    env.setdefault("FEE_RECIPIENT_ADDRESS", "0xDEAD")
-    env.setdefault("MEV_MIN_BID", "0.006")
-    if env_extra:
-        env.update(env_extra)
-
-    cmd = [
-        sys.executable, DEPLOY_NODE,
-        "--skip_prompts", "true",
-        "--network", "sepolia",
-        *extra_args,
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
-    return result
-
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Unit: PREDEFINED_COMBOS mapping
+# PREDEFINED_COMBOS
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestPredefinedCombos:
-    def test_all_combos_present(self):
-        assert "Nimbus-Nethermind" in PREDEFINED_COMBOS
-        assert "Lodestar-Besu" in PREDEFINED_COMBOS
-        assert "Teku-Besu" in PREDEFINED_COMBOS
-        assert "Lighthouse-Reth" in PREDEFINED_COMBOS
-        assert "Caplin-Erigon" in PREDEFINED_COMBOS
+    def test_lighthouse_reth_maps_to_correct_ec_cc(self):
+        ec, cc = PREDEFINED_COMBOS["Lighthouse-Reth"]
+        assert ec == "Reth"
+        assert cc == "Lighthouse"
 
-    def test_combo_values(self):
-        assert PREDEFINED_COMBOS["Nimbus-Nethermind"] == ("Nethermind", "Nimbus")
-        assert PREDEFINED_COMBOS["Lighthouse-Reth"] == ("Reth", "Lighthouse")
-        assert PREDEFINED_COMBOS["Caplin-Erigon"] == ("Erigon", "Caplin")
-        assert PREDEFINED_COMBOS["Lodestar-Besu"] == ("Besu", "Lodestar")
-        assert PREDEFINED_COMBOS["Teku-Besu"] == ("Besu", "Teku")
+    def test_caplin_erigon_maps_to_erigon_caplin(self):
+        ec, cc = PREDEFINED_COMBOS["Caplin-Erigon"]
+        assert ec == "Erigon"
+        assert cc == "Caplin"
 
-    def test_no_deleted_combos_remain(self):
-        """Verify old combo scripts are referenced only through PREDEFINED_COMBOS."""
-        for name in PREDEFINED_COMBOS:
-            ec, cc = PREDEFINED_COMBOS[name]
-            assert ec in ["Besu", "Nethermind", "Reth", "Erigon"]
-            assert cc in ["Nimbus", "Lighthouse", "Teku", "Lodestar", "Caplin"]
+    def test_nimbus_nethermind_maps_correctly(self):
+        ec, cc = PREDEFINED_COMBOS["Nimbus-Nethermind"]
+        assert ec == "Nethermind"
+        assert cc == "Nimbus"
+
+    def test_lodestar_besu_maps_correctly(self):
+        ec, cc = PREDEFINED_COMBOS["Lodestar-Besu"]
+        assert ec == "Besu"
+        assert cc == "Lodestar"
+
+    def test_teku_besu_maps_correctly(self):
+        ec, cc = PREDEFINED_COMBOS["Teku-Besu"]
+        assert ec == "Besu"
+        assert cc == "Teku"
+
+    def test_all_combo_ecs_are_valid(self):
+        for name, (ec, cc) in PREDEFINED_COMBOS.items():
+            assert ec in EXECUTION_CLIENTS, f"{name}: EC '{ec}' not in EXECUTION_CLIENTS"
+
+    def test_all_combo_ccs_are_valid(self):
+        valid_cc = CONSENSUS_CLIENTS + ["Caplin"]
+        for name, (ec, cc) in PREDEFINED_COMBOS.items():
+            assert cc in valid_cc, f"{name}: CC '{cc}' not in valid CC list"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Unit: Menu helpers
+# resolve_role_flags
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestResolveRoleFlags:
+    def test_solo_staking_enables_mev_and_validator(self):
+        flags = resolve_role_flags("Solo Staking Node", "mainnet")
+        assert flags["mevboost"] is True
+        assert flags["validator"] is True
+        assert flags["validator_only"] is False
+        assert flags["node_only"] is False
+
+    def test_lido_csm_staking_enables_mev_and_validator(self):
+        flags = resolve_role_flags("Lido CSM Staking Node", "mainnet")
+        assert flags["mevboost"] is True
+        assert flags["validator"] is True
+        assert flags["validator_only"] is False
+        assert flags["node_only"] is False
+
+    def test_full_node_only_sets_node_only_no_validator_no_mev(self):
+        flags = resolve_role_flags("Full Node Only", "mainnet")
+        assert flags["node_only"] is True
+        assert flags["validator"] is False
+        assert flags["mevboost"] is False
+        assert flags["validator_only"] is False
+
+    def test_validator_client_only_sets_all_three_flags(self):
+        flags = resolve_role_flags("Validator Client Only", "mainnet")
+        assert flags["validator_only"] is True
+        assert flags["validator"] is True
+        assert flags["mevboost"] is True
+        assert flags["node_only"] is False
+
+    def test_lido_csm_vc_only_sets_all_three_flags(self):
+        flags = resolve_role_flags("Lido CSM Validator Client Only", "mainnet")
+        assert flags["validator_only"] is True
+        assert flags["validator"] is True
+        assert flags["mevboost"] is True
+
+    def test_failover_enables_mev_but_no_validator(self):
+        flags = resolve_role_flags("Failover Staking Node", "mainnet")
+        assert flags["mevboost"] is True
+        assert flags["validator"] is False
+        assert flags["validator_only"] is False
+        assert flags["node_only"] is False
+
+    def test_custom_returns_all_false_flags(self):
+        # Custom role should not pre-set any flags; user configures them
+        flags = resolve_role_flags("Custom", "mainnet")
+        assert flags["mevboost"] is False
+        assert flags["validator"] is False
+        assert flags["validator_only"] is False
+        assert flags["node_only"] is False
+
+    @pytest.mark.parametrize("network", ["mainnet", "holesky", "hoodi", "sepolia", "ephemery"])
+    def test_solo_staking_flags_are_network_independent(self, network):
+        flags = resolve_role_flags("Solo Staking Node", network)
+        assert flags["mevboost"] is True
+        assert flags["validator"] is True
+
+    def test_all_roles_return_complete_flag_dict(self):
+        required_keys = {"mevboost", "validator", "validator_only", "node_only"}
+        for role in VALID_ROLES:
+            flags = resolve_role_flags(role, "mainnet")
+            assert required_keys == set(flags.keys()), f"Missing keys for role '{role}'"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# apply_csm_overrides
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestApplyCsmOverrides:
+    def _env(self, **kwargs):
+        defaults = {
+            "MEV_MIN_BID": "0.006",
+            "CSM_GRAFFITI": "CSMGraffiti",
+            "CSM_MEV_MIN_BID": "0",
+            "CSM_FEE_RECIPIENT_ADDRESS_MAINNET": "0xCSMmainnet",
+            "CSM_FEE_RECIPIENT_ADDRESS_HOLESKY": "0xCSMholesky",
+            "CSM_FEE_RECIPIENT_ADDRESS_HOODI": "0xCSMhoodi",
+        }
+        defaults.update(kwargs)
+        return defaults
+
+    def test_non_csm_role_does_not_override_anything(self):
+        env = self._env()
+        fee, graffiti, mev = apply_csm_overrides(
+            "Solo Staking Node", "mainnet", env, "0xOriginal", "MyGraffiti"
+        )
+        assert fee == "0xOriginal"
+        assert graffiti == "MyGraffiti"
+        assert mev == "0.006"
+
+    def test_csm_staking_node_overrides_graffiti(self):
+        env = self._env()
+        _, graffiti, _ = apply_csm_overrides(
+            "Lido CSM Staking Node", "mainnet", env, "0xOriginal", "MyGraffiti"
+        )
+        assert graffiti == "CSMGraffiti"
+
+    def test_csm_staking_node_overrides_mev_min_bid(self):
+        env = self._env()
+        _, _, mev = apply_csm_overrides(
+            "Lido CSM Staking Node", "mainnet", env, "0xOriginal", "MyGraffiti"
+        )
+        assert mev == "0"
+
+    def test_csm_mainnet_uses_mainnet_fee_recipient(self):
+        env = self._env()
+        fee, _, _ = apply_csm_overrides(
+            "Lido CSM Staking Node", "mainnet", env, "0xOriginal", "MyGraffiti"
+        )
+        assert fee == "0xCSMmainnet"
+
+    def test_csm_holesky_uses_holesky_fee_recipient(self):
+        env = self._env()
+        fee, _, _ = apply_csm_overrides(
+            "Lido CSM Staking Node", "holesky", env, "0xOriginal", "MyGraffiti"
+        )
+        assert fee == "0xCSMholesky"
+
+    def test_csm_hoodi_uses_hoodi_fee_recipient(self):
+        env = self._env()
+        fee, _, _ = apply_csm_overrides(
+            "Lido CSM Staking Node", "hoodi", env, "0xOriginal", "MyGraffiti"
+        )
+        assert fee == "0xCSMhoodi"
+
+    def test_csm_unknown_network_does_not_change_fee_recipient(self):
+        env = self._env()
+        fee, _, _ = apply_csm_overrides(
+            "Lido CSM Staking Node", "sepolia", env, "0xOriginal", "MyGraffiti"
+        )
+        assert fee == "0xOriginal"
+
+    def test_csm_vc_only_also_applies_overrides(self):
+        env = self._env()
+        fee, graffiti, mev = apply_csm_overrides(
+            "Lido CSM Validator Client Only", "holesky", env, "0xOriginal", "MyGraffiti"
+        )
+        assert fee == "0xCSMholesky"
+        assert graffiti == "CSMGraffiti"
+        assert mev == "0"
+
+    def test_missing_csm_env_var_falls_back_to_current_value(self):
+        # No CSM keys at all in env
+        env = {"MEV_MIN_BID": "0.006"}
+        fee, graffiti, mev = apply_csm_overrides(
+            "Lido CSM Staking Node", "mainnet", env, "0xOriginal", "MyGraffiti"
+        )
+        assert fee == "0xOriginal"
+        assert graffiti == "MyGraffiti"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Menu helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestMenuHelpers:
-    def test_combo_menu_is_list_of_strings(self):
+    def test_get_combo_menu_returns_all_predefined_combo_names(self):
         menu = get_combo_menu()
-        assert isinstance(menu, list)
-        assert all(isinstance(item, str) for item in menu)
-        assert len(menu) == 5
+        assert set(menu) == set(PREDEFINED_COMBOS.keys())
 
-    def test_vc_menu_has_four_entries(self):
-        assert get_vc_menu() == ["Lighthouse", "Nimbus", "Teku", "Lodestar"]
+    def test_get_combo_menu_is_a_list(self):
+        assert isinstance(get_combo_menu(), list)
 
-    def test_ec_menu_includes_all_four_ecs(self):
-        menu = get_ec_menu()
-        for ec in ["Besu", "Nethermind", "Reth", "Erigon"]:
-            assert ec in menu
+    def test_get_vc_menu_returns_all_four_consensus_clients(self):
+        assert set(get_vc_menu()) == {"Lighthouse", "Nimbus", "Teku", "Lodestar"}
 
-    def test_cc_menu_no_caplin_for_non_erigon(self):
+    def test_get_vc_menu_does_not_include_caplin(self):
+        assert "Caplin" not in get_vc_menu()
+        assert "Caplin (integrated)" not in get_vc_menu()
+
+    def test_get_ec_menu_returns_all_four_execution_clients(self):
+        assert set(get_ec_menu()) == {"Besu", "Nethermind", "Reth", "Erigon"}
+
+    def test_get_cc_menu_excludes_caplin_for_non_erigon(self):
         for ec in ["Besu", "Nethermind", "Reth"]:
             menu = get_cc_menu(ec)
             assert "Caplin (integrated)" not in menu
             assert "Caplin" not in menu
 
-    def test_cc_menu_caplin_only_for_erigon(self):
+    def test_get_cc_menu_includes_caplin_integrated_for_erigon(self):
         menu = get_cc_menu("Erigon")
         assert "Caplin (integrated)" in menu
 
-    def test_vc_options_same_as_cc_available_for_standard_ccs(self):
-        for cc in ["Lighthouse", "Nimbus", "Teku", "Lodestar"]:
+    def test_get_cc_menu_for_erigon_still_includes_standard_clients(self):
+        menu = get_cc_menu("Erigon")
+        for cc in CONSENSUS_CLIENTS:
+            assert cc in menu
+
+    def test_get_vc_options_for_caplin_returns_standard_ccs_only(self):
+        for caplin in ["Caplin", "Caplin (integrated)"]:
+            opts = get_vc_options_for_cc(caplin)
+            assert "Same as CC" not in opts
+            assert set(opts) == set(CONSENSUS_CLIENTS)
+
+    def test_get_vc_options_for_standard_cc_includes_same_as_cc(self):
+        for cc in CONSENSUS_CLIENTS:
             opts = get_vc_options_for_cc(cc)
             assert opts[0] == "Same as CC"
-            assert cc in opts
 
-    def test_vc_options_no_same_as_cc_for_caplin(self):
-        for caplin_name in ["Caplin", "Caplin (integrated)"]:
-            opts = get_vc_options_for_cc(caplin_name)
-            assert "Same as CC" not in opts
-            # Should still offer all 4 standard CCs as VC options
-            for cc in ["Lighthouse", "Nimbus", "Teku", "Lodestar"]:
-                assert cc in opts
-
-    def test_resolve_vc_name_same_as_cc(self):
-        assert resolve_vc_name("Nimbus", "Same as CC") == "Nimbus"
-        assert resolve_vc_name("Lighthouse", "Same as CC") == "Lighthouse"
-
-    def test_resolve_vc_name_explicit(self):
-        assert resolve_vc_name("Teku", "Lighthouse") == "Lighthouse"
-        assert resolve_vc_name("Nimbus", "Teku") == "Teku"
+    def test_get_vc_options_for_standard_cc_includes_all_four_clients(self):
+        for cc in CONSENSUS_CLIENTS:
+            opts = get_vc_options_for_cc(cc)
+            for client in CONSENSUS_CLIENTS:
+                assert client in opts
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Unit: is_valid_combination
+# resolve_vc_name
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestResolveVcName:
+    @pytest.mark.parametrize("cc", ["Lighthouse", "Nimbus", "Teku", "Lodestar"])
+    def test_same_as_cc_returns_the_cc_name(self, cc):
+        assert resolve_vc_name(cc, "Same as CC") == cc
+
+    def test_explicit_vc_different_from_cc_is_returned(self):
+        assert resolve_vc_name("Teku", "Lighthouse") == "Lighthouse"
+        assert resolve_vc_name("Nimbus", "Lodestar") == "Lodestar"
+
+    def test_explicit_vc_same_as_cc_is_returned_directly(self):
+        assert resolve_vc_name("Lighthouse", "Lighthouse") == "Lighthouse"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# is_valid_combination
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestIsValidCombination:
@@ -162,230 +312,220 @@ class TestIsValidCombination:
         ("Erigon", "Caplin"),
         ("Erigon", "Lighthouse"),
         ("Erigon", "Nimbus"),
+        ("Erigon", "Teku"),
+        ("Erigon", "Lodestar"),
         ("Besu", "Lighthouse"),
+        ("Besu", "Nimbus"),
+        ("Besu", "Teku"),
+        ("Besu", "Lodestar"),
+        ("Reth", "Lighthouse"),
         ("Reth", "Nimbus"),
         ("Nethermind", "Teku"),
+        ("Nethermind", "Lodestar"),
     ])
-    def test_valid_pairs(self, ec, cc):
+    def test_valid_pairs_return_true(self, ec, cc):
         assert is_valid_combination(ec, cc) is True
 
     @pytest.mark.parametrize("ec,cc", [
         ("Besu", "Caplin"),
         ("Reth", "Caplin"),
         ("Nethermind", "Caplin"),
+        ("Besu", "Caplin (integrated)"),
         ("InvalidEC", "Lighthouse"),
+        ("Besu", "InvalidCC"),
+        ("", ""),
     ])
-    def test_invalid_pairs(self, ec, cc):
+    def test_invalid_pairs_return_false(self, ec, cc):
         assert is_valid_combination(ec, cc) is False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Unit: VALID_ROLES list
+# run_install — routing logic (mocked system calls)
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestValidRoles:
-    def test_all_roles_present(self):
-        required = [
-            "Solo Staking Node",
-            "Full Node Only",
-            "Lido CSM Staking Node",
-            "Lido CSM Validator Client Only",
-            "Validator Client Only",
-            "Failover Staking Node",
-            "Custom",
-        ]
-        for r in required:
-            assert r in VALID_ROLES
+MOCK_PARAMS = {
+    'fee_recipient': '0xDEAD',
+    'graffiti': 'test',
+    'bn_address': '',
+    'jwtsecret_path': '/tmp/jwt.hex',
+    'sync_url': 'https://sync.example.com',
+    'el_p2p_port': 30303,
+    'el_p2p_port_2': 30304,
+    'el_rpc_port': 8545,
+    'el_max_peers': 50,
+    'cl_p2p_port': 9000,
+    'cl_p2p_port_2': 9001,
+    'cl_rest_port': 5052,
+    'cl_max_peers': 100,
+    'mev_min_bid': '0.006',
+    'skip_prompts': 'true',
+}
 
-    def test_custom_is_last(self):
-        assert VALID_ROLES[-1] == "Custom"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Integration: CLI routing via subprocess
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestDeployNodeCLI:
-    """
-    Invoke deploy-node.py with --skip_prompts true.
-    We intercept run_install via an environment toggle checked in a
-    sitecustomize-style mock module added to PYTHONPATH, or we simply
-    verify exit codes and that no unexpected errors appear.
-
-    Because run_install does real system calls, we patch it through env.
-    The cleanest approach: patch via subprocess + sitecustomize.
-    Since that's complex, we instead verify argparse-level failures
-    (bad choices) and successes (valid args produce a non-parse-error exit).
-    """
-
-    def test_invalid_install_config_rejected(self):
-        result = run_deploy_node("--install_config", "Not A Real Role")
-        assert result.returncode != 0
-        assert "invalid choice" in result.stderr.lower() or "error" in result.stderr.lower()
-
-    def test_invalid_network_still_accepted_as_string(self):
-        """network is a free-form string; argparse shouldn't reject it."""
-        # We can't run the full install, but we want to ensure no argparse error
-        # The script will fail inside run_install, not at arg parsing
-        result = run_deploy_node("--install_config", "Full Node Only", "--network", "holesky")
-        # returncode nonzero is expected (install fails without real system),
-        # but the error should NOT be an argparse error
-        assert "invalid choice" not in result.stderr
-
-    def test_combo_flag_resolves_ec_cc(self):
-        """
-        With --combo Lighthouse-Reth, PREDEFINED_COMBOS lookup must produce
-        Reth as EC and Lighthouse as CC. Validate mapping is correct.
-        """
-        ec, cc = PREDEFINED_COMBOS.get("Lighthouse-Reth", (None, None))
-        assert ec == "Reth"
-        assert cc == "Lighthouse"
-
-    def test_combo_flag_caplin_erigon(self):
-        ec, cc = PREDEFINED_COMBOS.get("Caplin-Erigon", (None, None))
-        assert ec == "Erigon"
-        assert cc == "Caplin"
-
-    def test_vc_only_role_sets_validator_only_flag(self):
-        flags = resolve_role_flags("Validator Client Only", "mainnet")
-        assert flags["validator_only"] is True
-        assert flags["validator"] is True
-        assert flags["node_only"] is False
-
-    def test_csm_vc_only_role_sets_validator_only_flag(self):
-        flags = resolve_role_flags("Lido CSM Validator Client Only", "mainnet")
-        assert flags["validator_only"] is True
-        assert flags["validator"] is True
-
-    def test_full_node_only_role_no_validator(self):
-        flags = resolve_role_flags("Full Node Only", "mainnet")
-        assert flags["node_only"] is True
-        assert flags["validator"] is False
-        assert flags["mevboost"] is False
-
-    def test_failover_no_validator(self):
-        flags = resolve_role_flags("Failover Staking Node", "mainnet")
-        assert flags["validator"] is False
-        assert flags["mevboost"] is True
-        assert flags["validator_only"] is False
-
-    def test_solo_staking_has_all_flags(self):
-        flags = resolve_role_flags("Solo Staking Node", "mainnet")
-        assert flags["mevboost"] is True
-        assert flags["validator"] is True
-        assert flags["validator_only"] is False
-        assert flags["node_only"] is False
-
-    @pytest.mark.parametrize("role", [
-        "Solo Staking Node",
-        "Lido CSM Staking Node",
-    ])
-    def test_staking_roles_have_mev_and_validator(self, role):
-        flags = resolve_role_flags(role, "mainnet")
-        assert flags["mevboost"] is True
-        assert flags["validator"] is True
-
-    @pytest.mark.parametrize("network", ["mainnet", "holesky", "hoodi", "sepolia", "ephemery"])
-    def test_all_networks_resolve_same_flags(self, network):
-        """Network should not change Solo Staking Node flags."""
-        flags = resolve_role_flags("Solo Staking Node", network)
-        assert flags["mevboost"] is True
-        assert flags["validator"] is True
+MOCK_ENV = {'CL_IP_ADDRESS': '127.0.0.1', 'MEV_MIN_BID': '0.006'}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Unit: deploy-node.py fee address override logic
-# ─────────────────────────────────────────────────────────────────────────────
+def _run(role, ec, cc, vc, flags_override=None):
+    """Helper: call run_install with all external calls mocked out."""
+    flags = resolve_role_flags(role, "mainnet")
+    if flags_override:
+        flags.update(flags_override)
 
-class TestFeeAddressRouting:
-    def test_fee_address_arg_overrides_env(self):
-        """
-        When --fee_address is provided it should override FEE_RECIPIENT_ADDRESS.
-        We test the logic directly since it's a simple assignment.
-        """
-        FEE_RECIPIENT_ADDRESS = "0xfromenv"
-        fee_address_arg = "0xfromarg"
-        # Simulate deploy-node.py logic
-        if fee_address_arg:
-            FEE_RECIPIENT_ADDRESS = fee_address_arg
-        assert FEE_RECIPIENT_ADDRESS == "0xfromarg"
+    # Patch everything that touches the filesystem or network
+    with patch('deploy.common.setup_node'), \
+         patch('deploy.common.finish_install'), \
+         patch('deploy.mevboost.install_mevboost', return_value=('v1', '/path/mevboost')), \
+         patch('deploy.besu.download_and_install_besu', return_value=('v1', '/path/besu')) as mock_besu, \
+         patch('deploy.nethermind.download_and_install_nethermind', return_value=('v1', '/path/nethermind')) as mock_nethermind, \
+         patch('deploy.reth.download_and_install_reth', return_value=('v1', '/path/reth')) as mock_reth, \
+         patch('deploy.erigon.download_and_install_erigon', return_value=('v1', '/path/erigon')) as mock_erigon_integrated, \
+         patch('deploy.erigon.download_and_install_erigon_standalone', return_value=('v1', '/path/erigon_standalone')) as mock_erigon_standalone, \
+         patch('deploy.lighthouse.download_lighthouse', return_value='v8'), \
+         patch('deploy.lighthouse.install_lighthouse_bn', return_value='/path/lighthouse') as mock_lh_bn, \
+         patch('deploy.lighthouse.install_lighthouse_vc', return_value='/path/lh_vc') as mock_lh_vc, \
+         patch('deploy.nimbus.download_nimbus', return_value='v24'), \
+         patch('deploy.nimbus.install_nimbus_bn', return_value='/path/nimbus') as mock_nb_bn, \
+         patch('deploy.nimbus.install_nimbus_vc', return_value='/path/nb_vc') as mock_nb_vc, \
+         patch('deploy.teku.download_teku', return_value='v24'), \
+         patch('deploy.teku.install_teku_bn', return_value='/path/teku') as mock_tk_bn, \
+         patch('deploy.teku.install_teku_vc', return_value='/path/tk_vc') as mock_tk_vc, \
+         patch('deploy.lodestar.download_lodestar', return_value='v1'), \
+         patch('deploy.lodestar.install_lodestar_bn', return_value='/path/lodestar') as mock_ls_bn, \
+         patch('deploy.lodestar.install_lodestar_vc', return_value='/path/ls_vc') as mock_ls_vc:
 
-    def test_no_fee_address_arg_keeps_env(self):
-        FEE_RECIPIENT_ADDRESS = "0xfromenv"
-        fee_address_arg = ""
-        if fee_address_arg:
-            FEE_RECIPIENT_ADDRESS = fee_address_arg
-        assert FEE_RECIPIENT_ADDRESS == "0xfromenv"
+        run_install(role, "mainnet", ec, cc, vc, flags, MOCK_PARAMS.copy(), MOCK_ENV.copy())
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Unit: Custom path EC/CC/VC flag handling
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestCustomPathFlagHandling:
-    def test_with_validator_flag_sets_vc_to_cc(self):
-        """When --with_validator and no --vc, vc_name defaults to cc_name."""
-        cc_name = "Lighthouse"
-        vc_arg = ""
-        with_validator = True
-        vc_name = vc_arg if vc_arg else cc_name if with_validator else None
-        assert vc_name == "Lighthouse"
-
-    def test_vc_arg_takes_precedence_over_cc(self):
-        cc_name = "Lighthouse"
-        vc_arg = "Nimbus"
-        with_validator = True
-        vc_name = vc_arg if vc_arg else cc_name if with_validator else None
-        assert vc_name == "Nimbus"
-
-    def test_no_validator_gives_none_vc(self):
-        cc_name = "Lighthouse"
-        vc_arg = ""
-        with_validator = False
-        vc_name = vc_arg if vc_arg else cc_name if with_validator else None
-        assert vc_name is None
-
-    def test_with_mevboost_flag(self):
-        """Simulates the --with_mevboost flag path in custom mode."""
-        flags = {"mevboost": False}
-        with_mevboost = True
-        flags["mevboost"] = with_mevboost
-        assert flags["mevboost"] is True
-
-    def test_erigon_with_non_caplin_cc_uses_standalone(self):
-        """
-        If EC=Erigon and CC is NOT Caplin, deploy-node.py should route to
-        erigon.download_and_install_erigon_standalone. We test the routing
-        condition directly.
-        """
-        ec_name = "Erigon"
-        cc_name = "Lighthouse"
-        uses_standalone = (ec_name == "Erigon" and cc_name not in ["Caplin", "Caplin (integrated)"])
-        assert uses_standalone is True
-
-    def test_erigon_with_caplin_uses_integrated(self):
-        ec_name = "Erigon"
-        for caplin in ["Caplin", "Caplin (integrated)"]:
-            uses_integrated = (ec_name == "Erigon" and caplin in ["Caplin", "Caplin (integrated)"])
-            assert uses_integrated is True
+        return {
+            'besu': mock_besu,
+            'nethermind': mock_nethermind,
+            'reth': mock_reth,
+            'erigon_integrated': mock_erigon_integrated,
+            'erigon_standalone': mock_erigon_standalone,
+            'lh_bn': mock_lh_bn, 'lh_vc': mock_lh_vc,
+            'nb_bn': mock_nb_bn, 'nb_vc': mock_nb_vc,
+            'tk_bn': mock_tk_bn, 'tk_vc': mock_tk_vc,
+            'ls_bn': mock_ls_bn, 'ls_vc': mock_ls_vc,
+        }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Unit: Sync URL logic
-# ─────────────────────────────────────────────────────────────────────────────
+class TestRunInstallRouting:
+    """Verify that run_install calls the correct client install functions."""
 
-class TestSyncUrlLogic:
-    def test_vc_only_uses_first_sync_url(self):
-        """
-        In VC-only mode with skip_prompts, deploy-node.py should pick
-        sync_urls_list[0][1] without prompting.
-        """
-        sync_urls_list = [("Provider A", "https://sync.a.example"), ("Provider B", "https://sync.b.example")]
-        # Simulate the skip_prompts=True path
-        sync_url = sync_urls_list[0][1] if sync_urls_list else ""
-        assert sync_url == "https://sync.a.example"
+    # ── Execution client routing ─────────────────────────────────────────────
 
-    def test_empty_sync_urls_gives_empty_string(self):
-        sync_urls_list = []
-        sync_url = sync_urls_list[0][1] if sync_urls_list else ""
-        assert sync_url == ""
+    def test_reth_ec_calls_reth_installer(self):
+        mocks = _run("Full Node Only", "Reth", "Lighthouse", None, {"node_only": True, "validator": False, "mevboost": False})
+        mocks['reth'].assert_called_once()
+
+    def test_besu_ec_calls_besu_installer(self):
+        mocks = _run("Full Node Only", "Besu", "Lighthouse", None, {"node_only": True, "validator": False, "mevboost": False})
+        mocks['besu'].assert_called_once()
+
+    def test_nethermind_ec_calls_nethermind_installer(self):
+        mocks = _run("Full Node Only", "Nethermind", "Lighthouse", None, {"node_only": True, "validator": False, "mevboost": False})
+        mocks['nethermind'].assert_called_once()
+
+    def test_erigon_with_caplin_calls_integrated_installer(self):
+        mocks = _run("Full Node Only", "Erigon", "Caplin", None, {"node_only": True, "validator": False, "mevboost": False})
+        mocks['erigon_integrated'].assert_called_once()
+        mocks['erigon_standalone'].assert_not_called()
+
+    def test_erigon_with_lighthouse_calls_standalone_installer(self):
+        mocks = _run("Full Node Only", "Erigon", "Lighthouse", None, {"node_only": False, "validator": False, "mevboost": False})
+        mocks['erigon_standalone'].assert_called_once()
+        mocks['erigon_integrated'].assert_not_called()
+
+    def test_erigon_with_nimbus_calls_standalone_installer(self):
+        mocks = _run("Full Node Only", "Erigon", "Nimbus", None, {"node_only": False, "validator": False, "mevboost": False})
+        mocks['erigon_standalone'].assert_called_once()
+        mocks['erigon_integrated'].assert_not_called()
+
+    def test_erigon_with_teku_calls_standalone_installer(self):
+        mocks = _run("Full Node Only", "Erigon", "Teku", None, {"node_only": False, "validator": False, "mevboost": False})
+        mocks['erigon_standalone'].assert_called_once()
+        mocks['erigon_integrated'].assert_not_called()
+
+    # ── Consensus client routing ─────────────────────────────────────────────
+
+    def test_lighthouse_cc_calls_lighthouse_bn_installer(self):
+        mocks = _run("Full Node Only", "Reth", "Lighthouse", None, {"node_only": False, "validator": False, "mevboost": False})
+        mocks['lh_bn'].assert_called_once()
+
+    def test_nimbus_cc_calls_nimbus_bn_installer(self):
+        mocks = _run("Full Node Only", "Reth", "Nimbus", None, {"node_only": False, "validator": False, "mevboost": False})
+        mocks['nb_bn'].assert_called_once()
+
+    def test_teku_cc_calls_teku_bn_installer(self):
+        mocks = _run("Full Node Only", "Reth", "Teku", None, {"node_only": False, "validator": False, "mevboost": False})
+        mocks['tk_bn'].assert_called_once()
+
+    def test_lodestar_cc_calls_lodestar_bn_installer(self):
+        mocks = _run("Full Node Only", "Reth", "Lodestar", None, {"node_only": False, "validator": False, "mevboost": False})
+        mocks['ls_bn'].assert_called_once()
+
+    def test_caplin_cc_does_not_call_separate_cc_installer(self):
+        mocks = _run("Full Node Only", "Erigon", "Caplin", None, {"node_only": False, "validator": False, "mevboost": False})
+        mocks['lh_bn'].assert_not_called()
+        mocks['nb_bn'].assert_not_called()
+        mocks['tk_bn'].assert_not_called()
+        mocks['ls_bn'].assert_not_called()
+
+    # ── Validator client routing ─────────────────────────────────────────────
+
+    def test_lighthouse_vc_calls_lighthouse_vc_installer(self):
+        mocks = _run("Solo Staking Node", "Reth", "Lighthouse", "Lighthouse")
+        mocks['lh_vc'].assert_called_once()
+
+    def test_nimbus_vc_calls_nimbus_vc_installer(self):
+        mocks = _run("Solo Staking Node", "Reth", "Nimbus", "Nimbus")
+        mocks['nb_vc'].assert_called_once()
+
+    def test_teku_vc_calls_teku_vc_installer(self):
+        mocks = _run("Solo Staking Node", "Reth", "Teku", "Teku")
+        mocks['tk_vc'].assert_called_once()
+
+    def test_lodestar_vc_calls_lodestar_vc_installer(self):
+        mocks = _run("Solo Staking Node", "Reth", "Lodestar", "Lodestar")
+        mocks['ls_vc'].assert_called_once()
+
+    def test_mixed_vc_different_from_cc_calls_correct_vc(self):
+        # Teku CC + Lighthouse VC — a custom combo
+        mocks = _run("Solo Staking Node", "Reth", "Teku", "Lighthouse")
+        mocks['lh_vc'].assert_called_once()
+        mocks['tk_vc'].assert_not_called()
+
+    def test_full_node_does_not_call_any_vc_installer(self):
+        mocks = _run("Full Node Only", "Reth", "Lighthouse", None, {"node_only": True, "validator": False, "mevboost": False})
+        mocks['lh_vc'].assert_not_called()
+        mocks['nb_vc'].assert_not_called()
+        mocks['tk_vc'].assert_not_called()
+        mocks['ls_vc'].assert_not_called()
+
+    def test_failover_does_not_call_any_vc_installer(self):
+        # Failover: mevboost=True, validator=False
+        mocks = _run("Failover Staking Node", "Reth", "Lighthouse", None)
+        mocks['lh_vc'].assert_not_called()
+
+    # ── MEV-Boost routing ────────────────────────────────────────────────────
+
+    def test_solo_staking_installs_mevboost(self):
+        with patch('deploy.common.setup_node'), \
+             patch('deploy.common.finish_install'), \
+             patch('deploy.mevboost.install_mevboost', return_value=('v1', '/path')) as mock_mev, \
+             patch('deploy.reth.download_and_install_reth', return_value=('v1', '/path')), \
+             patch('deploy.lighthouse.download_lighthouse', return_value='v8'), \
+             patch('deploy.lighthouse.install_lighthouse_bn', return_value='/path'), \
+             patch('deploy.lighthouse.install_lighthouse_vc', return_value='/path'):
+            flags = resolve_role_flags("Solo Staking Node", "mainnet")
+            run_install("Solo Staking Node", "mainnet", "Reth", "Lighthouse", "Lighthouse", flags, MOCK_PARAMS.copy(), MOCK_ENV.copy())
+            mock_mev.assert_called_once()
+
+    def test_full_node_does_not_install_mevboost(self):
+        with patch('deploy.common.setup_node'), \
+             patch('deploy.common.finish_install'), \
+             patch('deploy.mevboost.install_mevboost', return_value=('v1', '/path')) as mock_mev, \
+             patch('deploy.reth.download_and_install_reth', return_value=('v1', '/path')), \
+             patch('deploy.lighthouse.download_lighthouse', return_value='v8'), \
+             patch('deploy.lighthouse.install_lighthouse_bn', return_value='/path'):
+            flags = resolve_role_flags("Full Node Only", "mainnet")
+            run_install("Full Node Only", "mainnet", "Reth", "Lighthouse", None, flags, MOCK_PARAMS.copy(), MOCK_ENV.copy())
+            mock_mev.assert_not_called()

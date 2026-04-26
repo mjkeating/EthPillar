@@ -1,320 +1,248 @@
 """
-Tests for deploy orchestration — Tier 2 mocked system call tests.
+Tests for deploy/common.py
 
-These tests mock subprocess.run, os.system, requests.get, etc. to verify
-that install/download functions make the correct system calls without
-actually executing them.
+All tests call real functions imported from common.py.
+No inline logic is reimplemented here.
 """
 import sys
 import os
 import pytest
-from unittest.mock import patch, MagicMock, call, mock_open
+from unittest.mock import patch, MagicMock, mock_open, call
 
-# Mock consolemenu before it's imported by deploy modules
+# Silence consolemenu on import
 sys.modules["consolemenu"] = MagicMock()
 sys.modules["consolemenu.items"] = MagicMock()
 sys.modules["consolemenu.format"] = MagicMock()
 sys.modules["consolemenu.menu_component"] = MagicMock()
 sys.modules["consolemenu.screen"] = MagicMock()
 
-
-# Ensure the project root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from deploy.service_generators import (
-    generate_mevboost_service,
-    generate_besu_service,
+from deploy.common import (
+    is_valid_eth_address,
+    validate_beacon_node_address,
+    get_machine_architecture,
+    get_raw_architecture,
+    network_type,
+    write_service_file,
+    setup_node,
 )
-from config import mainnet_relay_options
 
 
-# ═══════════════════════════════════════════════
-# Helper: Create a mock GitHub API response
-# ═══════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────────
+# is_valid_eth_address
+# ─────────────────────────────────────────────────────────────────────────────
 
-def make_github_release_response(tag_name, assets):
-    """Create a mock response object for GitHub releases API."""
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {
-        'tag_name': tag_name,
-        'assets': assets,
-    }
-    mock_resp.status_code = 200
-    return mock_resp
+class TestIsValidEthAddress:
+    @pytest.mark.parametrize("addr", [
+        "0x1234567890123456789012345678901234567890",
+        "0xabcdefABCDEF1234567890abcdef123456789012",
+        "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ])
+    def test_valid_addresses_return_true(self, addr):
+        assert is_valid_eth_address(addr) is True
 
-
-def make_download_response(content=b'binary_content'):
-    """Create a mock response for binary download."""
-    mock_resp = MagicMock()
-    mock_resp.headers = {'content-length': str(len(content))}
-    mock_resp.iter_content.return_value = [content]
-    mock_resp.raise_for_status.return_value = None
-    return mock_resp
-
-
-# ═══════════════════════════════════════════════
-# Test service file writing pattern
-# ═══════════════════════════════════════════════
-
-class TestServiceFileWriting:
-    """Test that the common pattern of writing service files works correctly.
-
-    All install functions follow the same pattern:
-    1. Generate service content string
-    2. Write to a temp file
-    3. sudo cp to /etc/systemd/system/
-    4. Remove temp file
-    """
-
-    @patch('builtins.open', new_callable=mock_open)
-    @patch('os.system')
-    @patch('os.remove')
-    def test_write_mevboost_service_file(self, mock_remove, mock_os_system, mock_file):
-        """Simulate writing the mev-boost service file."""
-        service_content = generate_mevboost_service("mainnet", "0.006", mainnet_relay_options)
-        temp_file = 'mev_boost_temp.service'
-        target_path = '/etc/systemd/system/mevboost.service'
-
-        # Write temp file
-        with open(temp_file, 'w') as f:
-            f.write(service_content)
-
-        # Copy to system path
-        os.system(f'sudo cp {temp_file} {target_path}')
-
-        # Remove temp
-        os.remove(temp_file)
-
-        # Verify
-        mock_file.assert_called_once_with(temp_file, 'w')
-        handle = mock_file()
-        handle.write.assert_called_once_with(service_content)
-        mock_os_system.assert_called_once_with(f'sudo cp {temp_file} {target_path}')
-        mock_remove.assert_called_once_with(temp_file)
-
-    @patch('builtins.open', new_callable=mock_open)
-    @patch('os.system')
-    @patch('os.remove')
-    def test_write_besu_service_file(self, mock_remove, mock_os_system, mock_file):
-        """Simulate writing the besu service file."""
-        service_content = generate_besu_service(
-            "mainnet", 30303, 8545, 50, '"/secrets/jwtsecret"'
-        )
-        temp_file = 'execution_temp.service'
-        target_path = '/etc/systemd/system/execution.service'
-
-        with open(temp_file, 'w') as f:
-            f.write(service_content)
-
-        os.system(f'sudo cp {temp_file} {target_path}')
-        os.remove(temp_file)
-
-        mock_file.assert_called_once_with(temp_file, 'w')
-        handle = mock_file()
-        handle.write.assert_called_once_with(service_content)
-        mock_os_system.assert_called_once_with(f'sudo cp {temp_file} {target_path}')
-        mock_remove.assert_called_once_with(temp_file)
+    @pytest.mark.parametrize("addr", [
+        "",                                              # empty
+        "0x123",                                         # too short
+        "1234567890123456789012345678901234567890",      # missing 0x prefix
+        "0x12345678901234567890123456789012345678901",   # too long (41 hex chars)
+        "0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",  # invalid hex chars
+        "0x 234567890123456789012345678901234567890",    # space in hex
+    ])
+    def test_invalid_addresses_return_false(self, addr):
+        assert is_valid_eth_address(addr) is False
 
 
-# ═══════════════════════════════════════════════
-# Test setup_node system calls
-# ═══════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────────
+# validate_beacon_node_address
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestValidateBeaconNodeAddress:
+    @pytest.mark.parametrize("url", [
+        "http://127.0.0.1:5052",
+        "http://192.168.1.100:5052",
+        "https://192.168.1.100:5052",
+        "ws://10.0.0.1:9000",
+        "http://0.0.0.0:5052",
+        "http://192.168.1.1",           # port is optional per the production regex
+    ])
+    def test_valid_beacon_urls_return_true(self, url):
+        assert validate_beacon_node_address(url) is True
+
+    @pytest.mark.parametrize("url", [
+        "",                             # empty
+        "http://localhost:5052",        # hostname not IP
+        "192.168.1.1:5052",            # missing scheme
+        "ftp://192.168.1.1:5052",      # wrong scheme
+        "http://999.999.999.999:5052", # invalid IP octets
+    ])
+    def test_invalid_beacon_urls_return_false(self, url):
+        assert validate_beacon_node_address(url) is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_machine_architecture
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetMachineArchitecture:
+    def test_x86_64_maps_to_amd64(self):
+        with patch('platform.machine', return_value='x86_64'):
+            assert get_machine_architecture() == 'amd64'
+
+    def test_aarch64_maps_to_arm64(self):
+        with patch('platform.machine', return_value='aarch64'):
+            assert get_machine_architecture() == 'arm64'
+
+    def test_unsupported_architecture_exits(self):
+        with patch('platform.machine', return_value='mips'):
+            with pytest.raises(SystemExit):
+                get_machine_architecture()
+
+    def test_get_raw_architecture_returns_platform_machine(self):
+        with patch('platform.machine', return_value='x86_64'):
+            assert get_raw_architecture() == 'x86_64'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# network_type
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestNetworkType:
+    @pytest.mark.parametrize("name,expected", [
+        ("mainnet", "MAINNET"),
+        ("MAINNET", "MAINNET"),
+        ("holesky", "HOLESKY"),
+        ("Holesky", "HOLESKY"),
+        ("hoodi", "HOODI"),
+        ("sepolia", "SEPOLIA"),
+        ("ephemery", "EPHEMERY"),
+    ])
+    def test_valid_networks_return_uppercase(self, name, expected):
+        assert network_type(name) == expected
+
+    @pytest.mark.parametrize("name", ["ropsten", "goerli", "invalid", ""])
+    def test_invalid_networks_raise_argument_type_error(self, name):
+        import argparse
+        with pytest.raises(argparse.ArgumentTypeError):
+            network_type(name)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# write_service_file
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestWriteServiceFile:
+    def test_writes_content_to_temp_file(self):
+        content = "[Unit]\nDescription=Test\n"
+        pid = os.getpid()
+        expected_temp = f"{pid}_test.service"
+
+        with patch('builtins.open', mock_open()) as mock_file, \
+             patch('os.system') as mock_system, \
+             patch('os.remove') as mock_remove:
+            write_service_file(content, '/etc/systemd/system/test.service', 'test.service')
+            mock_file.assert_called_once_with(expected_temp, 'w')
+            mock_file().write.assert_called_once_with(content)
+
+    def test_copies_temp_file_to_target_with_sudo(self):
+        content = "[Unit]\nDescription=Test\n"
+        pid = os.getpid()
+        expected_temp = f"{pid}_test.service"
+        target = '/etc/systemd/system/test.service'
+
+        with patch('builtins.open', mock_open()), \
+             patch('os.system') as mock_system, \
+             patch('os.remove'):
+            write_service_file(content, target, 'test.service')
+            mock_system.assert_called_once_with(f'sudo cp {expected_temp} {target}')
+
+    def test_removes_temp_file_after_copy(self):
+        content = "[Unit]\nDescription=Test\n"
+        pid = os.getpid()
+        expected_temp = f"{pid}_test.service"
+
+        with patch('builtins.open', mock_open()), \
+             patch('os.system'), \
+             patch('os.remove') as mock_remove:
+            write_service_file(content, '/etc/systemd/system/test.service', 'test.service')
+            mock_remove.assert_called_once_with(expected_temp)
+
+    def test_temp_filename_includes_pid_to_prevent_collisions(self):
+        """Two calls from different PIDs must produce different temp filenames."""
+        content = "[Unit]\nDescription=Test\n"
+        seen_names = set()
+
+        with patch('builtins.open', mock_open()) as mock_file, \
+             patch('os.system'), \
+             patch('os.remove'):
+            write_service_file(content, '/etc/systemd/system/test.service', 'test.service')
+            # The PID-prefixed temp name is always the same within this process
+            actual_temp = mock_file.call_args[0][0]
+            assert str(os.getpid()) in actual_temp
+
+    def test_missing_temp_file_on_remove_does_not_raise(self):
+        content = "[Unit]\nDescription=Test\n"
+        with patch('builtins.open', mock_open()), \
+             patch('os.system'), \
+             patch('os.remove', side_effect=FileNotFoundError):
+            # Should not raise
+            write_service_file(content, '/etc/systemd/system/test.service', 'test.service')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# setup_node
+# ─────────────────────────────────────────────────────────────────────────────
 
 class TestSetupNode:
-    """Test that setup_node makes the correct system calls."""
+    @patch('subprocess.run')
+    def test_full_node_creates_jwt_directory(self, mock_run):
+        setup_node('/secrets/jwtsecret', validator_only=False)
+        calls_as_str = [str(c) for c in mock_run.call_args_list]
+        assert any('mkdir -p' in s for s in calls_as_str)
 
     @patch('subprocess.run')
-    def test_setup_node_full_node(self, mock_run):
-        """setup_node for a full node should create JWT, update packages, install chrony."""
-        JWTSECRET_PATH = '"/secrets/jwtsecret"'
-        VALIDATOR_ONLY = False
+    def test_full_node_runs_openssl_to_generate_jwt(self, mock_run):
+        setup_node('/secrets/jwtsecret', validator_only=False)
+        calls_as_str = [str(c) for c in mock_run.call_args_list]
+        assert any('openssl' in s for s in calls_as_str)
 
-        # Simulate setup_node logic
-        if not VALIDATOR_ONLY:
-            import subprocess
-            subprocess.run([f'sudo mkdir -p $(dirname {JWTSECRET_PATH})'], shell=True)
-            rand_hex = subprocess.run(['openssl', 'rand', '-hex', '32'], stdout=subprocess.PIPE)
-            subprocess.run([f'sudo tee {JWTSECRET_PATH}'], input=rand_hex.stdout, stdout=subprocess.DEVNULL, shell=True)
+    @patch('subprocess.run')
+    def test_validator_only_skips_jwt_creation(self, mock_run):
+        setup_node('/secrets/jwtsecret', validator_only=True)
+        calls_as_str = [str(c) for c in mock_run.call_args_list]
+        assert not any('openssl' in s for s in calls_as_str)
+        assert not any('mkdir -p' in s for s in calls_as_str)
 
-        import subprocess
-        subprocess.run(['sudo', 'apt', '-y', '-qq', 'update'])
-        subprocess.run(['sudo', 'apt', '-y', '-qq', 'upgrade'])
-        subprocess.run(['sudo', 'apt', '-y', '-qq', 'autoremove'])
-        subprocess.run(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'])
+    @patch('subprocess.run')
+    def test_always_runs_apt_update(self, mock_run):
+        setup_node('/secrets/jwtsecret', validator_only=False)
+        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'update'])
 
-        # Should have JWT dir creation, openssl, tee, + 4 apt commands = 7 calls
+    @patch('subprocess.run')
+    def test_always_runs_apt_upgrade(self, mock_run):
+        setup_node('/secrets/jwtsecret', validator_only=False)
+        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'upgrade'])
+
+    @patch('subprocess.run')
+    def test_always_installs_chrony(self, mock_run):
+        setup_node('/secrets/jwtsecret', validator_only=False)
+        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'])
+
+    @patch('subprocess.run')
+    def test_validator_only_still_runs_apt_commands(self, mock_run):
+        setup_node('/secrets/jwtsecret', validator_only=True)
+        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'update'])
+        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'])
+
+    @patch('subprocess.run')
+    def test_full_node_call_count(self, mock_run):
+        # mkdir + openssl + tee + update + upgrade + autoremove + install = 7
+        setup_node('/secrets/jwtsecret', validator_only=False)
         assert mock_run.call_count == 7
 
-        # Check JWT directory creation
-        first_call = mock_run.call_args_list[0]
-        assert 'sudo mkdir -p' in str(first_call)
-
-        # Check openssl call
-        openssl_call = mock_run.call_args_list[1]
-        assert 'openssl' in str(openssl_call)
-
-        # Check apt update
-        apt_update_call = mock_run.call_args_list[3]
-        assert apt_update_call == call(['sudo', 'apt', '-y', '-qq', 'update'])
-
     @patch('subprocess.run')
-    def test_setup_node_validator_only(self, mock_run):
-        """setup_node for validator-only should skip JWT but still update packages."""
-        VALIDATOR_ONLY = True
-
-        if not VALIDATOR_ONLY:
-            # This block should NOT execute
-            import subprocess
-            subprocess.run(['should_not_call'], shell=True)
-
-        import subprocess
-        subprocess.run(['sudo', 'apt', '-y', '-qq', 'update'])
-        subprocess.run(['sudo', 'apt', '-y', '-qq', 'upgrade'])
-        subprocess.run(['sudo', 'apt', '-y', '-qq', 'autoremove'])
-        subprocess.run(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'])
-
-        # Only 4 apt commands, no JWT
+    def test_validator_only_call_count(self, mock_run):
+        # update + upgrade + autoremove + install = 4
+        setup_node('/secrets/jwtsecret', validator_only=True)
         assert mock_run.call_count == 4
-
-
-# ═══════════════════════════════════════════════
-# Test user and directory creation patterns
-# ═══════════════════════════════════════════════
-
-class TestUserAndDirectoryCreation:
-    """Test that install functions create correct users and directories."""
-
-    @patch('subprocess.run')
-    def test_besu_user_and_dirs(self, mock_run):
-        """download_and_install_besu creates execution user and /var/lib/besu."""
-        import subprocess
-        subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "execution"])
-        subprocess.run(["sudo", "mkdir", "-p", "/var/lib/besu"])
-        subprocess.run(["sudo", "chown", "-R", "execution:execution", "/var/lib/besu"])
-
-        assert mock_run.call_count == 3
-        mock_run.assert_any_call(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "execution"])
-        mock_run.assert_any_call(["sudo", "mkdir", "-p", "/var/lib/besu"])
-        mock_run.assert_any_call(["sudo", "chown", "-R", "execution:execution", "/var/lib/besu"])
-
-    @patch('subprocess.run')
-    def test_nethermind_user_and_dirs(self, mock_run):
-        """download_and_install_nethermind creates execution user and /var/lib/nethermind."""
-        import subprocess
-        subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "execution"])
-        subprocess.run(["sudo", "mkdir", "-p", "/var/lib/nethermind"])
-        subprocess.run(["sudo", "chown", "-R", "execution:execution", "/var/lib/nethermind"])
-
-        mock_run.assert_any_call(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "execution"])
-        mock_run.assert_any_call(["sudo", "mkdir", "-p", "/var/lib/nethermind"])
-
-    @patch('subprocess.run')
-    def test_reth_user_and_dirs(self, mock_run):
-        """download_and_install_reth creates execution user and /var/lib/reth."""
-        import subprocess
-        subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "execution"])
-        subprocess.run(["sudo", "mkdir", "-p", "/var/lib/reth"])
-        subprocess.run(["sudo", "chown", "-R", "execution:execution", "/var/lib/reth"])
-
-        mock_run.assert_any_call(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "execution"])
-        mock_run.assert_any_call(["sudo", "mkdir", "-p", "/var/lib/reth"])
-
-    @patch('os.system')
-    def test_mevboost_user_creation(self, mock_system):
-        """install_mevboost creates mevboost user."""
-        os.system("sudo useradd --no-create-home --shell /bin/false mevboost")
-        mock_system.assert_called_once_with("sudo useradd --no-create-home --shell /bin/false mevboost")
-
-    @patch('subprocess.run')
-    def test_consensus_user_dirs(self, mock_run):
-        """Consensus client install creates consensus user and data dirs."""
-        import subprocess
-        # Example: teku
-        subprocess.run(['sudo', 'mkdir', '-p', '/var/lib/teku'])
-        subprocess.run(['sudo', 'chmod', '700', '/var/lib/teku'])
-        subprocess.run(['sudo', 'useradd', '--no-create-home', '--shell', '/bin/false', 'consensus'])
-        subprocess.run(['sudo', 'chown', '-R', 'consensus:consensus', '/var/lib/teku'])
-
-        mock_run.assert_any_call(['sudo', 'mkdir', '-p', '/var/lib/teku'])
-        mock_run.assert_any_call(['sudo', 'chmod', '700', '/var/lib/teku'])
-        mock_run.assert_any_call(['sudo', 'useradd', '--no-create-home', '--shell', '/bin/false', 'consensus'])
-        mock_run.assert_any_call(['sudo', 'chown', '-R', 'consensus:consensus', '/var/lib/teku'])
-
-    @patch('subprocess.run')
-    def test_validator_user_dirs(self, mock_run):
-        """Validator client install creates validator user and data dirs."""
-        import subprocess
-        # Example: lighthouse validator
-        subprocess.run(['sudo', 'mkdir', '-p', '/var/lib/lighthouse_validator'])
-        subprocess.run(['sudo', 'useradd', '--no-create-home', '--shell', '/bin/false', 'validator'])
-        subprocess.run(['sudo', 'chown', '-R', 'validator:validator', '/var/lib/lighthouse_validator'])
-        subprocess.run(['sudo', 'chmod', '700', '/var/lib/lighthouse_validator'])
-
-        mock_run.assert_any_call(['sudo', 'mkdir', '-p', '/var/lib/lighthouse_validator'])
-        mock_run.assert_any_call(['sudo', 'useradd', '--no-create-home', '--shell', '/bin/false', 'validator'])
-
-
-# ═══════════════════════════════════════════════
-# Test install_mevboost guard conditions
-# ═══════════════════════════════════════════════
-
-class TestMevboostGuardConditions:
-    """Test that install_mevboost is a no-op when disabled."""
-
-    @patch('os.system')
-    @patch('os.chdir')
-    def test_mevboost_disabled_is_noop(self, mock_chdir, mock_system):
-        """When MEVBOOST_ENABLED=False, install_mevboost does nothing."""
-        MEVBOOST_ENABLED = False
-        VALIDATOR_ONLY = False
-
-        if MEVBOOST_ENABLED and not VALIDATOR_ONLY:
-            os.system("should not be called")
-
-        mock_system.assert_not_called()
-        mock_chdir.assert_not_called()
-
-    @patch('os.system')
-    @patch('os.chdir')
-    def test_mevboost_validator_only_is_noop(self, mock_chdir, mock_system):
-        """When VALIDATOR_ONLY=True, install_mevboost does nothing."""
-        MEVBOOST_ENABLED = True
-        VALIDATOR_ONLY = True
-
-        if MEVBOOST_ENABLED and not VALIDATOR_ONLY:
-            os.system("should not be called")
-
-        mock_system.assert_not_called()
-
-
-# ═══════════════════════════════════════════════
-# Test all installation configurations
-# ═══════════════════════════════════════════════
-
-@pytest.mark.parametrize("install_config", [
-    'Solo Staking Node', 
-    'Full Node Only', 
-    'Lido CSM Staking Node', 
-    'Lido CSM Validator Client Only', 
-    'Validator Client Only', 
-    'Failover Staking Node'
-])
-@patch('subprocess.run')
-@patch('os.system')
-def test_all_install_configs_logic(mock_system, mock_run, install_config):
-    """Test that each installation configuration invokes the expected system setup."""
-    from deploy.common import setup_node
-    
-    validator_only = "Validator Client Only" in install_config
-    setup_node("/secrets/jwtsecret", validator_only=validator_only)
-    
-    if validator_only:
-        # Should NOT have created JWT dirs or run openssl
-        assert mock_run.call_count == 4 # Only apt commands
-        for c in mock_run.call_args_list:
-            assert 'openssl' not in str(c)
-    else:
-        # Should have created JWT dirs and run openssl
-        assert mock_run.call_count == 7
-        assert any('mkdir -p' in str(c) for c in mock_run.call_args_list)
-        assert any('openssl' in str(c) for c in mock_run.call_args_list)

@@ -1,0 +1,11 @@
+# Enforce LF line endings for all text files
+# This ensures compatibility with Docker/Linux execution environments
+* text=auto eol=lf
+
+# Explicitly ensure shell and bats scripts use LF
+*.sh text eol=lf
+*.bats text eol=lf
+
+# Python and Markdown files
+*.py text eol=lf
+*.md text eol=lf

@@ -29,7 +29,9 @@ def download_teku(eth_network: str) -> str:
 
     # Send a GET request to the API endpoint
     response = requests.get(url)
-    teku_version = response.json()['tag_name']
+    response.raise_for_status()
+    data = response.json()
+    teku_version = data['tag_name']
 
     # Validate version for network requirements
     is_valid, error_msg = validate_version_for_network('teku', teku_version, eth_network)
@@ -37,16 +39,31 @@ def download_teku(eth_network: str) -> str:
         print(error_msg)
         exit(1)
 
-    assets = response.json()['assets']
-    download_url = None
-    filename = f'teku-{teku_version}.tar.gz'
-    for asset in assets:
-        if asset['name'].endswith(filename):
-            download_url = asset['browser_download_url']
-            break
+    # Consensys now hosts Teku binaries on their own artifacts server
+    v_num = teku_version.lstrip("v")
+    download_url = f"https://artifacts.consensys.net/public/teku/raw/names/teku.tar.gz/versions/{v_num}/teku-{v_num}.tar.gz"
+    filename = f"teku-{v_num}.tar.gz"
+
+    # Verify the artifacts URL exists, if not fallback to GitHub assets
+    try:
+        head_check = requests.head(download_url, allow_redirects=True)
+        if head_check.status_code != 200:
+            download_url = None
+    except requests.RequestException:
+        download_url = None
 
     if download_url is None:
-        print("Error: Could not find the download URL for the latest release.")
+        # Fallback to GitHub assets (for older versions or forks)
+        assets = data.get('assets', [])
+        for asset in assets:
+            asset_name = asset['name'].lower()
+            if "teku" in asset_name and asset_name.endswith(".tar.gz") and "source" not in asset_name:
+                download_url = asset['browser_download_url']
+                filename = asset['name']
+                break
+
+    if download_url is None:
+        print(f"Error: Could not find the download URL for Teku {teku_version} on Consensys Artifacts or GitHub.")
         exit(1)
 
     # Download the latest release binary
@@ -56,7 +73,7 @@ def download_teku(eth_network: str) -> str:
     try:
         # Download the file
         response = requests.get(download_url, stream=True)
-        response.raise_for_status()  # Raise an exception for HTTP errors
+        response.raise_for_status()
         total_size = int(response.headers.get('content-length', 0))
         block_size = 1024
         t = tqdm(total=total_size, unit='B', unit_scale=True)

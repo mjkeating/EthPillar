@@ -10,9 +10,12 @@ graph TD
     B -- "Forward Args" --> C[deploy/deploy-node.py]
     
     subgraph "Python Orchestrator (deploy/)"
-    C -- "resolve_role_flags(role)" --> D[orchestrator.py]
-    C -- "resolve_vc_name(cc, vc)" --> D
-    C -- "run_install(...)" --> E{Installation Logic}
+    C -- "Query Configuration" --> D[orchestrator.py]
+    D -- "Role Mapping / Flags" --> C
+    D -- "Lido CSM Overrides" --> C
+    D -- "Menu Data (EC/CC/VC)" --> C
+    
+    C -- "Execute Installation" --> E{Installation Logic}
     end
 
     E -- "Execution Client" --> F[ec_name.py]
@@ -23,7 +26,7 @@ graph TD
     F & G & H & I -- "Generate Systemd" --> J[service_generators.py]
     J -- "Write Units" --> K[/etc/systemd/system/]
 
-    E -- "Finalize" --> L[common.py]
+    K -- "Finalize Setup" --> L[common.py]
     L -- "finish_install()" --> M[Success / Logs]
 ```
 

@@ -14,6 +14,7 @@ set -o history -o histexpand
 
 python="python3"
 skip_prompt=""
+ETHPILLAR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [[ ${#} -eq 0 ]]; then
   echo "ERROR: Missing deploy file. Example ./install-node.sh deploy-node.py"
@@ -25,8 +26,8 @@ else
   extra_args=""
 fi
 install_file="$1"
-# Accept only deploy-*.py and disallow slashes
-if [[ "$install_file" != deploy-*.py || "$install_file" == */* ]]; then
+# Accept only deploy-*.py and disallow slashes (except deploy/ prefix)
+if [[ "$install_file" != deploy-*.py && "$install_file" != deploy/deploy-*.py ]]; then
   echo "ERROR: Invalid deploy file: $install_file"
   exit 1
 fi
@@ -133,14 +134,17 @@ linux_install_python() {
 }
 
 linux_install_validator-install() {
-    ohai "Cloning ethpillar into ~/git/ethpillar"
-    mkdir -p ~/git/ethpillar
-    git clone https://github.com/coincashew/ethpillar.git ~/git/ethpillar 2> /dev/null || (cd ~/git/ethpillar ; git fetch origin main ; git checkout main ; git pull)
+    ohai "Checking ethpillar in ${ETHPILLAR_DIR}"
+    if [ ! -d "${ETHPILLAR_DIR}/.git" ]; then
+        ohai "Cloning ethpillar into ${ETHPILLAR_DIR}"
+        mkdir -p "${ETHPILLAR_DIR}"
+        git clone https://github.com/coincashew/ethpillar.git "${ETHPILLAR_DIR}"
+    fi
     ohai "Installing validator-install"
     if [ -n "$extra_args" ]; then
-        $python ~/git/ethpillar/${install_file} --skip_prompts "$skip_prompt" $extra_args
+        $python "${ETHPILLAR_DIR}/${install_file}" --skip_prompts "$skip_prompt" $extra_args
     else
-        $python ~/git/ethpillar/${install_file}
+        $python "${ETHPILLAR_DIR}/${install_file}"
     fi
     ohai "Allowing user to view journalctl logs"
     sudo usermod -a -G systemd-journal $USER

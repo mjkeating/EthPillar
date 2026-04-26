@@ -1,0 +1,49 @@
+# EthPillar Deployment Flow
+
+This document describes the orchestration logic for installing Ethereum nodes.
+
+## Orchestration Flowchart
+
+```mermaid
+graph TD
+    A[ethpillar.sh] -- "installNode() / Role Selection" --> B[install-node.sh]
+    B -- "Forward Args" --> C[deploy-node.py]
+    
+    subgraph "Python Orchestrator"
+    C -- "resolve_role_flags(role)" --> D[orchestrator.py]
+    C -- "resolve_vc_name(cc, vc)" --> D
+    C -- "run_install(...)" --> E{Installation Logic}
+    end
+
+    E -- "Execution Client" --> F[deploy/client_name.py]
+    E -- "Consensus Client" --> G[deploy/client_name.py]
+    E -- "Validator Client" --> H[deploy/client_name.py]
+    E -- "MEV-Boost" --> I[deploy/mevboost.py]
+
+    F & G & H & I -- "Generate Systemd" --> J[deploy/service_generators.py]
+    J -- "Write Units" --> K[/etc/systemd/system/]
+
+    E -- "Finalize" --> L[deploy/common.py]
+    L -- "finish_install()" --> M[Success / Logs]
+```
+
+## Setup Sequence
+
+1.  **Network Selection**: (Mainnet, Holesky, Sepolia, etc.)
+2.  **Role Selection**:
+    *   **Solo Staking**: EC + CC + VC + MEV
+    *   **CSM**: Solo Staking with Lido Overrides
+    *   **Full Node**: EC + CC only
+    *   **VC Only**: External BN + local VC
+    *   **Custom**: Granular selection of all components
+3.  **Client Selection**:
+    *   If Custom: Pick EC, then CC, then VC.
+    *   If Predefined: Pick from `PREDEFINED_COMBOS`.
+4.  **Parameter Collection**: JWT, Fee Recipient, Graffiti, Sync URLs.
+5.  **Execution**:
+    *   `common.setup_node()`: JWT creation, user/group setup.
+    *   Execution Client installation (download binary + systemd).
+    *   Consensus Client installation.
+    *   Validator Client installation.
+    *   MEV-Boost installation.
+    *   `common.finish_install()`: Service reload and completion report.

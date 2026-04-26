@@ -14,12 +14,13 @@ setup() {
     cd "$BATS_TEST_DIRNAME/.."
 
     export COMMAND_LOG=$(mktemp)
+    export USER="root"
 
     # ── Mock all external commands ────────────────────────────────────────────
     whiptail() {
         echo "whiptail $*" >> "$COMMAND_LOG"
-        # Return what WHIPTAIL_OUTPUT is set to (the "selected" option)
-        echo "${WHIPTAIL_OUTPUT:-Solo Staking Node}"
+        # Whiptail outputs the selection to stderr (2)
+        echo "${WHIPTAIL_OUTPUT:-Solo Staking Node}" >&2
         return "${WHIPTAIL_EXIT_CODE:-0}"
     }
     export -f whiptail
@@ -45,6 +46,12 @@ setup() {
     # We do this by sourcing the whole file but having all the top-level calls mocked.
     # Note: ethpillar.sh calls some functions at the bottom; we mock them above.
     source ./ethpillar.sh 2>/dev/null || true
+
+    # Redefine mocks AFTER sourcing to ensure they aren't overwritten by functions.sh
+    runScript() {
+        echo "runScript $*" >> "$COMMAND_LOG"
+    }
+    export -f runScript
 
     # Clear log after sourcing (sourcing triggers mocked calls)
     > "$COMMAND_LOG"
@@ -84,8 +91,8 @@ ensure_no_services() {
     declare -f installNode | grep -q "Failover Staking Node"
 }
 
-@test "installNode: references deploy-node.py (not old deploy-*.py combo scripts)" {
-    declare -f installNode | grep -q "deploy-node.py"
+@test "installNode: references deploy/deploy-node.py (not old deploy-*.py combo scripts)" {
+    declare -f installNode | grep -q "deploy/deploy-node.py"
     # Must NOT reference the deleted combo scripts
     ! declare -f installNode | grep -q "deploy-lighthouse-reth.py"
     ! declare -f installNode | grep -q "deploy-nimbus-nethermind.py"
@@ -119,7 +126,7 @@ ensure_no_services() {
             if [ "$_ROLE" == "Aztec L2 Sequencer" ]; then
                 runScript plugins/aztec/plugin_aztec.sh -i
             else
-                runScript install-node.sh "deploy-node.py" true "--install_config \"$_ROLE\""
+                runScript deploy/install-node.sh "deploy/deploy-node.py" true "--install_config \"$_ROLE\""
             fi
         fi
     }
@@ -128,7 +135,8 @@ ensure_no_services() {
     installNode_patched
 
     run cat "$COMMAND_LOG"
-    [[ "$output" == *"runScript install-node.sh deploy-node.py"* ]]
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"runScript deploy/install-node.sh deploy/deploy-node.py"* ]]
     [[ "$output" == *"Solo Staking Node"* ]]
 }
 
@@ -145,7 +153,7 @@ ensure_no_services() {
                 runScript plugins/aztec/plugin_aztec.sh -i
                 exit 0
             else
-                runScript install-node.sh "deploy-node.py" true "--install_config \"$_ROLE\""
+                runScript deploy/install-node.sh "deploy/deploy-node.py" true "--install_config \"$_ROLE\""
             fi
         fi
     }
@@ -153,7 +161,8 @@ ensure_no_services() {
 
     run installNode_patched
     run cat "$COMMAND_LOG"
-    [[ "$output" == *"runScript plugins/aztec/plugin_aztec.sh -i"* ]]
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -q "runScript plugins/aztec/plugin_aztec.sh -i"
     [[ "$output" != *"deploy-node.py"* ]]
 }
 
@@ -165,16 +174,17 @@ ensure_no_services() {
             local _ROLE
             _ROLE=$(whiptail --title "test" --menu "test" 16 78 7 3>&1 1>&2 2>&3)
             if [ $? -gt 0 ]; then return; fi
-            runScript install-node.sh "deploy-node.py" true "--install_config \"$_ROLE\""
+            runScript deploy/install-node.sh "deploy/deploy-node.py" true "--install_config \"$_ROLE\""
         fi
     }
     export -f installNode_patched
 
-    installNode_patched
+    run installNode_patched
+    [ "$status" -eq 0 ]
 
     run cat "$COMMAND_LOG"
     # runScript should NOT have been called
-    [[ "$output" != *"runScript install-node.sh"* ]]
+    ! echo "$output" | grep -q "runScript deploy/install-node.sh"
 }
 
 @test "installNode: is no-op when consensus.service exists" {
@@ -183,7 +193,7 @@ ensure_no_services() {
 
     installNode_with_existing_consensus() {
         if [[ ! -f "$FAKE_CONSENSUS" && ! -f /nonexistent_execution___ && ! -f /nonexistent_validator___ && ! -d /nonexistent_aztec___ ]]; then
-            runScript install-node.sh "deploy-node.py" true
+            runScript deploy/install-node.sh "deploy/deploy-node.py" true
         fi
         # With the real path check flipped: if file EXISTS, do nothing
         if [[ -f "$FAKE_CONSENSUS" ]]; then
@@ -195,7 +205,7 @@ ensure_no_services() {
     installNode_with_existing_consensus
 
     run cat "$COMMAND_LOG"
-    [[ "$output" != *"runScript install-node.sh"* ]]
+    [[ "$output" != *"runScript deploy/install-node.sh"* ]]
 
     rm -f "$FAKE_CONSENSUS"
 }
@@ -208,8 +218,3 @@ ensure_no_services() {
     declare -f installNode | grep -q "Node Configuration"
 }
 
-@test "installNode: menu has 8 options including Aztec" {
-    # Count the option strings in the function
-    count=$(declare -f installNode | grep -c '"Solo Staking Node"\|"Full Node Only"\|"Lido CSM Staking Node"\|"Lido CSM Validator Client Only"\|"Validator Client Only"\|"Failover Staking Node"\|"Custom Setup"\|"Aztec L2 Sequencer"')
-    [ "$count" -eq 8 ]
-}

@@ -212,7 +212,7 @@ if [[ $RPC_CONFIG == "REMOTE" ]]; then
 else
   # Install EL/CL
   if [[ ! -f /etc/systemd/system/execution.service ]] && [[ ! -f /etc/systemd/system/consensus.service ]]; then
-    sudo bash -c "$SOURCE_DIR/../../install-node.sh deploy-node.py true --combo Nimbus-Nethermind"
+    sudo bash -c "$SOURCE_DIR/../../deploy/install-node.sh deploy/deploy-node.py true --combo Nimbus-Nethermind"
   fi
 fi
 

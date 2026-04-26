@@ -45,38 +45,38 @@ teardown() {
 # ─────────────────────────────────────────────────────────────────────────────
 
 @test "install-node.sh: exits 1 when no arguments given" {
-    run bash install-node.sh
+    run bash deploy/install-node.sh
     [ "$status" -eq 1 ]
     [[ "$output" == *"ERROR: Missing deploy file"* ]]
 }
 
 @test "install-node.sh: rejects filenames with path traversal (slashes)" {
-    run bash install-node.sh "../../deploy-node.py"
+    run bash deploy/install-node.sh "../../deploy/deploy-node.py"
     [ "$status" -eq 1 ]
     [[ "$output" == *"ERROR: Invalid deploy file"* ]]
 }
 
 @test "install-node.sh: rejects filenames that don't match deploy-*.py" {
-    run bash install-node.sh "evil-script.sh"
+    run bash deploy/install-node.sh "evil-script.sh"
     [ "$status" -eq 1 ]
     [[ "$output" == *"ERROR: Invalid deploy file"* ]]
 }
 
 @test "install-node.sh: rejects filenames with subdirectory prefix" {
-    run bash install-node.sh "subdir/deploy-node.py"
+    run bash deploy/install-node.sh "subdir/deploy-node.py"
     [ "$status" -eq 1 ]
     [[ "$output" == *"ERROR: Invalid deploy file"* ]]
 }
 
 @test "install-node.sh: accepts deploy-node.py as a valid filename" {
     # We only check that it gets past the filename guard (fails later for other reasons)
-    run bash install-node.sh "deploy-node.py" 2>&1 || true
+    run bash deploy/install-node.sh "deploy/deploy-node.py" 2>&1 || true
     # Should NOT contain the "Invalid deploy file" error
     [[ "$output" != *"ERROR: Invalid deploy file"* ]]
 }
 
 @test "install-node.sh: error message references deploy-node.py" {
-    run bash install-node.sh
+    run bash deploy/install-node.sh
     [ "$status" -eq 1 ]
     [[ "$output" == *"deploy-node.py"* ]]
 }
@@ -148,9 +148,9 @@ teardown() {
         ETHPILLAR_DIR="."
 
         if [ -n "$extra_args" ]; then
-            python ~/git/ethpillar/${install_file} --skip_prompts "$skip_prompt" $extra_args
+            python ~/git/ethpillar/deploy/${install_file} --skip_prompts "$skip_prompt" $extra_args
         else
-            python ~/git/ethpillar/${install_file}
+            python ~/git/ethpillar/deploy/${install_file}
         fi
     '
     [ "$status" -eq 0 ]
@@ -166,9 +166,9 @@ teardown() {
         install_file="deploy-node.py"
 
         if [ -n "$extra_args" ]; then
-            python ~/git/ethpillar/${install_file} --skip_prompts "$skip_prompt" $extra_args
+            python ~/git/ethpillar/deploy/${install_file} --skip_prompts "$skip_prompt" $extra_args
         else
-            python ~/git/ethpillar/${install_file}
+            python ~/git/ethpillar/deploy/${install_file}
         fi
     '
     [ "$status" -eq 0 ]

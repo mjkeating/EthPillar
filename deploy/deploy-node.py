@@ -1,12 +1,15 @@
 import os
 import sys
 import argparse
+
+# Ensure parent directory is in path so we can import config
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from consolemenu import *
 from consolemenu.items import *
 from dotenv import load_dotenv
 
-import deploy.common as common
-from deploy.orchestrator import (
+import common as common
+from orchestrator import (
     VALID_ROLES, resolve_role_flags, get_combo_menu, get_vc_menu, 
     get_ec_menu, get_cc_menu, get_vc_options_for_cc, resolve_vc_name, run_install
 )

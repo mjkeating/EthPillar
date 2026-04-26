@@ -42,7 +42,7 @@ from deploy.orchestrator import (
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-DEPLOY_NODE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "deploy-node.py")
+DEPLOY_NODE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "deploy", "deploy-node.py")
 
 def run_deploy_node(*extra_args, env_extra=None):
     """Run deploy-node.py with --skip_prompts true and capture stdout/stderr."""

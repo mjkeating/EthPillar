@@ -18,7 +18,8 @@ EP_VERSION="5.3.1"
 export EDITOR="nano"
 
 # VARIABLES
-export BASE_DIR="$HOME/git/ethpillar" && cd $BASE_DIR
+export BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$BASE_DIR" || exit 1
 
 # Load functions
 source ./functions.sh
@@ -1638,7 +1639,7 @@ function installNode(){
               runScript plugins/aztec/plugin_aztec.sh -i
               exit 0
             else
-              runScript install-node.sh "deploy-node.py" true "--install_config \"$_ROLE\""
+              runScript deploy/install-node.sh "deploy/deploy-node.py" true "--install_config \"$_ROLE\""
             fi
           fi
   fi
@@ -1693,12 +1694,14 @@ function setNodeMode(){
   export NODE_MODE
 }
 
-checkV1StakingSetup
-setWhiptailColors
-installNode
-applyPatches
-checkDiskSpace
-checkCPULoad
-setNodeMode
-initializeNetwork
-menuMain
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  checkV1StakingSetup
+  setWhiptailColors
+  installNode
+  applyPatches
+  checkDiskSpace
+  checkCPULoad
+  setNodeMode
+  initializeNetwork
+  menuMain
+fi

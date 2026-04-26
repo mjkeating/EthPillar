@@ -18,7 +18,13 @@ EP_VERSION="5.3.1"
 export EDITOR="nano"
 
 # VARIABLES
-export BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+export BASE_DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 cd "$BASE_DIR" || exit 1
 
 # Load functions

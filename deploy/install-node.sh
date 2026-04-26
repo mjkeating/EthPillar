@@ -14,7 +14,13 @@ set -o history -o histexpand
 
 python="python3"
 skip_prompt=""
-ETHPILLAR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+export ETHPILLAR_DIR="$( cd -P "$( dirname "$SOURCE" )/.." && pwd )"
 
 if [[ ${#} -eq 0 ]]; then
   echo "ERROR: Missing deploy file. Example ./install-node.sh deploy-node.py"

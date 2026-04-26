@@ -6,24 +6,24 @@ This document describes the orchestration logic for installing Ethereum nodes.
 
 ```mermaid
 graph TD
-    A[ethpillar.sh] -- "installNode() / Role Selection" --> B[install-node.sh]
-    B -- "Forward Args" --> C[deploy-node.py]
+    A[ethpillar.sh] -- "installNode() / Role Selection" --> B[deploy/install-node.sh]
+    B -- "Forward Args" --> C[deploy/deploy-node.py]
     
-    subgraph "Python Orchestrator"
+    subgraph "Python Orchestrator (deploy/)"
     C -- "resolve_role_flags(role)" --> D[orchestrator.py]
     C -- "resolve_vc_name(cc, vc)" --> D
     C -- "run_install(...)" --> E{Installation Logic}
     end
 
-    E -- "Execution Client" --> F[deploy/client_name.py]
-    E -- "Consensus Client" --> G[deploy/client_name.py]
-    E -- "Validator Client" --> H[deploy/client_name.py]
-    E -- "MEV-Boost" --> I[deploy/mevboost.py]
+    E -- "Execution Client" --> F[ec_name.py]
+    E -- "Consensus Client" --> G[cc_name.py]
+    E -- "Validator Client" --> H[vc_name.py]
+    E -- "MEV-Boost" --> I[mevboost.py]
 
-    F & G & H & I -- "Generate Systemd" --> J[deploy/service_generators.py]
+    F & G & H & I -- "Generate Systemd" --> J[service_generators.py]
     J -- "Write Units" --> K[/etc/systemd/system/]
 
-    E -- "Finalize" --> L[deploy/common.py]
+    E -- "Finalize" --> L[common.py]
     L -- "finish_install()" --> M[Success / Logs]
 ```
 

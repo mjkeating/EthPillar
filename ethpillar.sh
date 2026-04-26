@@ -1639,7 +1639,7 @@ function installNode(){
           "Aztec L2 Sequencer" "by Aztec Labs" \
           3>&1 1>&2 2>&3)
           if [ $? -gt 0 ]; then # user pressed <Cancel> button
-            return
+            return 1
           else
             if [ "$_ROLE" == "Aztec L2 Sequencer" ]; then
               runScript plugins/aztec/plugin_aztec.sh -i

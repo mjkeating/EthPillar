@@ -239,6 +239,49 @@ WantedBy=multi-user.target
 '''
 
 
+def generate_erigon_standalone_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
+                                       el_max_peer_count: str, jwtsecret_path: str,
+                                       network_override: Optional[str] = None, sync_parameters: str = '') -> str:
+    """Generate Erigon execution client standalone systemd service file content (without Caplin).
+
+    Args:
+        eth_network: Network name
+        el_p2p_port: EL P2P port
+        el_rpc_port: EL RPC port
+        el_max_peer_count: Max peer count
+        jwtsecret_path: Path to JWT secret file
+        network_override: Optional network flag override (for ephemery)
+        sync_parameters: Optional sync/prune parameters
+
+    Returns:
+        Service file content as a string
+    """
+    if network_override:
+        _network = network_override
+    else:
+        _network = f'--chain={eth_network}'
+
+    return f'''[Unit]
+Description=Erigon Execution Layer Client service for {eth_network.upper()}
+After=network-online.target
+Wants=network-online.target
+Documentation=https://docs.coincashew.com
+
+[Service]
+Type=simple
+User=execution
+Group=execution
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=900
+ExecStart=/usr/local/bin/erigon --datadir=/var/lib/erigon {_network} --port={el_p2p_port} --torrent.port=42069 --http.port={el_rpc_port} --maxpeers={el_max_peer_count} --http.api=web3,eth,net,engine --metrics --pprof --prune.mode=minimal --authrpc.jwtsecret={jwtsecret_path} {sync_parameters} --externalcl
+
+[Install]
+WantedBy=multi-user.target
+'''
+
+
 # ──────────────────────────────────────────────
 # Teku consensus client
 # ──────────────────────────────────────────────

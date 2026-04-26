@@ -1619,25 +1619,26 @@ function checkV1StakingSetup(){
 # If no consensus or validator client service is installed, start install workflow
 function installNode(){
   if [[ ! -f /etc/systemd/system/consensus.service && ! -f /etc/systemd/system/execution.service && ! -f /etc/systemd/system/validator.service && ! -d /opt/ethpillar/aztec ]]; then
-          local _CLIENTCOMBO _file
-          _CLIENTCOMBO=$(whiptail --title "⚙️  Node Configuration" --menu \
-          "Pick your combination:" 15 78 6 \
-          "Nimbus-Nethermind" "lightweight. secure. easy to use. nim and .net" \
-          "Lodestar-Besu" "performant. robust. ziglang & javascript & java" \
-          "Teku-Besu" "institutional grade. enterprise staking. java" \
-          "Lighthouse-Reth" "built in rust. security focused. performance" \
-          "Caplin-Erigon" "optimized integrated client. resource efficient. go lang" \
-          "Aztec L2 Sequencer" "by Aztec Labs. support privacy. permissionless" \
+          local _ROLE
+          _ROLE=$(whiptail --title "⚙️  Node Configuration" --menu \
+          "What would you like to set up?" 16 78 7 \
+          "Solo Staking Node" "Full stack: EC + CC + VC + MEV-Boost" \
+          "Lido CSM Staking Node" "Lido CSM: EC + CC + VC + MEV-Boost" \
+          "Full Node Only" "EC + CC only, no validator" \
+          "Failover Staking Node" "EC + CC + MEV-Boost, ready for failover" \
+          "Validator Client Only" "VC only, connects to remote beacon node" \
+          "Lido CSM Validator Client Only" "Lido CSM VC, connects to remote beacon node" \
+          "Custom Setup" "Pick each component individually" \
+          "Aztec L2 Sequencer" "by Aztec Labs" \
           3>&1 1>&2 2>&3)
           if [ $? -gt 0 ]; then # user pressed <Cancel> button
             return
           else
-            if [ "$_CLIENTCOMBO" == "Aztec L2 Sequencer" ]; then
+            if [ "$_ROLE" == "Aztec L2 Sequencer" ]; then
               runScript plugins/aztec/plugin_aztec.sh -i
               exit 0
             else
-              _file="deploy-${_CLIENTCOMBO,,}.py"
-              runScript install-node.sh "${_file}" true
+              runScript install-node.sh "deploy-node.py" true "--install_config \"$_ROLE\""
             fi
           fi
   fi

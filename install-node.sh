@@ -16,10 +16,13 @@ python="python3"
 skip_prompt=""
 
 if [[ ${#} -eq 0 ]]; then
-  echo "ERROR: Missing deploy file. Example ./install-node.sh deploy-nimbus-nethermind.py"
+  echo "ERROR: Missing deploy file. Example ./install-node.sh deploy-node.py"
   exit 1
-elif [[ ${#} -eq 2 ]]; then
+elif [[ ${#} -ge 2 ]]; then
   skip_prompt="$2"
+  extra_args="${@:3}"
+else
+  extra_args=""
 fi
 install_file="$1"
 # Accept only deploy-*.py and disallow slashes
@@ -134,7 +137,11 @@ linux_install_validator-install() {
     mkdir -p ~/git/ethpillar
     git clone https://github.com/coincashew/ethpillar.git ~/git/ethpillar 2> /dev/null || (cd ~/git/ethpillar ; git fetch origin main ; git checkout main ; git pull)
     ohai "Installing validator-install"
-    $python ~/git/ethpillar/${install_file}
+    if [ -n "$extra_args" ]; then
+        $python ~/git/ethpillar/${install_file} --skip_prompts "$skip_prompt" $extra_args
+    else
+        $python ~/git/ethpillar/${install_file}
+    fi
     ohai "Allowing user to view journalctl logs"
     sudo usermod -a -G systemd-journal $USER
     ohai "Install complete!"

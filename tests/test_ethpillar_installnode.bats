@@ -76,6 +76,17 @@ EOF
     grep -q "runScript .*Full Node Only" "$COMMAND_LOG"
 }
 
+@test "installNode: routes Custom Setup selection" {
+    cat <<EOF > "$MOCK_BIN_DIR/whiptail"
+#!/bin/bash
+echo "Custom Setup" >&2
+exit 0
+EOF
+
+    installNode
+    grep -q "runScript .*Custom Setup" "$COMMAND_LOG"
+}
+
 @test "installNode: is no-op if services exist" {
     touch "$TEST_SYSTEMD_DIR/consensus.service"
     installNode

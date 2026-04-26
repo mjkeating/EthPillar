@@ -17,7 +17,7 @@ VALID_ROLES = [
     'Lido CSM Validator Client Only',
     'Validator Client Only',
     'Failover Staking Node',
-    'Custom'
+    'Custom Setup'
 ]
 
 EXECUTION_CLIENTS = ['Besu', 'Nethermind', 'Reth', 'Erigon']
@@ -194,36 +194,33 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
         addr = bn_address if flags['validator_only'] else local_bn_addr
 
         if vc_name == 'Lighthouse':
-            if not cl_ver: cl_ver = lighthouse.download_lighthouse(network)
-            val_ver = cl_ver
+            v_ver = cl_ver if vc_name == cc_name and cl_ver else lighthouse.download_lighthouse(network)
+            val_ver = v_ver
             fee_params = f'--suggested-fee-recipient={fee_recipient}'
             mev_params = '--builder-proposals' if flags['mevboost'] else ''
             bn_arg = f'--beacon-nodes={addr}'
-            val_path = lighthouse.install_lighthouse_vc(cl_ver, network, str(cl_rest_port), graffiti, bn_arg, fee_params, mev_params)
+            val_path = lighthouse.install_lighthouse_vc(v_ver, network, str(cl_rest_port), graffiti, bn_arg, fee_params, mev_params)
         elif vc_name == 'Nimbus':
-            if not cl_ver: cl_ver = nimbus.download_nimbus(network)
-            val_ver = cl_ver
+            v_ver = cl_ver if vc_name == cc_name and cl_ver else nimbus.download_nimbus(network)
+            val_ver = v_ver
             fee_params = f'--suggested-fee-recipient={fee_recipient}'
             mev_params = '--payload-builder=true' if flags['mevboost'] else ''
             bn_arg = f'--beacon-node={addr}'
-            val_path = nimbus.install_nimbus_vc(cl_ver, network, str(cl_rest_port), graffiti, bn_arg, fee_params, mev_params)
+            val_path = nimbus.install_nimbus_vc(v_ver, network, str(cl_rest_port), graffiti, bn_arg, fee_params, mev_params)
         elif vc_name == 'Teku':
-            if not cl_ver: cl_ver = teku.download_teku(network)
-            val_ver = cl_ver
+            v_ver = cl_ver if vc_name == cc_name and cl_ver else teku.download_teku(network)
+            val_ver = v_ver
             fee_params = f'--validators-proposer-default-fee-recipient={fee_recipient}'
             mev_params = '--validators-builder-registration-default-enabled=true' if flags['mevboost'] else ''
             bn_arg = f'--beacon-node-api-endpoint={addr}'
-            val_path = teku.install_teku_vc(cl_ver, network, str(cl_rest_port), graffiti, bn_arg, fee_params, mev_params)
+            val_path = teku.install_teku_vc(v_ver, network, str(cl_rest_port), graffiti, bn_arg, fee_params, mev_params)
         elif vc_name == 'Lodestar':
-            if not cl_ver: cl_ver = lodestar.download_lodestar(network)
-            val_ver = cl_ver
+            v_ver = cl_ver if vc_name == cc_name and cl_ver else lodestar.download_lodestar(network)
+            val_ver = v_ver
             fee_params = f'--suggestedFeeRecipient={fee_recipient}'
             mev_params = '--builder' if flags['mevboost'] else ''
             bn_arg = f'--beaconNodes={addr}'
-            val_path = lodestar.install_lodestar_vc(cl_ver, network, str(cl_rest_port), graffiti, bn_arg, fee_params, mev_params)
-
-    # Note: Using val_ver or cl_ver for reporting
-    reported_cc_ver = cl_ver if cl_ver else val_ver
+            val_path = lodestar.install_lodestar_vc(v_ver, network, str(cl_rest_port), graffiti, bn_arg, fee_params, mev_params)
 
     combo_name = role
     if ec_name and cc_name:
@@ -235,14 +232,20 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
     if ec_name == 'Erigon' and (cc_name == 'Caplin' or cc_name == 'Caplin (integrated)'):
         ec_name_display = "erigon-caplin"
 
-    cc_name_display = cc_name.lower() if cc_name and cc_name not in ['Caplin', 'Caplin (integrated)'] else vc_name.lower() if vc_name else ""
+    cc_name_display = cc_name.lower() if cc_name and cc_name not in ['Caplin', 'Caplin (integrated)'] else ""
+    if vc_name and vc_name != cc_name:
+        # If they differ, we'll let the finish_install handle the dual reporting or just use the VC name for the CC slot if CC is empty
+        if not cc_name_display:
+            cc_name_display = vc_name.lower()
+            cl_ver = val_ver
 
     common.finish_install(
         role, network, sync_url,
         ec_name_display, el_ver, el_path,
-        cc_name_display, reported_cc_ver, cl_path,
+        cc_name_display, cl_ver, cl_path,
         flags['mevboost'], mev_ver, mev_path,
         flags['validator'], val_path,
         flags['validator_only'], bn_address, flags['node_only'], fee_recipient,
-        skip_prompts, str(cl_rest_port)
+        skip_prompts, str(cl_rest_port),
+        vc_name=vc_name, vc_ver=val_ver
     )

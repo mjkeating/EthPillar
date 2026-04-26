@@ -124,8 +124,8 @@ class TestResolveRoleFlags:
         assert flags["node_only"] is False
 
     def test_custom_returns_all_false_flags(self):
-        # Custom role should not pre-set any flags; user configures them
-        flags = resolve_role_flags("Custom", "mainnet")
+        # Custom Setup role should not pre-set any flags; user configures them
+        flags = resolve_role_flags("Custom Setup", "mainnet")
         assert flags["mevboost"] is False
         assert flags["validator"] is False
         assert flags["validator_only"] is False
@@ -379,16 +379,16 @@ def _run(role, ec, cc, vc, flags_override=None):
          patch('deploy.reth.download_and_install_reth', return_value=('v1', '/path/reth')) as mock_reth, \
          patch('deploy.erigon.download_and_install_erigon', return_value=('v1', '/path/erigon')) as mock_erigon_integrated, \
          patch('deploy.erigon.download_and_install_erigon_standalone', return_value=('v1', '/path/erigon_standalone')) as mock_erigon_standalone, \
-         patch('deploy.lighthouse.download_lighthouse', return_value='v8'), \
+         patch('deploy.lighthouse.download_lighthouse', return_value='v8') as mock_lh_dl, \
          patch('deploy.lighthouse.install_lighthouse_bn', return_value='/path/lighthouse') as mock_lh_bn, \
          patch('deploy.lighthouse.install_lighthouse_vc', return_value='/path/lh_vc') as mock_lh_vc, \
-         patch('deploy.nimbus.download_nimbus', return_value='v24'), \
+         patch('deploy.nimbus.download_nimbus', return_value='v24') as mock_nb_dl, \
          patch('deploy.nimbus.install_nimbus_bn', return_value='/path/nimbus') as mock_nb_bn, \
          patch('deploy.nimbus.install_nimbus_vc', return_value='/path/nb_vc') as mock_nb_vc, \
-         patch('deploy.teku.download_teku', return_value='v24'), \
+         patch('deploy.teku.download_teku', return_value='v24') as mock_tk_dl, \
          patch('deploy.teku.install_teku_bn', return_value='/path/teku') as mock_tk_bn, \
          patch('deploy.teku.install_teku_vc', return_value='/path/tk_vc') as mock_tk_vc, \
-         patch('deploy.lodestar.download_lodestar', return_value='v1'), \
+         patch('deploy.lodestar.download_lodestar', return_value='v1') as mock_ls_dl, \
          patch('deploy.lodestar.install_lodestar_bn', return_value='/path/lodestar') as mock_ls_bn, \
          patch('deploy.lodestar.install_lodestar_vc', return_value='/path/ls_vc') as mock_ls_vc:
 
@@ -400,10 +400,10 @@ def _run(role, ec, cc, vc, flags_override=None):
             'reth': mock_reth,
             'erigon_integrated': mock_erigon_integrated,
             'erigon_standalone': mock_erigon_standalone,
-            'lh_bn': mock_lh_bn, 'lh_vc': mock_lh_vc,
-            'nb_bn': mock_nb_bn, 'nb_vc': mock_nb_vc,
-            'tk_bn': mock_tk_bn, 'tk_vc': mock_tk_vc,
-            'ls_bn': mock_ls_bn, 'ls_vc': mock_ls_vc,
+            'lh_bn': mock_lh_bn, 'lh_vc': mock_lh_vc, 'lh_dl': mock_lh_dl,
+            'nb_bn': mock_nb_bn, 'nb_vc': mock_nb_vc, 'nb_dl': mock_nb_dl,
+            'tk_bn': mock_tk_bn, 'tk_vc': mock_tk_vc, 'tk_dl': mock_tk_dl,
+            'ls_bn': mock_ls_bn, 'ls_vc': mock_ls_vc, 'ls_dl': mock_ls_dl,
         }
 
 
@@ -487,9 +487,16 @@ class TestRunInstallRouting:
         mocks = _run("Solo Staking Node", "Reth", "Lodestar", "Lodestar")
         mocks['ls_vc'].assert_called_once()
 
-    def test_mixed_vc_different_from_cc_calls_correct_vc(self):
+    def test_mixed_vc_different_from_cc_calls_both_downloads_and_correct_vc(self):
         # Teku CC + Lighthouse VC — a custom combo
-        mocks = _run("Solo Staking Node", "Reth", "Teku", "Lighthouse")
+        mocks = _run("Custom Setup", "Reth", "Teku", "Lighthouse", flags_override={"validator": True})
+        
+        # Verify both downloaders called
+        mocks['tk_dl'].assert_called_once()
+        mocks['lh_dl'].assert_called_once()
+        
+        # Verify correct installers called
+        mocks['tk_bn'].assert_called_once()
         mocks['lh_vc'].assert_called_once()
         mocks['tk_vc'].assert_not_called()
 

@@ -197,7 +197,8 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
                    mevboost_enabled: bool, mevboost_version: Optional[str], mevboost_service_path: Optional[str],
                    validator_enabled: bool, validator_service_path: Optional[str],
                    validator_only: bool, bn_address: Optional[str], node_only: bool, fee_recipient_address: Optional[str],
-                   skip_prompts: bool, cl_rest_port: str) -> None:
+                   skip_prompts: bool, cl_rest_port: str,
+                   vc_name: str = '', vc_ver: str = '') -> None:
     """Display installation summary and optionally start/enable services.
 
     Args:
@@ -240,6 +241,9 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
 
     if consensus_client and consensus_version:
         print(f'{consensus_client.capitalize()} Version: \n{consensus_version}\n')
+
+    if vc_name and vc_ver and vc_name != consensus_client:
+        print(f'{vc_name.capitalize()} (VC) Version: \n{vc_ver}\n')
 
     if mevboost_enabled and not validator_only:
         print(f'Mevboost Version: \n{mevboost_version}\n')

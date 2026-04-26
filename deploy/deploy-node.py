@@ -92,7 +92,7 @@ if flags['validator_only']:
         vc_name = vc_menu[index]
     else:
         vc_name = args.vc or args.cc # Fallback to --cc if --vc not passed
-elif role == "Custom":
+elif role == "Custom Setup":
     # Custom Path
     if not skip_prompts:
         # EC

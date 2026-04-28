@@ -1,17 +1,14 @@
-### Do you like this software? Star the project and become a [⭐ Stargazer](https://github.com/coincashew/ethpillar/stargazers)
+### Do you like this software? Star the project and become a [⭐ Stargazer](https://github.com/mjkeating/EthPillar/stargazers)
 
 # 🛡️ EthPillar
-
 ## Your Friendly Ethereum Node Installer & Manager
 
-[![Github release](https://img.shields.io/github/v/release/coincashew/ethpillar)](https://github.com/coincashew/ethpillar/releases)
-[![License](https://img.shields.io/github/license/coincashew/EthPillar)](https://github.com/coincashew/EthPillar/blob/main/LICENSE)
-[![GitHub Repo stars](https://img.shields.io/github/stars/coincashew/EthPillar?logo=github&color=yellow)](https://github.com/coincashew/EthPillar/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/coincashew/EthPillar?logo=github&color=blue)](https://github.com/coincashew/EthPillar/network/members)
-[![GitHub last commit](https://img.shields.io/github/last-commit/coincashew/EthPillar?logo=git)](https://github.com/coincashew/EthPillar/commits/main)
+[![Github release](https://img.shields.io/github/v/release/mjkeating/EthPillar)](https://github.com/mjkeating/EthPillar/releases)
+[![License](https://img.shields.io/github/license/mjkeating/EthPillar)](https://github.com/mjkeating/EthPillar/blob/main/LICENSE)
+[![GitHub Repo stars](https://img.shields.io/github/stars/mjkeating/EthPillar?logo=github&color=yellow)](https://github.com/mjkeating/EthPillar/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/mjkeating/EthPillar?logo=github&color=blue)](https://github.com/mjkeating/EthPillar/network/members)
+[![GitHub last commit](https://img.shields.io/github/last-commit/mjkeating/EthPillar?logo=git)](https://github.com/mjkeating/EthPillar/commits/main)
 [![Discord](https://img.shields.io/badge/discord-join%20chat-5B5EA6)](https://discord.gg/VdQQ7Bc3hn)
-[![Twitter](https://img.shields.io/twitter/follow/coincashew_)](https://x.com/coincashew_)
-![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/coincashew/EthPillar?utm_source=oss&utm_medium=github&utm_campaign=coincashew%2FEthPillar&labelColor=171717&color=FF570A)
 
 ---
 

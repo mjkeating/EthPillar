@@ -12,11 +12,11 @@
 
 ---
 
-## ⚠️ Important for Existing Installations
+## ⚠️ Important for Existing Installations (Switching to this fork)
 
 This is the **actively maintained fork** of CoinCashew’s EthPillar [](https://github.com/coincashew/ethpillar).
 
-If you installed EthPillar before April 18, 2026 and have never switched to this fork (or you otherwise installed from https://github.com/coincashew/ethpillar), your installation is still pointing to the original (inactive) repo.
+If you installed EthPillar from https://github.com/coincashew/ethpillar (or before April 18, 2026) and have never switched to this fork, your installation is still pointing to the original (inactive) repo.
 
 **Switch once** with these two commands:
 

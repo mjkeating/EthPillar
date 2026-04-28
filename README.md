@@ -28,13 +28,16 @@ git remote set-url origin https://github.com/mjkeating/EthPillar.git
 After switching, use **System Administration → Update EthPillar** inside the TUI to pull the latest changes.
 New users can skip this step — the installer below already points to this fork.
 
-This fork is now at version 5.3.1, which includes:
+---
 
-- Major Python deployment refactor (modular architecture, full type hints, comprehensive tests via PR #2)
-- Installer now defaults to this maintained fork
-- Continued client updates and improvements
-- Note: fixed network selection regression in deploy scripts after Python refactor (v5.3.1)
+## ✨ v5.4.0 — Custom Client Combinations (Major Update)
 
+You can now **mix and match any Execution Client + Consensus Client + Validator Client** exactly the way you want.
+
+### Major New Features
+
+- **Custom Setup** — Full flexibility: choose your execution client (Nethermind, Besu, Reth, Erigon), consensus (Lighthouse, Nimbus, Teku, Lodestar), and validation client
+- Improved role-based installs (Solo Staking, Full Node Only, Failover, Validator Only, Lido CSM, etc.)
 ---
 
 ## 🚀 What is EthPillar?

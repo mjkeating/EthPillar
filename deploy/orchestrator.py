@@ -246,6 +246,7 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
         flags['mevboost'], mev_ver, mev_path,
         flags['validator'], val_path,
         flags['validator_only'], bn_address, flags['node_only'], fee_recipient,
-        skip_prompts, str(cl_rest_port),
+        skip_prompts=False,   
+        cl_rest_port=str(cl_rest_port),
         vc_name=vc_name, vc_ver=val_ver
     )

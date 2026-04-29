@@ -211,24 +211,31 @@ function updateClient(){
 	  Geth)
 		# Convert to lower case
 		_platform=${_platform,,}
-		RELEASE_URL="https://geth.ethereum.org/downloads"
-		#https://gethstore.blob.core.windows.net/builds/geth-linux-386-1.16.3-09786041.tar.gz
-		# Remove front v if present
-		if [[ "$1" == "LATEST" ]]; then
-			_URL_SUFFIX=""
-		else
-			_URL_SUFFIX="-${1#v}-"
+		[[ "${_arch}" == "amd64" ]] && _architecture="amd64" || _architecture="arm64"
+		RELEASE_URL="https://api.github.com/repos/ethereum/go-ethereum/$_URL_SUFFIX"
+		BINARIES_URL=$(curl -s "$RELEASE_URL" | jq -r ".assets[] | select(.name | startswith(\"geth-${_platform}-${_architecture}-\") and endswith(\".tar.gz\")) | .browser_download_url" | head -n 1)
+		if [[ -z "$BINARIES_URL" ]]; then
+			error "❌ Could not find download URL for geth-${_platform}-${_architecture} in release $_URL_SUFFIX"
 		fi
-		FILE="https://gethstore.blob.core.windows.net/builds/geth-${_platform}-${_arch}${_URL_SUFFIX}[a-zA-Z0-9./?=_%:-]*.tar.gz"
-		BINARIES_URL=$(curl -s $RELEASE_URL | grep -Eo "$FILE" | head -1)
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O geth.tar.gz "$BINARIES_URL" || error "❌ Unable to wget file"
-		tar -xzvf geth.tar.gz -C "$HOME" --strip-components=1 || error "❌ Unable to untar file"
+		EXTRACTED_DIR="geth_temp"
+		mkdir -p "$EXTRACTED_DIR"
+		tar -xzvf geth.tar.gz -C "$EXTRACTED_DIR" || error "❌ Unable to untar file"
+		
+		# Find the geth binary
+		GETH_BIN=$(find "./$EXTRACTED_DIR" -type f -name "geth" | head -n 1)
+		if [ -z "$GETH_BIN" ]; then
+			error "❌ Could not find the extracted geth binary"
+		fi
+		
 		sudo systemctl stop execution
-		sudo mv "$HOME"/geth /usr/local/bin || error "❌ Unable to move file"
+		sudo mv "$GETH_BIN" /usr/local/bin/geth || error "❌ Unable to move file"
+		sudo chmod +x /usr/local/bin/geth
+		sudo chown execution:execution /usr/local/bin/geth
 		sudo systemctl start execution
-		rm geth.tar.gz COPYING
+		rm -rf "$EXTRACTED_DIR" geth.tar.gz
 	    ;;
   	  Reth)
 		# Convert to lower case

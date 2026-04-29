@@ -4,7 +4,7 @@ import subprocess
 from tqdm import tqdm
 from typing import Tuple, Optional
 from deploy.service_generators import generate_lodestar_bn_service, generate_lodestar_vc_service
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir
 from client_requirements import validate_version_for_network
 
 def download_lodestar(eth_network: str) -> str:
@@ -19,12 +19,8 @@ def download_lodestar(eth_network: str) -> str:
     binary_arch = get_machine_architecture() # Use amd64 for Lodestar
 
     # Create User and directories
-    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "consensus"])
-    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "validator"])
-    subprocess.run(["sudo", "mkdir", "-p", "/var/lib/lodestar"])
-    subprocess.run(["sudo", "chown", "-R", "consensus:consensus", "/var/lib/lodestar"])
-    subprocess.run(["sudo", "mkdir", "-p", "/var/lib/lodestar_validator"])
-    subprocess.run(["sudo", "chown", "-R", "validator:validator", "/var/lib/lodestar_validator"])
+    setup_client_user_and_dir("consensus", "lodestar")
+    setup_client_user_and_dir("validator", "lodestar_validator")
 
     # Define the Github API endpoint to get the latest release
     url = 'https://api.github.com/repos/ChainSafe/lodestar/releases/latest'
@@ -55,7 +51,7 @@ def download_lodestar(eth_network: str) -> str:
 
     # Download the latest release binary
     print(f">> Downloading Lodestar > URL: {download_url}")
-    download_path = f"{DOWNLOAD_DIR}/{filename}"
+    download_path = f"{DOWNLOAD_DIR, INSTALL_DIR}/{filename}"
 
     try:
         # Download the file
@@ -79,7 +75,7 @@ def download_lodestar(eth_network: str) -> str:
 
     # The archive usually unpacks a lodestar directory or bare files.
     # We want the binary to end up at /usr/local/bin/lodestar/lodestar
-    subprocess.run(["sudo", "mkdir", "-p", "/usr/local/bin/lodestar"])
+    subprocess.run(["sudo", "mkdir", "-p", f"{INSTALL_DIR}/lodestar"])
     subprocess.run(["sudo", "mkdir", "-p", "/tmp/lodestar_extract"])
     subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/tmp/lodestar_extract"])
     # Move the lodestar binary correctly

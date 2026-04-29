@@ -3,20 +3,15 @@ import requests
 import subprocess
 from tqdm import tqdm
 from deploy.service_generators import generate_lighthouse_bn_service, generate_lighthouse_vc_service
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, get_raw_architecture
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, get_raw_architecture, setup_client_user_and_dir
 from client_requirements import validate_version_for_network
 
 def download_lighthouse(eth_network: str) -> str:
     binary_arch = get_raw_architecture()
 
     # Create User and directories
-    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "consensus"])
-    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "validator"])
-    # Lighthouse needs /var/lib/lighthouse for both BN and potentially other things
-    subprocess.run(["sudo", "mkdir", "-p", "/var/lib/lighthouse"])
-    subprocess.run(["sudo", "chown", "-R", "consensus:consensus", "/var/lib/lighthouse"])
-    subprocess.run(["sudo", "mkdir", "-p", "/var/lib/lighthouse_validator"])
-    subprocess.run(["sudo", "chown", "-R", "validator:validator", "/var/lib/lighthouse_validator"])
+    setup_client_user_and_dir("consensus", "lighthouse")
+    setup_client_user_and_dir("validator", "lighthouse_validator")
 
     # Define the Github API endpoint to get the latest release
     url = 'https://api.github.com/repos/sigp/lighthouse/releases/latest'
@@ -47,7 +42,7 @@ def download_lighthouse(eth_network: str) -> str:
 
     # Download the latest release binary
     print(f">> Downloading Lighthouse > URL: {download_url}")
-    download_path = f"{DOWNLOAD_DIR}/{filename}"
+    download_path = f"{DOWNLOAD_DIR, INSTALL_DIR}/{filename}"
 
     try:
         # Download the file
@@ -70,7 +65,7 @@ def download_lighthouse(eth_network: str) -> str:
         exit(1)
 
     # Extract the binary to /usr/local/bin/ using sudo
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/usr/local/bin"])
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}"])
 
     # Remove the tar file
     os.remove(download_path)

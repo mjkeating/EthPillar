@@ -3,7 +3,7 @@ import requests
 import subprocess
 from tqdm import tqdm
 from deploy.service_generators import generate_teku_bn_service, generate_teku_vc_service
-from deploy.common import write_service_file, DOWNLOAD_DIR
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir
 from client_requirements import validate_version_for_network
 from typing import Optional
 
@@ -17,12 +17,8 @@ def download_teku(eth_network: str) -> str:
         Installed Teku version.
     """
     # Create User and directories
-    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "consensus"])
-    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "validator"])
-    subprocess.run(["sudo", "mkdir", "-p", "/var/lib/teku"])
-    subprocess.run(["sudo", "chown", "-R", "consensus:consensus", "/var/lib/teku"])
-    subprocess.run(["sudo", "mkdir", "-p", "/var/lib/teku_validator"])
-    subprocess.run(["sudo", "chown", "-R", "validator:validator", "/var/lib/teku_validator"])
+    setup_client_user_and_dir("consensus", "teku")
+    setup_client_user_and_dir("validator", "teku_validator")
 
     # Define the Github API endpoint to get the latest release
     url = 'https://api.github.com/repos/Consensys/teku/releases/latest'
@@ -68,7 +64,7 @@ def download_teku(eth_network: str) -> str:
 
     # Download the latest release binary
     print(f">> Downloading Teku > URL: {download_url}")
-    download_path = f"{DOWNLOAD_DIR}/{filename}"
+    download_path = f"{DOWNLOAD_DIR, INSTALL_DIR}/{filename}"
 
     try:
         # Download the file
@@ -91,8 +87,8 @@ def download_teku(eth_network: str) -> str:
         exit(1)
 
     # Extract the binary to /usr/local/bin/teku using sudo
-    subprocess.run(["sudo", "mkdir", "-p", "/usr/local/bin/teku"])
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/usr/local/bin/teku", "--strip-components=1"])
+    subprocess.run(["sudo", "mkdir", "-p", f"{INSTALL_DIR}/teku"])
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}/teku", "--strip-components=1"])
 
     # Remove the tar file
     os.remove(download_path)

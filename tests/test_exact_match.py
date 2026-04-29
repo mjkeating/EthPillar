@@ -15,6 +15,7 @@ from deploy.service_generators import (
     generate_mevboost_service,
     generate_besu_service,
 )
+from deploy.common import INSTALL_DIR, BASE_DATA_DIR
 from config import mainnet_relay_options
 
 def test_besu_exact_match():
@@ -41,7 +42,7 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 Environment="JAVA_OPTS=-Xmx5g"
-ExecStart=/usr/local/bin/besu/bin/besu --network={eth_network} --p2p-port={EL_P2P_PORT} --rpc-http-port={EL_RPC_PORT} --engine-rpc-port=8551 --max-peers={EL_MAX_PEER_COUNT} --metrics-enabled=true --metrics-port=6060 --rpc-http-enabled=true --sync-mode=SNAP --data-storage-format=BONSAI --data-path="/var/lib/besu" --engine-jwt-secret={JWTSECRET_PATH}
+ExecStart={INSTALL_DIR}/besu/bin/besu --network={eth_network} --p2p-port={EL_P2P_PORT} --rpc-http-port={EL_RPC_PORT} --engine-rpc-port=8551 --max-peers={EL_MAX_PEER_COUNT} --metrics-enabled=true --metrics-port=6060 --rpc-http-enabled=true --sync-mode=SNAP --data-storage-format=BONSAI --data-path="{BASE_DATA_DIR}/besu" --engine-jwt-secret={JWTSECRET_PATH}
 
 [Install]
 WantedBy=multi-user.target
@@ -74,7 +75,7 @@ def test_mevboost_exact_match():
     'Type=simple',
     'Restart=always',
     'RestartSec=5',
-    'ExecStart=/usr/local/bin/mev-boost \\',
+    f'ExecStart={INSTALL_DIR}/mev-boost \\',
     f'    -{eth_network} \\',
     f'    -min-bid {MEV_MIN_BID} \\',
     '    -relay-check \\',

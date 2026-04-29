@@ -1,5 +1,5 @@
 from typing import List, Dict, Optional
-
+from deploy.common import BASE_DATA_DIR, INSTALL_DIR
 
 def generate_mevboost_service(eth_network: str, mev_min_bid: str, relay_options: List[Dict[str, str]]) -> str:
     """Generate MEV-Boost systemd service file content.
@@ -25,7 +25,7 @@ def generate_mevboost_service(eth_network: str, mev_min_bid: str, relay_options:
         'Type=simple',
         'Restart=always',
         'RestartSec=5',
-        'ExecStart=/usr/local/bin/mev-boost \\',
+        f'ExecStart={INSTALL_DIR}/mev-boost \\',
         f'    -{eth_network} \\',
         f'    -min-bid {mev_min_bid} \\',
         '    -relay-check \\',
@@ -82,7 +82,7 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 Environment="JAVA_OPTS=-Xmx5g"
-ExecStart=/usr/local/bin/besu/bin/besu {_network} --p2p-port={el_p2p_port} --rpc-http-port={el_rpc_port} --engine-rpc-port=8551 --max-peers={el_max_peer_count} --metrics-enabled=true --metrics-port=6060 --rpc-http-enabled=true --sync-mode=SNAP --data-storage-format=BONSAI --data-path="/var/lib/besu" --engine-jwt-secret={jwtsecret_path}
+ExecStart={INSTALL_DIR}/besu/bin/besu {_network} --p2p-port={el_p2p_port} --rpc-http-port={el_rpc_port} --engine-rpc-port=8551 --max-peers={el_max_peer_count} --metrics-enabled=true --metrics-port=6060 --rpc-http-enabled=true --sync-mode=SNAP --data-storage-format=BONSAI --data-path="{BASE_DATA_DIR}/besu" --engine-jwt-secret={jwtsecret_path}
 
 [Install]
 WantedBy=multi-user.target
@@ -125,9 +125,9 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-WorkingDirectory=/var/lib/nethermind
-Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/lib/nethermind/bundle-extract"
-ExecStart=/usr/local/bin/nethermind/nethermind {_network} --datadir="/var/lib/nethermind" --Network.DiscoveryPort {el_p2p_port} --Network.P2PPort {el_p2p_port} --Network.MaxActivePeers {el_max_peer_count} --JsonRpc.Port {el_rpc_port} --Metrics.Enabled true --Metrics.ExposePort 6060 --JsonRpc.JwtSecretFile {jwtsecret_path} --Pruning.Mode=Hybrid --Pruning.FullPruningTrigger=VolumeFreeSpace --Pruning.FullPruningThresholdMb=300000 {sync_parameters}
+WorkingDirectory={BASE_DATA_DIR}/nethermind
+Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR={BASE_DATA_DIR}/nethermind/bundle-extract"
+ExecStart={INSTALL_DIR}/nethermind/nethermind {_network} --datadir="{BASE_DATA_DIR}/nethermind" --Network.DiscoveryPort {el_p2p_port} --Network.P2PPort {el_p2p_port} --Network.MaxActivePeers {el_max_peer_count} --JsonRpc.Port {el_rpc_port} --Metrics.Enabled true --Metrics.ExposePort 6060 --JsonRpc.JwtSecretFile {jwtsecret_path} --Pruning.Mode=Hybrid --Pruning.FullPruningTrigger=VolumeFreeSpace --Pruning.FullPruningThresholdMb=300000 {sync_parameters}
 
 [Install]
 WantedBy=multi-user.target
@@ -172,7 +172,73 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 Environment=RUST_LOG=info
-ExecStart=/usr/local/bin/reth node {_network} --full --datadir=/var/lib/reth --log.file.directory=/var/lib/reth/logs --metrics 127.0.0.1:6060 --port {el_p2p_port} --discovery.port {el_p2p_port} --enable-discv5-discovery --discovery.v5.port {el_p2p_port_2} --max-outbound-peers {el_max_peer_count} --max-inbound-peers {el_max_peer_count} --http --http.port {el_rpc_port} --http.api="rpc,eth,web3,net,debug" --authrpc.jwtsecret {jwtsecret_path} {sync_parameters}
+ExecStart={INSTALL_DIR}/reth node {_network} --full --datadir={BASE_DATA_DIR}/reth --log.file.directory={BASE_DATA_DIR}/reth/logs --metrics 127.0.0.1:6060 --port {el_p2p_port} --discovery.port {el_p2p_port} --enable-discv5-discovery --discovery.v5.port {el_p2p_port_2} --max-outbound-peers {el_max_peer_count} --max-inbound-peers {el_max_peer_count} --http --http.port {el_rpc_port} --http.api="rpc,eth,web3,net,debug" --authrpc.jwtsecret {jwtsecret_path} {sync_parameters}
+
+[Install]
+WantedBy=multi-user.target
+'''
+
+
+def generate_geth_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
+                          el_max_peer_count: str, jwtsecret_path: str,
+                          network_override: Optional[str] = None) -> str:
+    """Generate Geth execution client systemd service file content.
+
+    Args:
+        eth_network: Network name
+        el_p2p_port: EL P2P port
+        el_rpc_port: EL RPC port
+        el_max_peer_count: Max peer count
+        jwtsecret_path: Path to JWT secret file
+        network_override: Optional network flag override (for ephemery custom config)
+
+    Returns:
+        Service file content as a string
+    """
+    if network_override:
+        _network = network_override
+    else:
+        if eth_network.lower() == "mainnet":
+            _network = "--mainnet"
+        elif eth_network.lower() == "sepolia":
+            _network = "--sepolia"
+        elif eth_network.lower() == "holesky":
+            _network = "--holesky"
+        else:
+            _network = f"--{eth_network.lower()}"
+
+    return f'''[Unit]
+Description=Geth Execution Layer Client service for {eth_network.upper()}
+Wants=network-online.target
+After=network-online.target
+Documentation=https://docs.coincashew.com
+
+[Service]
+Type=simple
+User=execution
+Group=execution
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=900
+ExecStart={INSTALL_DIR}/geth \\
+    {_network} \\
+    --cache 8192 \\
+    --port {el_p2p_port} \\
+    --http.port {el_rpc_port} \\
+    --http.addr 0.0.0.0 \\
+    --authrpc.port 8551 \\
+    --maxpeers {el_max_peer_count} \\
+    --metrics \\
+    --http \\
+    --datadir={BASE_DATA_DIR}/geth \\
+    --pprof \\
+    --state.scheme=path \\
+    --authrpc.jwtsecret={jwtsecret_path} \\
+    --ws \\
+    --ws.port 8546 \\
+    --ws.addr 0.0.0.0 \\
+    --ws.api eth,net,web3
 
 [Install]
 WantedBy=multi-user.target
@@ -232,7 +298,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-ExecStart=/usr/local/bin/erigon --datadir=/var/lib/erigon {_network} --port={el_p2p_port} --torrent.port=42069 --http.port={el_rpc_port} --maxpeers={el_max_peer_count} --http.api=web3,eth,net,engine --metrics --pprof --prune.mode=minimal --authrpc.jwtsecret={jwtsecret_path} {sync_parameters} {_caplin} {mev_parameters}
+ExecStart={INSTALL_DIR}/erigon --datadir={BASE_DATA_DIR}/erigon {_network} --port={el_p2p_port} --torrent.port=42069 --http.port={el_rpc_port} --maxpeers={el_max_peer_count} --http.api=web3,eth,net,engine --metrics --pprof --prune.mode=minimal --authrpc.jwtsecret={jwtsecret_path} {sync_parameters} {_caplin} {mev_parameters}
 
 [Install]
 WantedBy=multi-user.target
@@ -275,7 +341,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-ExecStart=/usr/local/bin/erigon --datadir=/var/lib/erigon {_network} --port={el_p2p_port} --torrent.port=42069 --http.port={el_rpc_port} --maxpeers={el_max_peer_count} --http.api=web3,eth,net,engine --metrics --pprof --prune.mode=minimal --authrpc.jwtsecret={jwtsecret_path} {sync_parameters} --externalcl
+ExecStart={INSTALL_DIR}/erigon --datadir={BASE_DATA_DIR}/erigon {_network} --port={el_p2p_port} --torrent.port=42069 --http.port={el_rpc_port} --maxpeers={el_max_peer_count} --http.api=web3,eth,net,engine --metrics --pprof --prune.mode=minimal --authrpc.jwtsecret={jwtsecret_path} {sync_parameters} --externalcl
 
 [Install]
 WantedBy=multi-user.target
@@ -320,7 +386,7 @@ KillSignal=SIGINT
 TimeoutStopSec=900
 Environment=JAVA_OPTS=-Xmx6g
 Environment=TEKU_OPTS=-XX:-HeapDumpOnOutOfMemoryError
-ExecStart=/usr/local/bin/teku/bin/teku --network={eth_network} --data-path=/var/lib/teku --data-storage-mode=minimal --checkpoint-sync-url={sync_url} --ee-endpoint=http://127.0.0.1:8551 --ee-jwt-secret-file={jwtsecret_path} --rest-api-enabled=true --rest-api-port={cl_rest_port} --p2p-port={cl_p2p_port} --p2p-peer-upper-bound={cl_max_peer_count} --metrics-enabled=true --metrics-port=8008 {fee_parameters} {mev_parameters}
+ExecStart={INSTALL_DIR}/teku/bin/teku --network={eth_network} --data-path={BASE_DATA_DIR}/teku --data-storage-mode=minimal --checkpoint-sync-url={sync_url} --ee-endpoint=http://127.0.0.1:8551 --ee-jwt-secret-file={jwtsecret_path} --rest-api-enabled=true --rest-api-port={cl_rest_port} --p2p-port={cl_p2p_port} --p2p-peer-upper-bound={cl_max_peer_count} --metrics-enabled=true --metrics-port=8008 {fee_parameters} {mev_parameters}
 
 [Install]
 WantedBy=multi-user.target
@@ -356,7 +422,7 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 LimitNOFILE=65536
-ExecStart=/usr/local/bin/teku/bin/teku validator-client --network={eth_network} --data-path=/var/lib/teku_validator --validator-keys=/var/lib/teku_validator/validator_keys:/var/lib/teku_validator/validator_keys --metrics-enabled=true --metrics-port=8009 --validators-graffiti={graffiti} {beacon_node_address} {fee_parameters} {mev_parameters}
+ExecStart={INSTALL_DIR}/teku/bin/teku validator-client --network={eth_network} --data-path={BASE_DATA_DIR}/teku_validator --validator-keys={BASE_DATA_DIR}/teku_validator/validator_keys:{BASE_DATA_DIR}/teku_validator/validator_keys --metrics-enabled=true --metrics-port=8009 --validators-graffiti={graffiti} {beacon_node_address} {fee_parameters} {mev_parameters}
 
 [Install]
 WantedBy=multi-user.target
@@ -406,9 +472,9 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-Environment="TMPDIR=/var/lib/lodestar/tmp"
-WorkingDirectory=/usr/local/bin/lodestar
-ExecStart=/usr/local/bin/lodestar/lodestar beacon {_network} --dataDir=/var/lib/lodestar --checkpointSyncUrl={sync_url} --execution.urls=http://127.0.0.1:8551 --jwt-secret={jwtsecret_path} --rest.port={cl_rest_port} --port={cl_p2p_port} --targetPeers={cl_max_peer_count} --metrics=true --metrics.port=8008 {fee_parameters} {mev_parameters}
+Environment="TMPDIR={BASE_DATA_DIR}/lodestar/tmp"
+WorkingDirectory={INSTALL_DIR}/lodestar
+ExecStart={INSTALL_DIR}/lodestar/lodestar beacon {_network} --dataDir={BASE_DATA_DIR}/lodestar --checkpointSyncUrl={sync_url} --execution.urls=http://127.0.0.1:8551 --jwt-secret={jwtsecret_path} --rest.port={cl_rest_port} --port={cl_p2p_port} --targetPeers={cl_max_peer_count} --metrics=true --metrics.port=8008 {fee_parameters} {mev_parameters}
 
 [Install]
 WantedBy=multi-user.target
@@ -451,9 +517,9 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=300
 LimitNOFILE=65536
-Environment="TMPDIR=/var/lib/lodestar_validator/tmp"
-WorkingDirectory=/usr/local/bin/lodestar
-ExecStart=/usr/local/bin/lodestar/lodestar validator {_network} --dataDir=/var/lib/lodestar_validator --metrics=true --metrics.port=8009 --graffiti={graffiti} {beacon_node_address} {fee_parameters} {mev_parameters}
+Environment="TMPDIR={BASE_DATA_DIR}/lodestar_validator/tmp"
+WorkingDirectory={INSTALL_DIR}/lodestar
+ExecStart={INSTALL_DIR}/lodestar/lodestar validator {_network} --dataDir={BASE_DATA_DIR}/lodestar_validator --metrics=true --metrics.port=8009 --graffiti={graffiti} {beacon_node_address} {fee_parameters} {mev_parameters}
 
 [Install]
 WantedBy=multi-user.target
@@ -504,7 +570,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-ExecStart=/usr/local/bin/nimbus_beacon_node {_network} --data-dir=/var/lib/nimbus --tcp-port={cl_p2p_port} --udp-port={cl_p2p_port} --max-peers={cl_max_peer_count} --rest-port={cl_rest_port} --enr-auto-update=true --web3-url=http://127.0.0.1:8551 --rest --metrics --metrics-port=8008 --jwt-secret={jwtsecret_path} --non-interactive --status-bar=false --in-process-validators=false {fee_parameters} {mev_parameters}
+ExecStart={INSTALL_DIR}/nimbus_beacon_node {_network} --data-dir={BASE_DATA_DIR}/nimbus --tcp-port={cl_p2p_port} --udp-port={cl_p2p_port} --max-peers={cl_max_peer_count} --rest-port={cl_rest_port} --enr-auto-update=true --web3-url=http://127.0.0.1:8551 --rest --metrics --metrics-port=8008 --jwt-secret={jwtsecret_path} --non-interactive --status-bar=false --in-process-validators=false {fee_parameters} {mev_parameters}
 
 [Install]
 WantedBy=multi-user.target
@@ -541,7 +607,7 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 LimitNOFILE=65536
-ExecStart=/usr/local/bin/nimbus_validator_client --data-dir=/var/lib/nimbus_validator --metrics --metrics-port=8009 --non-interactive --doppelganger-detection=off --graffiti={graffiti} {beacon_node_address} {_network} {fee_parameters} {mev_parameters}
+ExecStart={INSTALL_DIR}/nimbus_validator_client --data-dir={BASE_DATA_DIR}/nimbus_validator --metrics --metrics-port=8009 --non-interactive --doppelganger-detection=off --graffiti={graffiti} {beacon_node_address} {_network} {fee_parameters} {mev_parameters}
 
 [Install]
 WantedBy=multi-user.target
@@ -593,7 +659,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-ExecStart=/usr/local/bin/lighthouse bn {_network} --datadir=/var/lib/lighthouse --gui --port={cl_p2p_port} --quic-port={cl_p2p_port_2} --target-peers={cl_max_peer_count} --http-port={cl_rest_port} --staking --validator-monitor-auto --checkpoint-sync-url={sync_url} --execution-endpoint=http://127.0.0.1:8551 --metrics --metrics-address=127.0.0.1 --metrics-port=8008 --execution-jwt={jwtsecret_path} {mev_parameters}
+ExecStart={INSTALL_DIR}/lighthouse bn {_network} --datadir={BASE_DATA_DIR}/lighthouse --gui --port={cl_p2p_port} --quic-port={cl_p2p_port_2} --target-peers={cl_max_peer_count} --http-port={cl_rest_port} --staking --validator-monitor-auto --checkpoint-sync-url={sync_url} --execution-endpoint=http://127.0.0.1:8551 --metrics --metrics-address=127.0.0.1 --metrics-port=8008 --execution-jwt={jwtsecret_path} {mev_parameters}
 
 [Install]
 WantedBy=multi-user.target
@@ -636,7 +702,7 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 LimitNOFILE=65536
-ExecStart=/usr/local/bin/lighthouse vc {_network} --datadir=/var/lib/lighthouse_validator --http --metrics --metrics-address=127.0.0.1 --metrics-port=8009 --graffiti={graffiti} {beacon_node_address} {fee_parameters} {mev_parameters}
+ExecStart={INSTALL_DIR}/lighthouse vc {_network} --datadir={BASE_DATA_DIR}/lighthouse_validator --http --metrics --metrics-address=127.0.0.1 --metrics-port=8009 --graffiti={graffiti} {beacon_node_address} {fee_parameters} {mev_parameters}
 
 [Install]
 WantedBy=multi-user.target

@@ -3,43 +3,51 @@ import requests
 import subprocess
 from tqdm import tqdm
 from typing import Tuple, Optional
-from deploy.service_generators import generate_besu_service
+from deploy.service_generators import generate_geth_service
 from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir
 from client_requirements import validate_version_for_network
 
-def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: str, 
+def download_and_install_geth(eth_network: str, el_p2p_port: str, el_rpc_port: str, 
                                 el_max_peer_count: str, jwtsecret_path: str,
                                 network_override: Optional[str] = None) -> Tuple[str, str]:
-    """Download and install Besu binary and service.
+    """Download and install Geth binary and service.
 
     Returns:
-        besu_version: The version string of the installed Besu
+        geth_version: The version string of the installed Geth
         service_file_path: The path to the created service file
     """
     # Create User and directories
-    setup_client_user_and_dir("execution", "besu")
-    print(f">> Installing dependencies")
-    subprocess.run(["sudo", "apt-get", '-qq', "install", "openjdk-21-jdk", "libjemalloc-dev", "-y"], check=True)
+    setup_client_user_and_dir("execution", "geth")
 
     # Define the Github API endpoint to get the latest release
-    url = 'https://api.github.com/repos/hyperledger/besu/releases/latest'
+    url = 'https://api.github.com/repos/ethereum/go-ethereum/releases/latest'
 
     # Send a GET request to the API endpoint
     response = requests.get(url)
-    besu_version = response.json()['tag_name']
+    geth_version = response.json()['tag_name']
 
     # Validate version for network requirements
-    is_valid, error_msg = validate_version_for_network('besu', besu_version, eth_network)
+    is_valid, error_msg = validate_version_for_network('geth', geth_version, eth_network)
     if not is_valid:
         print(error_msg)
         exit(1)
 
     assets = response.json()['assets']
     download_url = None
-    filename = f'besu-{besu_version}.tar.gz'
+    
+    # Check platform and arch
+    # To mimic geth's naming convention we need linux and amd64/arm64. We can assume linux.
+    import platform
+    arch = platform.machine().lower()
+    if arch == 'x86_64' or arch == 'amd64':
+        target_arch = 'amd64'
+    else:
+        target_arch = 'arm64'
+        
     for asset in assets:
-        if asset['name'].endswith(filename):
+        if asset['name'].startswith(f"geth-linux-{target_arch}-") and asset['name'].endswith('.tar.gz'):
             download_url = asset['browser_download_url']
+            filename = asset['name']
             break
 
     if download_url is None:
@@ -47,7 +55,7 @@ def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: s
         exit(1)
 
     # Download the latest release binary
-    print(f">> Downloading Besu > URL: {download_url}")
+    print(f">> Downloading Geth > URL: {download_url}")
     download_path = f"{DOWNLOAD_DIR, INSTALL_DIR}/{filename}"
 
     try:
@@ -70,15 +78,29 @@ def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: s
         print(f"Error: Unable to download file. Try again later. {e}")
         exit(1)
 
-    # Extract the binary to /usr/local/bin/besu using sudo
-    subprocess.run(["sudo", "mkdir", "-p", f"{INSTALL_DIR}/besu"])
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}/besu", "--strip-components=1"])
+    # Extract the binary to /usr/local/bin/geth using sudo
+    
+    # Extract to a temporary directory in DOWNLOAD_DIR, INSTALL_DIR
+    temp_extract_dir = f"{DOWNLOAD_DIR, INSTALL_DIR}/geth_temp"
+    subprocess.run(["mkdir", "-p", temp_extract_dir])
+    subprocess.run(["tar", "xzf", download_path, "-C", temp_extract_dir])
+    
+    # Find the geth binary and move it
+    extracted_dirs = [d for d in os.listdir(temp_extract_dir) if d.startswith("geth-linux")]
+    if extracted_dirs:
+        geth_bin_path = f"{temp_extract_dir}/{extracted_dirs[0]}/geth"
+        subprocess.run(["sudo", "mv", geth_bin_path, f"{INSTALL_DIR}/geth"])
+        subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/geth"])
+        subprocess.run(["sudo", "chown", "execution:execution", f"{INSTALL_DIR}/geth"])
+    
+    # Cleanup temp directory
+    subprocess.run(["rm", "-rf", temp_extract_dir])
 
     # Remove the tar file
     os.remove(download_path)
 
     # Generate Service File Content
-    service_content = generate_besu_service(
+    service_content = generate_geth_service(
         eth_network, el_p2p_port, el_rpc_port, el_max_peer_count, 
         jwtsecret_path, network_override
     )
@@ -86,4 +108,4 @@ def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: s
     service_file_path = '/etc/systemd/system/execution.service'
     write_service_file(service_content, service_file_path, 'execution_temp.service')
 
-    return besu_version, service_file_path
+    return geth_version, service_file_path

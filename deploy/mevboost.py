@@ -5,7 +5,7 @@ import subprocess
 from tqdm import tqdm
 from typing import List, Dict, Tuple
 from deploy.service_generators import generate_mevboost_service
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, get_computer_platform
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, get_computer_platform
 
 def install_mevboost(eth_network: str, mev_min_bid: str, relay_options: List[Dict[str, str]]) -> Tuple[str, str]:
     """Install MEV-Boost binary and service.
@@ -44,7 +44,7 @@ def install_mevboost(eth_network: str, mev_min_bid: str, relay_options: List[Dic
 
     # Download the latest release binary
     print(f">> Downloading mevboost > URL: {download_url}")
-    download_path = f"{DOWNLOAD_DIR}/mev-boost.tar.gz"
+    download_path = f"{DOWNLOAD_DIR, INSTALL_DIR}/mev-boost.tar.gz"
 
     try:
         # Download the file
@@ -67,11 +67,11 @@ def install_mevboost(eth_network: str, mev_min_bid: str, relay_options: List[Dic
         exit(1)
 
     # Extract the binary
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/usr/local/bin"])
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}"])
 
     # Ensure +x permissions, update owner
-    subprocess.run(["sudo", "chmod", "a+x", "/usr/local/bin/mev-boost"])
-    subprocess.run(["sudo", "chown", "mevboost:mevboost", "/usr/local/bin/mev-boost"])
+    subprocess.run(["sudo", "chmod", "a+x", f"{INSTALL_DIR}/mev-boost"])
+    subprocess.run(["sudo", "chown", "mevboost:mevboost", f"{INSTALL_DIR}/mev-boost"])
 
     # Remove the downloaded .tar.gz file
     os.remove(download_path)

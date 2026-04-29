@@ -3,7 +3,7 @@ import requests
 import subprocess
 from tqdm import tqdm
 from deploy.service_generators import generate_reth_service
-from deploy.common import write_service_file, get_raw_architecture, DOWNLOAD_DIR
+from deploy.common import write_service_file, get_raw_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir
 from client_requirements import validate_version_for_network
 from typing import Tuple, Optional
 
@@ -19,9 +19,7 @@ def download_and_install_reth(eth_network: str, el_p2p_port: str, el_p2p_port_2:
     binary_arch = get_raw_architecture()
 
     # Create User and directories
-    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "execution"])
-    subprocess.run(["sudo", "mkdir", "-p", "/var/lib/reth"])
-    subprocess.run(["sudo", "chown", "-R", "execution:execution", "/var/lib/reth"])
+    setup_client_user_and_dir("execution", "reth")
 
     # Define the Github API endpoint to get the latest release
     url = 'https://api.github.com/repos/paradigmxyz/reth/releases/latest'
@@ -52,7 +50,7 @@ def download_and_install_reth(eth_network: str, el_p2p_port: str, el_p2p_port_2:
 
     # Download the latest release binary
     print(f">> Downloading Reth > URL: {download_url}")
-    download_path = f"{DOWNLOAD_DIR}/{filename}"
+    download_path = f"{DOWNLOAD_DIR, INSTALL_DIR}/{filename}"
 
     try:
         # Download the file
@@ -76,13 +74,13 @@ def download_and_install_reth(eth_network: str, el_p2p_port: str, el_p2p_port_2:
 
     # Extract the binary to /usr/local/bin/ using sudo
     # Reth tarball contains just the binary at root
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/usr/local/bin"])
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}"])
 
     # Find the extracted reth binary and rename it
     subprocess.run(["sudo", "sh", "-c", "mv /usr/local/bin/reth-* /usr/local/bin/reth"])
 
     # Ensure +x permissions
-    subprocess.run(["sudo", "chmod", "a+x", "/usr/local/bin/reth"])
+    subprocess.run(["sudo", "chmod", "a+x", f"{INSTALL_DIR}/reth"])
 
     # Remove the tar file
     os.remove(download_path)

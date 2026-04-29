@@ -78,14 +78,14 @@ class TestCsmOverrides:
 # Menu & Selection Logic
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestClientMenuLogic:
-    def test_vc_only_shows_only_vc_brands(self):
+class TestCustomClientMenuLogic:
+    def test_vc_only_shows_only_vc_clients(self):
         menu = get_vc_menu()
-        assert set(menu) == {"Lighthouse", "Nimbus", "Teku", "Lodestar"}
+        assert set(menu) == set(CONSENSUS_CLIENTS)
 
-    def test_custom_ec_menu_includes_erigon(self):
+    def test_custom_ec_menu_includes_all_clients(self):
         menu = get_ec_menu()
-        assert "Erigon" in menu
+        assert set(menu) == set(EXECUTION_CLIENTS)
 
     def test_custom_cc_menu_includes_caplin_for_erigon(self):
         menu = get_cc_menu("Erigon")
@@ -128,6 +128,7 @@ class TestRunInstallRouting:
              patch('deploy.besu.download_and_install_besu', return_value=("v1", "p")) as b_ec, \
              patch('deploy.nethermind.download_and_install_nethermind', return_value=("v1", "p")) as n_ec, \
              patch('deploy.erigon.download_and_install_erigon', return_value=("v1", "p")) as e_ec, \
+             patch('deploy.geth.download_and_install_geth', return_value=("v1", "p")) as g_ec, \
              patch('deploy.lighthouse.download_lighthouse', return_value="v1") as lh_dl, \
              patch('deploy.lighthouse.install_lighthouse_bn', return_value="p") as lh_bn, \
              patch('deploy.lighthouse.install_lighthouse_vc', return_value="p") as lh_vc, \
@@ -147,7 +148,7 @@ class TestRunInstallRouting:
             run_install(role, "mainnet", ec, cc, vc or cc, flags, MOCK_PARAMS.copy(), MOCK_ENV.copy())
             
             return {
-                'reth': r_ec, 'besu': b_ec, 'nethermind': n_ec, 'erigon': e_ec,
+                'reth': r_ec, 'besu': b_ec, 'nethermind': n_ec, 'erigon': e_ec, 'geth': g_ec,
                 'lh_bn': lh_bn, 'lh_vc': lh_vc, 'lh_dl': lh_dl,
                 'nb_bn': nb_bn, 'nb_vc': nb_vc, 'nb_dl': nb_dl,
                 'tk_bn': tk_bn, 'tk_vc': tk_vc, 'tk_dl': tk_dl,
@@ -168,6 +169,10 @@ class TestRunInstallRouting:
     def test_reth_lighthouse_routing(self):
         mocks = self._run("Solo Staking Node", "Reth", "Lighthouse")
         self._verify_only_called(mocks, ['reth', 'lh_dl', 'lh_bn', 'lh_vc', 'mev'])
+
+    def test_geth_lighthouse_routing(self):
+        mocks = self._run("Solo Staking Node", "Geth", "Lighthouse")
+        self._verify_only_called(mocks, ['geth', 'lh_dl', 'lh_bn', 'lh_vc', 'mev'])
 
     def test_validator_only_skips_ec_and_bn(self):
         mocks = self._run("Validator Client Only", None, None, "Teku")
@@ -204,3 +209,8 @@ class TestRunInstallRouting:
         # Erigon + Caplin + Lighthouse VC
         # Caplin is integrated, so no separate CC download/install should happen
         self._verify_only_called(mocks, ['erigon', 'lh_dl', 'lh_vc'])
+
+    def test_custom_ec_bn_mev_no_vc(self):
+        # Custom setup: Geth EC + Teku BN + MEV (No VC)
+        mocks = self._run("Custom Setup", "Geth", "Teku", None, flags_override={"validator": False, "mevboost": True})
+        self._verify_only_called(mocks, ['geth', 'tk_dl', 'tk_bn', 'mev'])

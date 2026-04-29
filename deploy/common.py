@@ -1,19 +1,33 @@
 import os
 import re
-import sys
 import platform
 import subprocess
 import requests
 import json
 import tarfile
 import tempfile
-import random
 from consolemenu import PromptUtils, Screen
-from typing import Optional, List, Any
+from typing import Optional
 
 
 INSTALL_DIR = "/usr/local/bin"
 DOWNLOAD_DIR = "/tmp"
+BASE_DATA_DIR = "/var/lib"
+
+def setup_client_user_and_dir(user: str, client_name: str) -> None:
+    """Create a system user and data directory with proper permissions.
+
+    Args:
+        user: The username to create.
+        client_name: The directory name (under BASE_DATA_DIR)
+    """
+    data_dir = os.path.join(BASE_DATA_DIR, client_name)
+
+    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", user], 
+                   stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["sudo", "mkdir", "-p", data_dir], check=True)
+    subprocess.run(["sudo", "chown", "-R", f"{user}:{user}", data_dir], check=True)
+
 
 def clear_screen() -> None:
     """Clear the terminal screen based on the operating system."""

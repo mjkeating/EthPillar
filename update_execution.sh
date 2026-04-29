@@ -211,9 +211,14 @@ function updateClient(){
 	  Geth)
 		# Convert to lower case
 		_platform=${_platform,,}
-		[[ "${_arch}" == "amd64" ]] && _architecture="amd64" || _architecture="arm64"
-		RELEASE_URL="https://api.github.com/repos/ethereum/go-ethereum/$_URL_SUFFIX"
-		BINARIES_URL=$(curl -s "$RELEASE_URL" | jq -r ".assets[] | select(.name | startswith(\"geth-${_platform}-${_architecture}-\") and endswith(\".tar.gz\")) | .browser_download_url" | head -n 1)
+		RELEASE_URL="https://geth.ethereum.org/downloads"
+		if [[ "$1" == "LATEST" ]]; then
+			_URL_SUFFIX=""
+		else
+			_URL_SUFFIX="-${1#v}-"
+		fi
+		FILE="https://gethstore.blob.core.windows.net/builds/geth-${_platform}-${_architecture}${_URL_SUFFIX}[a-zA-Z0-9./?=_%:-]*.tar.gz"
+		BINARIES_URL=$(curl -s $RELEASE_URL | grep -Eo "$FILE" | head -1)
 		if [[ -z "$BINARIES_URL" ]]; then
 			error "❌ Could not find download URL for geth-${_platform}-${_architecture} in release $_URL_SUFFIX"
 		fi

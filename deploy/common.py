@@ -295,7 +295,7 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
         exit(0)
 
     # Prompt to start services
-    if not validator_only:
+    if not skip_prompts and not validator_only:
         e_client = (execution_client or "execution").capitalize()
         c_client = (consensus_client or "consensus").capitalize()
         message = f"\nInstallation successful!\nSyncing a {c_client}/{e_client} node for validator duties can be as quick as a few hours.\nWould you like to start syncing now?"

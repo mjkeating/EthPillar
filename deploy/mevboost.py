@@ -44,7 +44,7 @@ def install_mevboost(eth_network: str, mev_min_bid: str, relay_options: List[Dic
 
     # Download the latest release binary
     print(f">> Downloading mevboost > URL: {download_url}")
-    download_path = f"{DOWNLOAD_DIR, INSTALL_DIR}/mev-boost.tar.gz"
+    download_path = f"{DOWNLOAD_DIR}/mev-boost.tar.gz"
 
     try:
         # Download the file

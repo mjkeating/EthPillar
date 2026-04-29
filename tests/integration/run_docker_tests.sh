@@ -15,21 +15,14 @@ echo "Results will be stored in: $results_dir"
 echo "Rebuilding Docker image..."
 docker build -t ethpillar-rebuild -f tests/integration/Dockerfile.test .
 
-scripts=(
-    "deploy-caplin-erigon.py"
-    "deploy-lighthouse-reth.py"
-    "deploy-lodestar-besu.py"
-    "deploy-nimbus-nethermind.py"
-    "deploy-teku-besu.py"
-)
-
-variations=(
-    "--network HOLESKY --mev --config 'Solo Staking Node'"
-    "--network SEPOLIA --config 'Full Node Only'"
-    "--network HOLESKY --mev --config 'Lido CSM Staking Node'"
-    "--network HOLESKY --mev --config 'Lido CSM Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052"
-    "--network HOLESKY --mev --config 'Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052"
-    "--network HOLESKY --mev --config 'Failover Staking Node'"
+test_commands=(
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Erigon-Caplin --network SEPOLIA --config 'Full Node Only'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Reth-Lighthouse --network HOLESKY --mev --config 'Solo Staking Node'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Besu-Lodestar --network HOLESKY --mev --config 'Lido CSM Staking Node'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Nethermind-Nimbus --network EPHEMERY --mev --config 'Solo Staking Node'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Besu-Teku --network HOLESKY --mev --config 'Failover Staking Node'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lighthouse --network SEPOLIA --mev --config 'Custom Setup' --vc Lighthouse"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Besu-Lodestar --network HOLESKY --mev --config 'Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052"
 )
 
 # Use a temporary file to store results from parallel processes
@@ -39,33 +32,19 @@ touch "$results_db"
 pids=()
 MAX_CONCURRENT=5
 
-for script in "${scripts[@]}"; do
-    for var in "${variations[@]}"; do
+for cmd in "${test_commands[@]}"; do
         
-        # Skip caplin for Holesky as it's not supported
-        if [[ "$script" == "deploy-caplin-erigon.py" && "$var" == *"HOLESKY"* ]]; then
-            echo "Skipping Holesky test for Caplin ($script) as it's unsupported."
-            echo "SKIPPED|$script|$var|-" >> "$results_db"
-            continue
-        fi
-
-        # Switch Nimbus/Nethermind to Ephemery for Holesky
-        if [[ "$script" == "deploy-nimbus-nethermind.py" && "$var" == *"HOLESKY"* ]]; then
-            echo "Switching Nimbus/Nethermind from HOLESKY to EPHEMERY for test: $script $var"
-            var="${var//HOLESKY/EPHEMERY}"
-        fi
-
-        log_name="${script}_$(echo $var | tr -dc '[:alnum:]-')"
+        log_name=$(echo "$cmd" | awk '{for(i=4;i<=NF;i++) printf $i"_"; print ""}' | tr -dc '[:alnum:]_-' | sed 's/_$//')
         log_file="$results_dir/${log_name}.log"
 
-        echo "Starting background test for $script [ $var ]..."
+        echo "Starting background test for: $cmd"
         (
-            eval "docker run --rm -v \"$(pwd):/ethpillar\" ethpillar-rebuild python3 /ethpillar/tests/integration/run_inside_docker.py $script $var" > "$log_file" 2>&1
+            eval "docker run --rm -v \"$(pwd):/ethpillar\" ethpillar-rebuild $cmd" > "$log_file" 2>&1
             status=$?
             if [ $status -eq 0 ]; then
-                echo "PASS|$script|$var|${log_name}.log" >> "$results_db"
+                echo "PASS|$(echo $cmd | awk '{print $4" "$5}')|$(echo $cmd | awk '{for(i=6;i<=NF;i++) printf $i" "}')|${log_name}.log" >> "$results_db"
             else
-                echo "FAIL|$script|$var|${log_name}.log" >> "$results_db"
+                echo "FAIL|$(echo $cmd | awk '{print $4" "$5}')|$(echo $cmd | awk '{for(i=6;i<=NF;i++) printf $i" "}')|${log_name}.log" >> "$results_db"
             fi
         ) &
         pids+=($!)
@@ -81,7 +60,6 @@ for script in "${scripts[@]}"; do
             done
             pids=("${new_pids[@]}")
         fi
-    done
 done
 
 # Wait for any remaining parallel jobs to finish

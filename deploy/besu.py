@@ -48,7 +48,7 @@ def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: s
 
     # Download the latest release binary
     print(f">> Downloading Besu > URL: {download_url}")
-    download_path = f"{DOWNLOAD_DIR, INSTALL_DIR}/{filename}"
+    download_path = f"{DOWNLOAD_DIR}/{filename}"
 
     try:
         # Download the file

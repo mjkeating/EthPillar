@@ -42,7 +42,7 @@ def download_lighthouse(eth_network: str) -> str:
 
     # Download the latest release binary
     print(f">> Downloading Lighthouse > URL: {download_url}")
-    download_path = f"{DOWNLOAD_DIR, INSTALL_DIR}/{filename}"
+    download_path = f"{DOWNLOAD_DIR}/{filename}"
 
     try:
         # Download the file

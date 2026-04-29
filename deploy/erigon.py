@@ -50,7 +50,7 @@ def download_and_install_erigon(eth_network: str, el_p2p_port: str, el_rpc_port:
 
     # Download the latest release binary
     print(f">> Downloading Erigon > URL: {download_url}")
-    download_path = f"{DOWNLOAD_DIR, INSTALL_DIR}/{filename}"
+    download_path = f"{DOWNLOAD_DIR}/{filename}"
 
     try:
         # Download the file
@@ -136,7 +136,7 @@ def download_and_install_erigon_standalone(eth_network: str, el_p2p_port: str, e
 
     # Download the latest release binary
     print(f">> Downloading Erigon > URL: {download_url}")
-    download_path = f"{DOWNLOAD_DIR, INSTALL_DIR}/{filename}"
+    download_path = f"{DOWNLOAD_DIR}/{filename}"
 
     try:
         # Download the file

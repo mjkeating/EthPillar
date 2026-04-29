@@ -19,24 +19,13 @@ def download_and_install_geth(eth_network: str, el_p2p_port: str, el_rpc_port: s
     # Create User and directories
     setup_client_user_and_dir("execution", "geth")
 
-    # Define the Github API endpoint to get the latest release
-    url = 'https://api.github.com/repos/ethereum/go-ethereum/releases/latest'
+    # Define the downloads page URL
+    url = 'https://geth.ethereum.org/downloads'
 
-    # Send a GET request to the API endpoint
+    # Send a GET request to the page
     response = requests.get(url)
-    geth_version = response.json()['tag_name']
-
-    # Validate version for network requirements
-    is_valid, error_msg = validate_version_for_network('geth', geth_version, eth_network)
-    if not is_valid:
-        print(error_msg)
-        exit(1)
-
-    assets = response.json()['assets']
-    download_url = None
     
     # Check platform and arch
-    # To mimic geth's naming convention we need linux and amd64/arm64. We can assume linux.
     import platform
     arch = platform.machine().lower()
     if arch == 'x86_64' or arch == 'amd64':
@@ -44,19 +33,28 @@ def download_and_install_geth(eth_network: str, el_p2p_port: str, el_rpc_port: s
     else:
         target_arch = 'arm64'
         
-    for asset in assets:
-        if asset['name'].startswith(f"geth-linux-{target_arch}-") and asset['name'].endswith('.tar.gz'):
-            download_url = asset['browser_download_url']
-            filename = asset['name']
-            break
-
-    if download_url is None:
+    import re
+    pattern_url = r"(https://gethstore\.blob\.core\.windows\.net/builds/geth-linux-" + target_arch + r"-([0-9.]+)-[a-f0-9]+\.tar\.gz)"
+    url_matches = re.findall(pattern_url, response.text)
+    
+    if not url_matches:
         print("Error: Could not find the download URL for the latest release.")
         exit(1)
+        
+    download_url = url_matches[0][0]
+    geth_version = "v" + url_matches[0][1]
+    filename = download_url.split('/')[-1]
+
+    # Validate version for network requirements
+    is_valid, error_msg = validate_version_for_network('geth', geth_version, eth_network)
+    if not is_valid:
+        print(error_msg)
+        exit(1)
+
 
     # Download the latest release binary
     print(f">> Downloading Geth > URL: {download_url}")
-    download_path = f"{DOWNLOAD_DIR, INSTALL_DIR}/{filename}"
+    download_path = f"{DOWNLOAD_DIR}/{filename}"
 
     try:
         # Download the file
@@ -81,7 +79,7 @@ def download_and_install_geth(eth_network: str, el_p2p_port: str, el_rpc_port: s
     # Extract the binary to /usr/local/bin/geth using sudo
     
     # Extract to a temporary directory in DOWNLOAD_DIR, INSTALL_DIR
-    temp_extract_dir = f"{DOWNLOAD_DIR, INSTALL_DIR}/geth_temp"
+    temp_extract_dir = f"{DOWNLOAD_DIR}/geth_temp"
     subprocess.run(["mkdir", "-p", temp_extract_dir])
     subprocess.run(["tar", "xzf", download_path, "-C", temp_extract_dir])
     

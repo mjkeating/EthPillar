@@ -50,7 +50,7 @@ def download_and_install_reth(eth_network: str, el_p2p_port: str, el_p2p_port_2:
 
     # Download the latest release binary
     print(f">> Downloading Reth > URL: {download_url}")
-    download_path = f"{DOWNLOAD_DIR, INSTALL_DIR}/{filename}"
+    download_path = f"{DOWNLOAD_DIR}/{filename}"
 
     try:
         # Download the file

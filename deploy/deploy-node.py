@@ -132,7 +132,7 @@ elif role == "Custom Setup":
     # MEV
     if args.with_mevboost:
         flags['mevboost'] = True
-    elif not args.skip_prompts:
+    elif not skip_prompts:
         mev_prompt = SelectionMenu.get_selection(["Yes", "No"], title='Custom Setup', subtitle='Step 4: Do you want MEV-Boost?', show_exit_option=False)
         flags['mevboost'] = (mev_prompt == 0)
     else:

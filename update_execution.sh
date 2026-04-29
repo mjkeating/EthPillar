@@ -212,15 +212,17 @@ function updateClient(){
 		# Convert to lower case
 		_platform=${_platform,,}
 		RELEASE_URL="https://geth.ethereum.org/downloads"
+		#https://gethstore.blob.core.windows.net/builds/geth-linux-386-1.16.3-09786041.tar.gz
+		# Remove front v if present
 		if [[ "$1" == "LATEST" ]]; then
 			_URL_SUFFIX=""
 		else
 			_URL_SUFFIX="-${1#v}-"
 		fi
-		FILE="https://gethstore.blob.core.windows.net/builds/geth-${_platform}-${_architecture}${_URL_SUFFIX}[a-zA-Z0-9./?=_%:-]*.tar.gz"
+		FILE="https://gethstore.blob.core.windows.net/builds/geth-${_platform}-${_arch}${_URL_SUFFIX}[a-zA-Z0-9./?=_%:-]*.tar.gz"
 		BINARIES_URL=$(curl -s $RELEASE_URL | grep -Eo "$FILE" | head -1)
 		if [[ -z "$BINARIES_URL" ]]; then
-			error "❌ Could not find download URL for geth-${_platform}-${_architecture} in release $_URL_SUFFIX"
+			error "❌ Could not find download URL for geth-${_platform}-${_arch} in release $_URL_SUFFIX"
 		fi
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true

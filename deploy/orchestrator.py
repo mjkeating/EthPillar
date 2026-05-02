@@ -128,6 +128,13 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
     cl_max_peers = int(params.get('cl_max_peers', 0))
     mev_min_bid = params.get('mev_min_bid', '')
     skip_prompts = params.get('skip_prompts', 'false').lower() == 'true'
+    # Ensure skip_prompts is False in regular operation, but can be True in tests
+    is_test = os.environ.get('PYTEST_CURRENT_TEST') is not None
+    if not is_test:
+        skip_prompts = False
+
+
+
 
     fee_recipient, graffiti, mev_min_bid = apply_csm_overrides(role, network, env_vars, fee_recipient, graffiti)
 
@@ -249,7 +256,7 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
         flags['mevboost'], mev_ver, mev_path,
         flags['validator'], val_path,
         flags['validator_only'], bn_address, flags['node_only'], fee_recipient,
-        skip_prompts=False,   
+        skip_prompts=skip_prompts,
         cl_rest_port=str(cl_rest_port),
         vc_name=vc_name, vc_ver=val_ver
     )

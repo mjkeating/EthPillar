@@ -55,3 +55,26 @@ docker run --rm -v "${PWD}:/ethpillar" ethpillar-test python3 /ethpillar/tests/i
 - `tests/test_install_node.bats`: Validation logic for the install wrapper.
 - `tests/test_ethpillar_installnode.bats`: TUI routing and role selection logic.
 - `tests/integration/run_inside_docker.py`: The core engine for containerized installation testing.
+
+
+## Manual Testing
+
+Run a fresh container
+```bash
+# From the project root
+docker run -it --rm -v "${PWD}:/ethpillar" ethpillar-test bash
+```
+
+In the container:
+- install some basic tools:
+```bash
+apt-get update && apt-get install -y whiptail bc jq curl iproute2 kmod nano
+```
+- set terminal type:
+```bash
+export TERM=xterm
+```
+- run ethpillar:
+```bash
+bash ./ethpillar.sh
+```

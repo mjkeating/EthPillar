@@ -178,9 +178,13 @@ if not flags['validator_only']:
     try:
         sync_urls_list = getattr(config, f"{eth_network}_sync_urls", [])
         if sync_urls_list:
-            titles = [f"{item[0]} : {item[1]}" for item in sync_urls_list]
-            index = SelectionMenu.get_selection(titles, title='Validator Install Quickstart', subtitle='Select a Checkpoint-Sync URL:', show_exit_option=False)
-            sync_url = sync_urls_list[index][1]
+            if skip_prompts:
+                # Non-interactive: auto-select the first available sync URL
+                sync_url = sync_urls_list[0][1]
+            else:
+                titles = [f"{item[0]} : {item[1]}" for item in sync_urls_list]
+                index = SelectionMenu.get_selection(titles, title='Validator Install Quickstart', subtitle='Select a Checkpoint-Sync URL:', show_exit_option=False)
+                sync_url = sync_urls_list[index][1]
     except AttributeError:
         pass
 else:

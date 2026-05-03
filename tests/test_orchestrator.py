@@ -20,18 +20,23 @@ from deploy.orchestrator import (
     PREDEFINED_COMBOS, EXECUTION_CLIENTS, CONSENSUS_CLIENTS
 )
 
-# Mock parameters for run_install
+# Mock parameters for run_install — keys must match what orchestrator.run_install() reads
 MOCK_PARAMS = {
-    'jwtsecret': '/tmp/jwt',
+    'jwtsecret_path': '/tmp/jwt',
     'graffiti': 'EthPillar',
-    'fee_address': '0x123',
+    'fee_recipient': '0x123',
+    'bn_address': '',
+    'sync_url': '',
     'el_p2p_port': '30303',
+    'el_p2p_port_2': '30304',
     'el_rpc_port': '8545',
     'el_max_peers': '50',
     'cl_p2p_port': '9000',
+    'cl_p2p_port_2': '9001',
     'cl_rest_port': '5052',
     'cl_max_peers': '100',
-    'vc_only_bn_address': 'http://localhost:5052'
+    'mev_min_bid': '0.006',
+    'skip_prompts': 'true',
 }
 MOCK_ENV = {}
 

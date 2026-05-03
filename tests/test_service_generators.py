@@ -176,8 +176,35 @@ class TestGethService:
         assert "--cache 8192 \\" in result
         assert "User=execution" in result
 
+    def test_sepolia_service(self):
+        """Sepolia gets --sepolia flag, not --mainnet."""
+        result = generate_geth_service(
+            "sepolia", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH
+        )
+        assert "Description=Geth Execution Layer Client service for SEPOLIA" in result
+        assert "--sepolia \\" in result
+        assert "--mainnet \\" not in result
+
+    def test_holesky_service(self):
+        """Holesky gets --holesky flag."""
+        result = generate_geth_service(
+            "holesky", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH
+        )
+        assert "Description=Geth Execution Layer Client service for HOLESKY" in result
+        assert "--holesky \\" in result
+        assert "--mainnet \\" not in result
+
+    def test_hoodi_service(self):
+        """Hoodi uses fallback --{network} pattern."""
+        result = generate_geth_service(
+            "hoodi", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH
+        )
+        assert "Description=Geth Execution Layer Client service for HOODI" in result
+        assert "--hoodi \\" in result
+        assert "--mainnet \\" not in result
+
     def test_ephemery_custom_network(self):
-        """Ephemery uses custom genesis file."""
+        """Ephemery uses custom genesis file via network_override."""
         custom_network = '--datadir.ephemery'
         result = generate_geth_service(
             "ephemery", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT,
@@ -186,6 +213,32 @@ class TestGethService:
         assert "Description=Geth Execution Layer Client service for EPHEMERY" in result
         assert "--datadir.ephemery \\" in result
         assert "--mainnet \\" not in result
+
+    def test_service_structure(self):
+        """Verify overall service file structure and key Geth-specific flags."""
+        result = generate_geth_service(
+            "mainnet", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH
+        )
+        assert result.startswith("[Unit]")
+        assert "[Service]" in result
+        assert "[Install]" in result
+        assert "WantedBy=multi-user.target" in result
+        assert "User=execution" in result
+        assert "Group=execution" in result
+        assert "Restart=on-failure" in result
+        assert "KillSignal=SIGINT" in result
+        assert "TimeoutStopSec=900" in result
+        # Geth-specific flags
+        assert "--http \\" in result
+        assert "--http.addr 0.0.0.0 \\" in result
+        assert "--authrpc.port 8551 \\" in result
+        assert "--ws \\" in result
+        assert "--ws.port 8546 \\" in result
+        assert "--ws.addr 0.0.0.0 \\" in result
+        assert "--ws.api eth,net,web3" in result
+        assert "--state.scheme=path \\" in result
+        assert "--metrics \\" in result
+        assert "--pprof \\" in result
 
 
 # ═══════════════════════════════════════════════

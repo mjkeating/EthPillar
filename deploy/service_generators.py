@@ -226,7 +226,6 @@ ExecStart={INSTALL_DIR}/geth \\
     --cache 8192 \\
     --port {el_p2p_port} \\
     --http.port {el_rpc_port} \\
-    --http.addr 0.0.0.0 \\
     --authrpc.port 8551 \\
     --maxpeers {el_max_peer_count} \\
     --metrics \\
@@ -237,7 +236,6 @@ ExecStart={INSTALL_DIR}/geth \\
     --authrpc.jwtsecret={jwtsecret_path} \\
     --ws \\
     --ws.port 8546 \\
-    --ws.addr 0.0.0.0 \\
     --ws.api eth,net,web3
 
 [Install]

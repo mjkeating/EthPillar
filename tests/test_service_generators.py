@@ -230,11 +230,9 @@ class TestGethService:
         assert "TimeoutStopSec=900" in result
         # Geth-specific flags
         assert "--http \\" in result
-        assert "--http.addr 0.0.0.0 \\" in result
         assert "--authrpc.port 8551 \\" in result
         assert "--ws \\" in result
         assert "--ws.port 8546 \\" in result
-        assert "--ws.addr 0.0.0.0 \\" in result
         assert "--ws.api eth,net,web3" in result
         assert "--state.scheme=path \\" in result
         assert "--metrics \\" in result

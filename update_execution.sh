@@ -221,14 +221,28 @@ function updateClient(){
 		fi
 		FILE="https://gethstore.blob.core.windows.net/builds/geth-${_platform}-${_arch}${_URL_SUFFIX}[a-zA-Z0-9./?=_%:-]*.tar.gz"
 		BINARIES_URL=$(curl -s $RELEASE_URL | grep -Eo "$FILE" | head -1)
+		if [[ -z "$BINARIES_URL" ]]; then
+			error "❌ Could not find download URL for geth-${_platform}-${_arch} in release $_URL_SUFFIX"
+		fi
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O geth.tar.gz "$BINARIES_URL" || error "❌ Unable to wget file"
-		tar -xzvf geth.tar.gz -C "$HOME" --strip-components=1 || error "❌ Unable to untar file"
+		EXTRACTED_DIR="geth_temp"
+		mkdir -p "$EXTRACTED_DIR"
+		tar -xzvf geth.tar.gz -C "$EXTRACTED_DIR" || error "❌ Unable to untar file"
+		
+		# Find the geth binary
+		GETH_BIN=$(find "./$EXTRACTED_DIR" -type f -name "geth" | head -n 1)
+		if [ -z "$GETH_BIN" ]; then
+			error "❌ Could not find the extracted geth binary"
+		fi
+		
 		sudo systemctl stop execution
-		sudo mv "$HOME"/geth /usr/local/bin || error "❌ Unable to move file"
+		sudo mv "$GETH_BIN" /usr/local/bin/geth || error "❌ Unable to move file"
+		sudo chmod +x /usr/local/bin/geth
+		sudo chown execution:execution /usr/local/bin/geth
 		sudo systemctl start execution
-		rm geth.tar.gz COPYING
+		rm -rf "$EXTRACTED_DIR" geth.tar.gz
 	    ;;
   	  Reth)
 		# Convert to lower case

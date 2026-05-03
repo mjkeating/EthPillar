@@ -77,6 +77,8 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
             binaries.append("erigon"); users.append("execution"); services.append("execution")
         if "nethermind" in combo or "nethermind" in ec:
             binaries.append("nethermind"); users.append("execution"); services.append("execution")
+        if "geth" in combo or "geth" in ec:
+            binaries.append("geth"); users.append("execution"); services.append("execution")
             
     # CC/BN artifacts
     if not is_validator_only:

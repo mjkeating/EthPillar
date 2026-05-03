@@ -4,7 +4,7 @@ import subprocess
 from tqdm import tqdm
 from typing import Tuple, Optional
 from deploy.service_generators import generate_besu_service
-from deploy.common import write_service_file, DOWNLOAD_DIR
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir
 from client_requirements import validate_version_for_network
 
 def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: str, 
@@ -17,9 +17,7 @@ def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: s
         service_file_path: The path to the created service file
     """
     # Create User and directories
-    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "execution"])
-    subprocess.run(["sudo", "mkdir", "-p", "/var/lib/besu"])
-    subprocess.run(["sudo", "chown", "-R", "execution:execution", "/var/lib/besu"])
+    setup_client_user_and_dir("execution", "besu")
     print(f">> Installing dependencies")
     subprocess.run(["sudo", "apt-get", '-qq', "install", "openjdk-21-jdk", "libjemalloc-dev", "-y"], check=True)
 
@@ -73,8 +71,8 @@ def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: s
         exit(1)
 
     # Extract the binary to /usr/local/bin/besu using sudo
-    subprocess.run(["sudo", "mkdir", "-p", "/usr/local/bin/besu"])
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/usr/local/bin/besu", "--strip-components=1"])
+    subprocess.run(["sudo", "mkdir", "-p", f"{INSTALL_DIR}/besu"])
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}/besu", "--strip-components=1"])
 
     # Remove the tar file
     os.remove(download_path)

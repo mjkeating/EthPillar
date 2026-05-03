@@ -95,32 +95,48 @@ if flags['validator_only']:
 elif role == "Custom Setup":
     # Custom Path
     # EC
-    ec_menu = get_ec_menu()
-    index = SelectionMenu.get_selection(ec_menu, title='Custom Setup', subtitle='Step 1: Select your Execution Client', show_exit_option=False)
-    ec_name = ec_menu[index]
+    if not args.ec:
+        ec_menu = get_ec_menu()
+        index = SelectionMenu.get_selection(ec_menu, title='Custom Setup', subtitle='Step 1: Select your Execution Client', show_exit_option=False)
+        ec_name = ec_menu[index]
+    else:
+        ec_name = args.ec
     # CC
-    cc_menu = get_cc_menu(ec_name)
-    index = SelectionMenu.get_selection(cc_menu, title='Custom Setup', subtitle='Step 2: Select your Consensus Client', show_exit_option=False)
-    cc_name = cc_menu[index]
+    if not args.cc:
+        cc_menu = get_cc_menu(ec_name)
+        index = SelectionMenu.get_selection(cc_menu, title='Custom Setup', subtitle='Step 2: Select your Consensus Client', show_exit_option=False)
+        cc_name = cc_menu[index]
+    else:
+        cc_name = args.cc
     
     # VC
-    val_prompt = SelectionMenu.get_selection(["Yes", "No"], title='Custom Setup', subtitle='Step 3: Do you want a Validator Client?', show_exit_option=False)
-    if val_prompt == 0:
-        flags['validator'] = True
-        vc_opts = get_vc_options_for_cc(cc_name)
-        if len(vc_opts) == 4: # No "Same as CC"
-            index = SelectionMenu.get_selection(vc_opts, title='Validator Client', subtitle='Select your Validator Client:', show_exit_option=False)
-            vc_name = vc_opts[index]
+    # VC
+    if not args.vc and not args.with_validator:
+        val_prompt = SelectionMenu.get_selection(["Yes", "No"], title='Custom Setup', subtitle='Step 3: Do you want a Validator Client?', show_exit_option=False)
+        if val_prompt == 0:
+            flags['validator'] = True
+            vc_opts = get_vc_options_for_cc(cc_name)
+            if len(vc_opts) == 4: # No "Same as CC"
+                index = SelectionMenu.get_selection(vc_opts, title='Validator Client', subtitle='Select your Validator Client:', show_exit_option=False)
+                vc_name = vc_opts[index]
+            else:
+                index = SelectionMenu.get_selection(vc_opts, title='Validator Client', subtitle='Use same client as CC?', show_exit_option=False)
+                vc_name = resolve_vc_name(cc_name, vc_opts[index])
         else:
-            index = SelectionMenu.get_selection(vc_opts, title='Validator Client', subtitle='Use same client as CC?', show_exit_option=False)
-            vc_name = resolve_vc_name(cc_name, vc_opts[index])
+            flags['validator'] = False
+            vc_name = None
     else:
-        flags['validator'] = False
-        vc_name = None
+        flags['validator'] = True
+        vc_name = args.vc if args.vc else cc_name
 
     # MEV
-    mev_prompt = SelectionMenu.get_selection(["Yes", "No"], title='Custom Setup', subtitle='Step 4: Do you want MEV-Boost?', show_exit_option=False)
-    flags['mevboost'] = (mev_prompt == 0)
+    if args.with_mevboost:
+        flags['mevboost'] = True
+    elif not skip_prompts:
+        mev_prompt = SelectionMenu.get_selection(["Yes", "No"], title='Custom Setup', subtitle='Step 4: Do you want MEV-Boost?', show_exit_option=False)
+        flags['mevboost'] = (mev_prompt == 0)
+    else:
+        flags['mevboost'] = False
 
 
 else:
@@ -162,9 +178,13 @@ if not flags['validator_only']:
     try:
         sync_urls_list = getattr(config, f"{eth_network}_sync_urls", [])
         if sync_urls_list:
-            titles = [f"{item[0]} : {item[1]}" for item in sync_urls_list]
-            index = SelectionMenu.get_selection(titles, title='Validator Install Quickstart', subtitle='Select a Checkpoint-Sync URL:', show_exit_option=False)
-            sync_url = sync_urls_list[index][1]
+            if skip_prompts:
+                # Non-interactive: auto-select the first available sync URL
+                sync_url = sync_urls_list[0][1]
+            else:
+                titles = [f"{item[0]} : {item[1]}" for item in sync_urls_list]
+                index = SelectionMenu.get_selection(titles, title='Validator Install Quickstart', subtitle='Select a Checkpoint-Sync URL:', show_exit_option=False)
+                sync_url = sync_urls_list[index][1]
     except AttributeError:
         pass
 else:

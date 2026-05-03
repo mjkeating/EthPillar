@@ -4,7 +4,7 @@ import subprocess
 from tqdm import tqdm
 from typing import Tuple
 from deploy.service_generators import generate_erigon_service, generate_erigon_standalone_service
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir
 from client_requirements import validate_version_for_network
 
 def download_and_install_erigon(eth_network: str, el_p2p_port: str, el_rpc_port: str, el_max_peer_count: str, 
@@ -19,9 +19,7 @@ def download_and_install_erigon(eth_network: str, el_p2p_port: str, el_rpc_port:
     binary_arch = get_machine_architecture()
 
     # Create User and directories
-    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "execution"])
-    subprocess.run(["sudo", "mkdir", "-p", "/var/lib/erigon"])
-    subprocess.run(["sudo", "chown", "-R", "execution:execution", "/var/lib/erigon"])
+    setup_client_user_and_dir("execution", "erigon")
 
     # Define the Github API endpoint to get the latest release
     url = 'https://api.github.com/repos/erigontech/erigon/releases/latest'
@@ -76,9 +74,9 @@ def download_and_install_erigon(eth_network: str, el_p2p_port: str, el_rpc_port:
 
     # Extract the binary using sudo
     # Erigon tarball typically contains a folder, so we strip one component and extract to /usr/local/bin
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/usr/local/bin", "--strip-components=1"])
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}", "--strip-components=1"])
     # Ensure it's executable
-    subprocess.run(["sudo", "chmod", "a+x", "/usr/local/bin/erigon"])
+    subprocess.run(["sudo", "chmod", "a+x", f"{INSTALL_DIR}/erigon"])
 
     # Remove the tar file
     os.remove(download_path)
@@ -107,9 +105,7 @@ def download_and_install_erigon_standalone(eth_network: str, el_p2p_port: str, e
     binary_arch = get_machine_architecture()
 
     # Create User and directories
-    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "execution"])
-    subprocess.run(["sudo", "mkdir", "-p", "/var/lib/erigon"])
-    subprocess.run(["sudo", "chown", "-R", "execution:execution", "/var/lib/erigon"])
+    setup_client_user_and_dir("execution", "erigon")
 
     # Define the Github API endpoint to get the latest release
     url = 'https://api.github.com/repos/erigontech/erigon/releases/latest'
@@ -163,8 +159,8 @@ def download_and_install_erigon_standalone(eth_network: str, el_p2p_port: str, e
         exit(1)
 
     # Extract the binary using sudo
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/usr/local/bin", "--strip-components=1"])
-    subprocess.run(["sudo", "chmod", "a+x", "/usr/local/bin/erigon"])
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}", "--strip-components=1"])
+    subprocess.run(["sudo", "chmod", "a+x", f"{INSTALL_DIR}/erigon"])
 
     # Remove the tar file
     os.remove(download_path)

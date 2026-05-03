@@ -3,7 +3,7 @@ import requests
 import subprocess
 from tqdm import tqdm
 from deploy.service_generators import generate_nimbus_bn_service, generate_nimbus_vc_service
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir
 from client_requirements import validate_version_for_network
 from typing import Tuple, Optional
 
@@ -19,12 +19,8 @@ def download_nimbus(eth_network: str) -> str:
     binary_arch = get_machine_architecture() # Use amd64 for Nimbus
 
     # Create User and directories
-    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "consensus"])
-    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "validator"])
-    subprocess.run(["sudo", "mkdir", "-p", "/var/lib/nimbus"])
-    subprocess.run(["sudo", "chown", "-R", "consensus:consensus", "/var/lib/nimbus"])
-    subprocess.run(["sudo", "mkdir", "-p", "/var/lib/nimbus_validator"])
-    subprocess.run(["sudo", "chown", "-R", "validator:validator", "/var/lib/nimbus_validator"])
+    setup_client_user_and_dir("consensus", "nimbus")
+    setup_client_user_and_dir("validator", "nimbus_validator")
     
     # Install dependencies for Nimbus
     print(f">> Installing Nimbus dependencies")
@@ -86,8 +82,8 @@ def download_nimbus(eth_network: str) -> str:
     subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/tmp/nimbus_extract", "--strip-components=1"])
     
     # Move the actual binaries we need
-    subprocess.run(["sudo", "cp", "/tmp/nimbus_extract/build/nimbus_beacon_node", "/usr/local/bin/"])
-    subprocess.run(["sudo", "cp", "/tmp/nimbus_extract/build/nimbus_validator_client", "/usr/local/bin/"])
+    subprocess.run(["sudo", "cp", "/tmp/nimbus_extract/build/nimbus_beacon_node", f"{INSTALL_DIR}/"])
+    subprocess.run(["sudo", "cp", "/tmp/nimbus_extract/build/nimbus_validator_client", f"{INSTALL_DIR}/"])
 
     # Remove the tar file and extract dir
     os.remove(download_path)

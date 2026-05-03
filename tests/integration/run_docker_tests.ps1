@@ -33,6 +33,19 @@ $variations = @(
     "--network HOLESKY --mev --config `"Failover Staking Node`""
 )
 
+# Custom setup tests use run_inside_docker.py directly with --ec/--cc/--vc flags.
+# These cover client combos without a dedicated deploy-*.py script (e.g. Geth Custom Setup).
+$customTests = @(
+    [PSCustomObject]@{
+        Label     = "Geth-Lighthouse-Custom-Setup-SEPOLIA"
+        DockerCmd = "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lighthouse --vc Lighthouse --network SEPOLIA --mev --config `"Custom Setup`""
+    },
+    [PSCustomObject]@{
+        Label     = "Geth-Teku-FullNodeOnly-SEPOLIA"
+        DockerCmd = "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Teku --network SEPOLIA --config `"Full Node Only`""
+    }
+)
+
 $testMetadata = @()
 $jobs = @()
 $maxConcurrent = 5
@@ -85,6 +98,40 @@ foreach ($script in $scripts) {
             Start-Sleep -Seconds 2
             $runningJobs = $jobs | Where-Object { $_.State -eq 'Running' }
         }
+    }
+}
+
+# Run custom tests (Geth and other combos without dedicated deploy-*.py scripts)
+foreach ($customTest in $customTests) {
+    $logName = $customTest.Label -replace '[^a-zA-Z0-9-]', '_'
+    $dockerCmd = $customTest.DockerCmd
+
+    $meta = [PSCustomObject]@{
+        Script    = $customTest.Label
+        Variation = "Custom"
+        LogFile   = "$logName.log"
+        Status    = "Pending"
+        JobId     = $null
+    }
+
+    Write-Host "Starting background test for $($customTest.Label)..." -ForegroundColor Cyan
+
+    $job = Start-Job -ScriptBlock {
+        param($DockerCmd, $WorkingDir, $ResultsPath, $LogName)
+        Set-Location -Path $WorkingDir
+        $logFile = Join-Path $ResultsPath "$LogName.log"
+        Invoke-Expression "docker run --rm -v `"$WorkingDir`:/ethpillar`" ethpillar-rebuild $DockerCmd > `"$logFile`" 2>&1"
+        if ($LASTEXITCODE -ne 0) { throw "Custom integration test failed: $DockerCmd" }
+    } -ArgumentList $dockerCmd, $pwd.Path, $resultsDir, $logName
+
+    $meta.JobId = $job.Id
+    $testMetadata += $meta
+    $jobs += $job
+
+    $runningJobs = $jobs | Where-Object { $_.State -eq 'Running' }
+    while ($runningJobs.Count -ge $maxConcurrent) {
+        Start-Sleep -Seconds 2
+        $runningJobs = $jobs | Where-Object { $_.State -eq 'Running' }
     }
 }
 

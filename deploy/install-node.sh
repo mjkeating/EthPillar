@@ -157,7 +157,7 @@ linux_install_validator-install() {
     fi
     ohai "Installing validator-install"
     if [ ${#extra_args[@]} -gt 0 ]; then
-        $python "${ETHPILLAR_DIR}/${install_file}" --skip_prompts "$skip_prompt" "${extra_args[@]}"
+        $python "${ETHPILLAR_DIR}/${install_file}" "${extra_args[@]}"
     else
         $python "${ETHPILLAR_DIR}/${install_file}"
     fi

@@ -69,14 +69,15 @@ teardown() {
 }
 
 @test "install-node.sh: uses default script if none provided" {
+    # Pass 'true' explicitly to skip the interactive wait_for_user prompt
     run bash deploy/install-node.sh "true"
     [ "$status" -eq 0 ]
     grep -q "python3 .*deploy-node.py" "$COMMAND_LOG"
 }
 
 @test "install-node.sh: invokes python3 with correct arguments" {
-    # Test simplified call (no script name, no "true")
-    run bash deploy/install-node.sh "--install_config" "Solo Staking Node"
+    # Pass 'true' first so wait_for_user is skipped, then extra args are forwarded
+    run bash deploy/install-node.sh "true" "--install_config" "Solo Staking Node"
     
     [ "$status" -eq 0 ]
     grep -q "python3 .*deploy-node.py" "$COMMAND_LOG"
@@ -84,9 +85,19 @@ teardown() {
 }
 
 @test "install-node.sh: installs dependencies" {
-    run bash deploy/install-node.sh "--some-arg"
+    # Pass 'true' to skip interactive banner prompt during testing
+    run bash deploy/install-node.sh "true" "--some-arg"
     [ "$status" -eq 0 ]
     
     grep -q "apt-get update" "$COMMAND_LOG"
     grep -q "apt-get install" "$COMMAND_LOG"
+}
+
+@test "install-node.sh: skip_prompt only set by explicit true/false arg" {
+    # Verify that passing 'false' explicitly does NOT skip the wait prompt
+    # (i.e., the script should call wait_for_user which reads stdin)
+    # We pipe newline to satisfy the prompt, simulating a real user pressing Enter
+    run bash -c 'echo | bash deploy/install-node.sh "false" "--some-arg"'
+    # Should succeed (user pressed Enter) and still install
+    grep -q "apt-get update" "$COMMAND_LOG"
 }

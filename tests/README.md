@@ -4,8 +4,7 @@ This directory contains the comprehensive test suite for EthPillar, including un
 
 ## Prerequisites
 
-- **Docker Desktop**: Required for all tests to ensure a consistent Ubuntu 24.04 environment.
-- **PowerShell**: Required for running the integration test harness on Windows.
+- **Docker**: Required for all tests to ensure a consistent Ubuntu 24.04 environment.
 
 ## 1. Build the Test Environment
 

@@ -54,6 +54,7 @@ parser.add_argument("--cl_p2p_port", type=int, default=CL_P2P_PORT)
 parser.add_argument("--cl_rest_port", type=int, default=CL_REST_PORT)
 parser.add_argument("--cl_max_peers", type=int, default=CL_MAX_PEER_COUNT)
 parser.add_argument("--vc_only_bn_address", type=str, default="")
+parser.add_argument("--switch_client", type=str, choices=["execution", "consensus"], default="")
 parser.add_argument("--skip_prompts", type=str, default="")
 args = parser.parse_args()
 
@@ -70,14 +71,23 @@ if not args.network:
 else:
     eth_network = args.network.lower()
 
-# 2. Role selection
-if not args.install_config:
-    index = SelectionMenu.get_selection(VALID_ROLES, title='Validator Install Quickstart', subtitle='What type of installation would you like?', show_exit_option=False)
-    role = VALID_ROLES[index]
+if args.switch_client:
+    role = f"Switch {args.switch_client.capitalize()} Client"
+    flags = {
+        "mevboost": False,
+        "validator": False,
+        "validator_only": False,
+        "node_only": False
+    }
 else:
-    role = args.install_config
+    # 2. Role selection
+    if not args.install_config:
+        index = SelectionMenu.get_selection(VALID_ROLES, title='Validator Install Quickstart', subtitle='What type of installation would you like?', show_exit_option=False)
+        role = VALID_ROLES[index]
+    else:
+        role = args.install_config
 
-flags = resolve_role_flags(role, eth_network)
+    flags = resolve_role_flags(role, eth_network)
 
 # 3. Client Selection
 ec_name = None
@@ -158,6 +168,22 @@ else:
     # For predefined roles, VC is usually same as CC if validator is enabled
     if flags['validator']:
         vc_name = cc_name
+elif args.switch_client == "execution":
+    if not args.ec:
+        ec_menu = get_ec_menu()
+        index = SelectionMenu.get_selection(ec_menu, title='Switch Execution Client', subtitle='Select your new Execution Client:', show_exit_option=False)
+        ec_name = ec_menu[index]
+    else:
+        ec_name = args.ec
+    cc_name = args.cc
+elif args.switch_client == "consensus":
+    if not args.cc:
+        cc_menu = get_cc_menu(args.ec)
+        index = SelectionMenu.get_selection(cc_menu, title='Switch Consensus Client', subtitle='Select your new Consensus Client:', show_exit_option=False)
+        cc_name = cc_menu[index]
+    else:
+        cc_name = args.cc
+    ec_name = args.ec
 
 # 4. Role-specific prompts
 beacon_node_address = args.vc_only_bn_address
@@ -174,7 +200,7 @@ if flags['validator'] and not FEE_RECIPIENT_ADDRESS:
 
 # Sync URL
 sync_url = ""
-if not flags['validator_only']:
+if not flags['validator_only'] and args.switch_client != "execution":
     try:
         sync_urls_list = getattr(config, f"{eth_network}_sync_urls", [])
         if sync_urls_list:
@@ -220,8 +246,8 @@ env_vars = dict(os.environ)
 run_install(
     role=role, 
     network=eth_network, 
-    ec_name=ec_name, 
-    cc_name=cc_name, 
+    ec_name=ec_name if args.switch_client != "consensus" else None, 
+    cc_name=cc_name if args.switch_client != "execution" else None, 
     vc_name=vc_name, 
     flags=flags, 
     params=params, 

@@ -30,6 +30,10 @@ setup() {
     # We need to source switch_client.sh without it running its main routine.
     # It calls 'getClient' and 'switchClient $1' at the end but only if BASH_SOURCE matches 0.
     
+    # Mock 'getNetwork'
+    getNetwork() { NETWORK="Mainnet"; }
+    export -f getNetwork
+    
     # Mock 'getClient' since the real one reads /etc/systemd/system/execution.service
     getClient() { :; }
     export -f getClient
@@ -77,7 +81,7 @@ teardown() {
     [[ "$output" == *"sudo systemctl stop execution"* ]]
     
     # Check deploy script call
-    [[ "$output" == *"runScript deploy/install-node.sh deploy/deploy-node.py --switch_client execution --cc Teku"* ]]
+    [[ "$output" == *"runScript deploy/install-node.sh deploy/deploy-node.py --switch_client execution --cc Teku --network Mainnet"* ]]
 }
 
 @test "switchClient consensus (No to backup, No to remove)" {
@@ -106,7 +110,7 @@ teardown() {
     [[ "$output" == *"sudo systemctl stop consensus"* ]]
     
     # Check deploy script call
-    [[ "$output" == *"runScript deploy/install-node.sh deploy/deploy-node.py --switch_client consensus --ec Geth"* ]]
+    [[ "$output" == *"runScript deploy/install-node.sh deploy/deploy-node.py --switch_client consensus --ec Geth --network Mainnet"* ]]
 }
 
 @test "switchClient skips backup if service file does not exist" {

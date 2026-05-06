@@ -57,14 +57,21 @@ function switchClient(){
         fi
     fi
 
-    # 3) Stop the service before installing the new one
+    # 3) Get network before stopping anything (requires EL to be running if switching CC)
+    getNetwork
+    NETWORK_ARG=""
+    if [ "$NETWORK" != "Network Syncing" ] && [ -n "$NETWORK" ]; then
+        NETWORK_ARG="--network $NETWORK"
+    fi
+
+    # 4) Stop the service before installing the new one
     sudo systemctl stop ${TARGET_CLIENT} > /dev/null 2>&1
 
-    # 4) Launch the python script to select new client and install
+    # 5) Launch the python script to select new client and install
     if [ "$TARGET_CLIENT" == "execution" ]; then
-        runScript deploy/install-node.sh deploy/deploy-node.py --switch_client execution --cc "$CL"
+        runScript deploy/install-node.sh deploy/deploy-node.py --switch_client execution --cc "$CL" $NETWORK_ARG
     elif [ "$TARGET_CLIENT" == "consensus" ]; then
-        runScript deploy/install-node.sh deploy/deploy-node.py --switch_client consensus --ec "$EL"
+        runScript deploy/install-node.sh deploy/deploy-node.py --switch_client consensus --ec "$EL" $NETWORK_ARG
     fi
 }
 

@@ -51,7 +51,7 @@ function switchClient(){
     esac
 
     if [ -n "$DATADIR" ] && [ -d "$DATADIR" ]; then
-        if whiptail --title "Switch $TARGET_CLIENT Client" --yesno "Remove existing client data directory ($DATADIR)?\n\nIf you select No, the data will be preserved but might not be compatible with the new client." 10 78; then
+        if whiptail --title "Switch $TARGET_CLIENT Client" --yesno "Remove existing client data directory ($DATADIR)?\n\nSelecting Yes will free up disk space. If you select No, the data will be preserved in case you want to switch back later." 10 78; then
             sudo systemctl stop ${TARGET_CLIENT}
             sudo rm -rf $DATADIR
         fi

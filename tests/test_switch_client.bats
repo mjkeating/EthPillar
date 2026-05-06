@@ -6,6 +6,12 @@ setup() {
 
     export SYSTEMD_DIR=$(mktemp -d)
     export BASE_DATA_DIR=$(mktemp -d)
+    export EL_RPC_ENDPOINT="http://localhost:8545"
+    export CL_REST_ENDPOINT="http://localhost:5052"
+
+    # Source the scripts first so we can override their functions
+    source ./functions.sh
+    source ./switch_client.sh
 
     # Mock 'sudo'
     sudo() {
@@ -27,9 +33,6 @@ setup() {
     }
     export -f runScript
 
-    # We need to source switch_client.sh without it running its main routine.
-    # It calls 'getClient' and 'switchClient $1' at the end but only if BASH_SOURCE matches 0.
-    
     # Mock 'getNetwork'
     getNetwork() { NETWORK="Mainnet"; }
     export -f getNetwork
@@ -41,10 +44,6 @@ setup() {
     # Mock 'getExecutionDatadir' since Reth uses it
     getExecutionDatadir() { :; }
     export -f getExecutionDatadir
-
-    # Source the scripts
-    source ./functions.sh
-    source ./switch_client.sh
 
     > "$COMMAND_LOG"
 }

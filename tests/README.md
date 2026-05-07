@@ -64,16 +64,7 @@ Run a fresh container
 docker run -it --rm -v "${PWD}:/ethpillar" ethpillar-test bash
 ```
 
-In the container:
-- install some basic tools:
+In the container, simply run the TUI:
 ```bash
-apt-get update && apt-get install -y whiptail bc jq curl iproute2 kmod nano
-```
-- set terminal type:
-```bash
-export TERM=xterm
-```
-- run ethpillar:
-```bash
-bash ./ethpillar.sh
+./ethpillar.sh
 ```

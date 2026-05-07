@@ -333,8 +333,9 @@ while true; do
       6 "Update to latest release"
       7 "Resync execution client"
       8 "Expose execution client RPC Port"
+      9 "Switch execution client"
       - ""
-      9 "Back to main menu"
+      10 "Back to main menu"
     )
 
     # Display the submenu and get the user's choice
@@ -380,6 +381,9 @@ while true; do
         exposeRpcEL
         ;;
       9)
+        runScript switch_client.sh execution
+        ;;
+      10)
         break
         ;;
     esac
@@ -399,8 +403,9 @@ while true; do
       6 "Update to latest release"
       7 "Resync consensus client"
       8 "Expose consensus client RPC Port"
+      9 "Switch consensus client"
       - ""
-      9 "Back to main menu"
+      10 "Back to main menu"
     )
 
     # Display the submenu and get the user's choice
@@ -446,6 +451,9 @@ while true; do
         exposeRpcCL
         ;;
       9)
+        runScript switch_client.sh consensus
+        ;;
+      10)
         break
         ;;
     esac

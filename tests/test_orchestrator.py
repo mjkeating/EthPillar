@@ -219,3 +219,13 @@ class TestRunInstallRouting:
         # Custom setup: Geth EC + Teku BN + MEV (No VC)
         mocks = self._run("Custom Setup", "Geth", "Teku", None, flags_override={"validator": False, "mevboost": True})
         self._verify_only_called(mocks, ['geth', 'tk_dl', 'tk_bn', 'mev'])
+
+    def test_switch_execution_client_only(self):
+        # When switching EC, cc_name and vc_name are None, and validator/mevboost flags are False
+        mocks = self._run("Switch Execution Client", "Nethermind", None, None, flags_override={"validator": False, "mevboost": False})
+        self._verify_only_called(mocks, ['nethermind'])
+
+    def test_switch_consensus_client_only(self):
+        # When switching CC, ec_name is None, and validator/mevboost flags are False
+        mocks = self._run("Switch Consensus Client", None, "Lighthouse", None, flags_override={"validator": False, "mevboost": False})
+        self._verify_only_called(mocks, ['lh_dl', 'lh_bn'])

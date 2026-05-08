@@ -612,6 +612,53 @@ WantedBy=multi-user.target
 '''
 
 
+def generate_grandine_bn_service(eth_network: str, sync_url: str, jwtsecret_path: str,
+                                 cl_rest_port: str, cl_p2p_port: str, cl_p2p_port_2: str, cl_max_peer_count: str,
+                                 fee_parameters: str = '', mev_parameters: str = '',
+                                 network_override: Optional[str] = None) -> str:
+    """Generate Grandine beacon node systemd service file content.
+
+    Args:
+        eth_network: Network name
+        sync_url: Checkpoint sync URL
+        jwtsecret_path: Path to JWT secret file
+        cl_rest_port: CL REST port
+        cl_p2p_port: CL P2P port
+        cl_p2p_port_2: CL secondary P2P port
+        cl_max_peer_count: CL max peer count
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+        network_override: Optional network flag override
+
+    Returns:
+        Service file content as a string
+    """
+    if network_override:
+        _network = network_override
+    else:
+        _network = f'--network={eth_network}'
+
+    return f'''[Unit]
+Description=Grandine Consensus Client service for {eth_network.upper()}
+Wants=network-online.target
+After=network-online.target
+Documentation=https://docs.coincashew.com
+
+[Service]
+Type=simple
+User=consensus
+Group=consensus
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=900
+ExecStart={INSTALL_DIR}/grandine {_network} --data-dir={BASE_DATA_DIR}/grandine --libp2p-port={cl_p2p_port} --discovery-port={cl_p2p_port} --quic-port={cl_p2p_port_2} --target-peers={cl_max_peer_count} --http-address=0.0.0.0 --http-port={cl_rest_port} --http-allowed-origins=* --checkpoint-sync-url={sync_url} --eth1-rpc-urls=http://127.0.0.1:8551 --metrics --metrics-address=127.0.0.1 --metrics-port=8008 --jwt-secret={jwtsecret_path} {fee_parameters} {mev_parameters}
+
+[Install]
+WantedBy=multi-user.target
+'''
+
+
 # ──────────────────────────────────────────────
 # Lighthouse consensus client
 # ──────────────────────────────────────────────

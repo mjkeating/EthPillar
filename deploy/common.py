@@ -150,7 +150,7 @@ def setup_ephemery_network(genesis_repository: str) -> None:
             temp_dir = tempfile.mkdtemp()
             with tarfile.open(fileobj=response.raw, mode='r|gz') as tar:
                 tar.extractall(f"{temp_dir}")
-            os.system(f"sudo mv {temp_dir}/* {testnet_dir}")
+            subprocess.run(['sudo', 'sh', '-c', f'mv {temp_dir}/* {testnet_dir}'], check=True)
             print(f">> Successfully downloaded {genesis_release} genesis files")
         else:
             print("Failed to download genesis release")
@@ -171,11 +171,12 @@ def setup_node(jwt_secret_path: str, validator_only: bool = False) -> None:
     """
     if not validator_only:
         # Create JWT directory
-        subprocess.run([f'sudo mkdir -p $(dirname {jwt_secret_path})'], shell=True)
+        jwt_dir = os.path.dirname(jwt_secret_path)
+        subprocess.run(['sudo', 'mkdir', '-p', jwt_dir], check=True)
 
         # Generate random hex string and save to file
-        rand_hex = subprocess.run(['openssl', 'rand', '-hex', '32'], stdout=subprocess.PIPE)
-        subprocess.run([f'sudo tee {jwt_secret_path}'], input=rand_hex.stdout, stdout=subprocess.DEVNULL, shell=True)
+        rand_hex = subprocess.run(['openssl', 'rand', '-hex', '32'], stdout=subprocess.PIPE, check=True)
+        subprocess.run(['sudo', 'tee', jwt_secret_path], input=rand_hex.stdout, stdout=subprocess.DEVNULL, check=True)
 
     # Update and upgrade packages
     subprocess.run(['sudo', 'apt', '-y', '-qq', 'update'])
@@ -199,7 +200,7 @@ def write_service_file(content: str, target_path: str, temp_filename: str = 'tem
     actual_temp_filename = f"{os.getpid()}_{temp_filename}"
     with open(actual_temp_filename, 'w') as f:
         f.write(content)
-    os.system(f'sudo cp {actual_temp_filename} {target_path}')
+    subprocess.run(['sudo', 'cp', actual_temp_filename, target_path], check=True)
     try:
         os.remove(actual_temp_filename)
     except FileNotFoundError:
@@ -272,7 +273,7 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
         target_dir = os.path.expanduser("~/git/ethpillar")
         if os.path.exists(target_dir):
             os.chdir(target_dir)
-            os.system(f'cp .env.overrides.example .env.overrides')
+            subprocess.run(['cp', '.env.overrides.example', '.env.overrides'], check=True)
 
     if not node_only:
         print(f'Validator Fee Recipient Address: {fee_recipient_address}\n')
@@ -307,9 +308,9 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
             if consensus_service_path:
                 services.append('consensus')
             if services:
-                os.system(f'sudo systemctl start {" ".join(services)} > /dev/null 2>&1')
+                subprocess.run(['sudo', 'systemctl', 'start'] + services, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
             if mevboost_enabled:
-                os.system(f'sudo systemctl start mevboost > /dev/null 2>&1')
+                subprocess.run(['sudo', 'systemctl', 'start', 'mevboost'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
     # Prompt to enable autostart services
     if not skip_prompts:
@@ -322,11 +323,11 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
                 if consensus_service_path:
                     services.append('consensus')
                 if services:
-                    os.system(f'sudo systemctl enable {" ".join(services)} > /dev/null 2>&1')
+                    subprocess.run(['sudo', 'systemctl', 'enable'] + services, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
             if validator_enabled:
-                os.system(f'sudo systemctl enable validator > /dev/null 2>&1')
+                subprocess.run(['sudo', 'systemctl', 'enable', 'validator'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
             if mevboost_enabled and not validator_only:
-                os.system(f'sudo systemctl enable mevboost > /dev/null 2>&1')
+                subprocess.run(['sudo', 'systemctl', 'enable', 'mevboost'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
     if skip_prompts:
         exit(0)

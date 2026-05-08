@@ -79,6 +79,11 @@ function resyncClient(){
 		sudo rm -rf /var/lib/prysm/beacon/beaconchaindata
 		sudo systemctl restart consensus
 		;;
+	  Grandine)
+		sudo systemctl stop consensus
+		sudo rm -rf /var/lib/grandine/beacon
+		sudo systemctl restart consensus
+		;;
 	  esac
 }
 

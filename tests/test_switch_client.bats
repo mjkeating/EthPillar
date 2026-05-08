@@ -198,3 +198,23 @@ teardown() {
     # Check deploy script call has HOLESKY
     [[ "$output" == *"runScript deploy/install-node.sh deploy/deploy-node.py --switch_client execution --cc Teku --network HOLESKY"* ]]
 }
+
+@test "switchClient consensus removes Grandine datadir" {
+    export EL="Geth"
+    export CL="Grandine"
+    
+    # Create fake systemd service
+    touch "${SYSTEMD_DIR}/consensus.service"
+    
+    # Create fake datadir
+    mkdir -p "${BASE_DATA_DIR}/grandine"
+    
+    WHIPTAIL_EXIT_CODE=0 # Yes
+
+    switchClient consensus
+
+    run cat "$COMMAND_LOG"
+    
+    # Check remove datadir
+    [[ "$output" == *"sudo rm -rf ${BASE_DATA_DIR}/grandine"* ]]
+}

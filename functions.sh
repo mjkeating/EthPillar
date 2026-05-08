@@ -252,6 +252,10 @@ getCurrentVersion(){
       Prysm)
         test -f /usr/local/bin/beacon-chain && VERSION=$(beacon-chain --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+") || test -f /usr/local/bin/validator && VERSION=$(validator --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
+      Grandine)
+        VERSION=$(/usr/local/bin/grandine --version | head -1 | grep -oE "v?[0-9]+\.[0-9]+\.[0-9]+")
+        if [[ $VERSION != v* ]]; then VERSION="v$VERSION"; fi
+        ;;
       *)
         echo "ERROR: Unable to determine client."
         exit 1

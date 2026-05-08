@@ -35,6 +35,9 @@ function selectCustomTag(){
 	  Prysm)
 	    _repo="OffchainLabs/prysm"
 	    ;;
+	  Grandine)
+	    _repo="grandinetech/grandine"
+	    ;;
 	  *)
 	    error "❌ Unsupported or unknown client '$CLIENT'."
 	    ;;
@@ -114,6 +117,10 @@ function getLatestVersion(){
 	  Prysm)
 	    TAG_URL="https://api.github.com/repos/OffchainLabs/prysm/releases/latest"
 	    CHANGES_URL="https://github.com/OffchainLabs/prysm/releases"
+	    ;;
+	  Grandine)
+	    TAG_URL="https://api.github.com/repos/grandinetech/grandine/releases/latest"
+	    CHANGES_URL="https://github.com/grandinetech/grandine/releases"
 	    ;;
 	  *)
 	    error "❌ Unsupported or unknown client '$CLIENT'."
@@ -231,6 +238,22 @@ function updateClient(){
 		sudo mv beacon-chain validator prysmctl /usr/local/bin || error "❌ Unable to move prysm files"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo systemctl start validator
+	    ;;
+	  Grandine)
+		[[ "${_arch}" == "amd64" ]] && _architecture="x64" || _architecture="arm64"
+		RELEASE_URL="https://api.github.com/repos/grandinetech/grandine/$_URL_SUFFIX"
+		LATEST_TAG=$(curl -s "$RELEASE_URL" | jq -r ".tag_name")
+		BINARIES_URL="https://github.com/grandinetech/grandine/releases/download/${LATEST_TAG}/grandine-${LATEST_TAG#v}-linux-${_architecture}"
+		info "✅ Downloading URL: $BINARIES_URL"
+		cd "$HOME" || true
+		wget -O grandine "$BINARIES_URL" || error "❌ Unable to wget file"
+		chmod +x grandine
+		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
+		test -f /etc/systemd/system/validator.service && sudo service validator stop
+		sudo rm -f /usr/local/bin/grandine
+		sudo mv "$HOME"/grandine /usr/local/bin/grandine || error "❌ Unable to move file"
+		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
+		test -f /etc/systemd/system/validator.service && sudo service validator start
 	    ;;
 	  esac
 }

@@ -28,6 +28,7 @@ from deploy.service_generators import (
     generate_nimbus_vc_service,
     generate_lighthouse_bn_service,
     generate_lighthouse_vc_service,
+    generate_grandine_bn_service,
 )
 from config import (
     mainnet_relay_options,
@@ -652,3 +653,48 @@ class TestLighthouseService:
         )
         assert "--testnet-dir=/opt/ethpillar/testnet" in result
         assert "--network=" not in result
+
+# ═══════════════════════════════════════════════
+# Grandine service tests
+# ═══════════════════════════════════════════════
+
+class TestGrandineService:
+    """Test Grandine BN service file generation."""
+
+    def test_bn_mainnet_with_mev(self):
+        fee_params = f'--suggested-fee-recipient={FEE_RECIPIENT_ADDRESS}'
+        mev_params = '--builder-api-url=http://127.0.0.1:18550'
+        result = generate_grandine_bn_service(
+            "mainnet", SYNC_URL, JWTSECRET_PATH,
+            CL_REST_PORT, CL_P2P_PORT, CL_P2P_PORT_2, CL_MAX_PEER_COUNT,
+            fee_parameters=fee_params, mev_parameters=mev_params
+        )
+        assert "Description=Grandine Consensus Client service for MAINNET" in result
+        assert "--network=mainnet" in result
+        assert f"--libp2p-port={CL_P2P_PORT}" in result
+        assert f"--discovery-port={CL_P2P_PORT}" in result
+        assert f"--quic-port={CL_P2P_PORT_2}" in result
+        assert f"--http-port={CL_REST_PORT}" in result
+        assert f"--target-peers={CL_MAX_PEER_COUNT}" in result
+        assert f"--checkpoint-sync-url={SYNC_URL}" in result
+        assert f"--jwt-secret={JWTSECRET_PATH}" in result
+        assert f"--suggested-fee-recipient={FEE_RECIPIENT_ADDRESS}" in result
+        assert "--builder-api-url=http://127.0.0.1:18550" in result
+        assert "User=consensus" in result
+
+    def test_bn_no_mev(self):
+        result = generate_grandine_bn_service(
+            "mainnet", SYNC_URL, JWTSECRET_PATH,
+            CL_REST_PORT, CL_P2P_PORT, CL_P2P_PORT_2, CL_MAX_PEER_COUNT
+        )
+        assert "--builder-api-url" not in result
+
+    def test_bn_ephemery(self):
+        custom_network = '--network-dir=/opt/ethpillar/testnet --boot-nodes=enr1,enr2'
+        result = generate_grandine_bn_service(
+            "ephemery", SYNC_URL, JWTSECRET_PATH,
+            CL_REST_PORT, CL_P2P_PORT, CL_P2P_PORT_2, CL_MAX_PEER_COUNT,
+            network_override=custom_network
+        )
+        assert "--network-dir=/opt/ethpillar/testnet" in result
+

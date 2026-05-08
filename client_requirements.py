@@ -18,11 +18,13 @@ FUSAKA_MIN_VERSIONS = {
     'nimbus': 'v25.9.2',
     'lodestar': 'v1.35.0',
     'prysm': 'v6.1.0',
+    'grandine': 'v2.0.0',
     # Execution clients
     'reth': 'v1.7.0',
     'besu': '25.7.0',
     'nethermind': 'v1.34.0',
-    'erigon': 'v3.2.1'
+    'erigon': 'v3.2.1',
+    'geth': 'v1.16.3'
 }
 
 

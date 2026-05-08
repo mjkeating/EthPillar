@@ -114,6 +114,10 @@ function uninstallCL(){
 		sudo rm -rf /usr/local/bin/prysm
 		sudo rm -rf /var/lib/prysm
 
+		#Grandine
+		sudo rm -rf /usr/local/bin/grandine
+		sudo rm -rf /var/lib/grandine
+
 		sudo userdel consensus
 	fi
 }

@@ -15,6 +15,12 @@ echo "Results will be stored in: $results_dir"
 echo "Rebuilding Docker image..."
 docker build -t ethpillar-rebuild -f tests/integration/Dockerfile.test .
 
+# Docker flags required for systemd-in-Docker
+# --privileged:             cgroup management
+# --cgroupns=host:          share host cgroup namespace
+# --tmpfs /run /run/lock:   systemd runtime dirs
+DOCKER_SYSTEMD_FLAGS="--privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock"
+
 test_commands=(
     "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Erigon-Caplin --network SEPOLIA --config 'Full Node Only'"
     "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Reth-Lighthouse --network HOLESKY --mev --config 'Solo Staking Node'"
@@ -23,6 +29,7 @@ test_commands=(
     "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Besu-Teku --network HOLESKY --mev --config 'Failover Staking Node'"
     "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lighthouse --network SEPOLIA --mev --config 'Custom Setup' --vc Lighthouse"
     "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Besu-Lodestar --network HOLESKY --mev --config 'Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Grandine --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup'"
 )
 
 # Use a temporary file to store results from parallel processes
@@ -36,11 +43,22 @@ for cmd in "${test_commands[@]}"; do
         
         log_name=$(echo "$cmd" | awk '{for(i=4;i<=NF;i++) printf $i"_"; print ""}' | tr -dc '[:alnum:]_-' | sed 's/_$//')
         log_file="$results_dir/${log_name}.log"
+        container_name="ep-test-$(echo "$log_name" | tr -dc '[:alnum:]-' | head -c 60)"
 
         echo "Starting background test for: $cmd"
         (
-            eval "docker run --rm -v \"$(pwd):/ethpillar\" ethpillar-rebuild $cmd" > "$log_file" 2>&1
+            # Start a persistent container with systemd as PID 1
+            # shellcheck disable=SC2086
+            docker run -d --name "$container_name" $DOCKER_SYSTEMD_FLAGS -v "$(pwd):/ethpillar" ethpillar-rebuild > /dev/null 2>&1
+            sleep 3  # wait for systemd to initialize
+            
+            # Run the test via exec
+            docker exec "$container_name" $cmd > "$log_file" 2>&1
             status=$?
+            
+            # Always clean up the container
+            docker rm -f "$container_name" > /dev/null 2>&1
+            
             if [ $status -eq 0 ]; then
                 echo "PASS|$(echo $cmd | awk '{print $4" "$5}')|$(echo $cmd | awk '{for(i=6;i<=NF;i++) printf $i" "}')|${log_name}.log" >> "$results_db"
             else

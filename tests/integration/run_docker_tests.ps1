@@ -16,12 +16,21 @@ Write-Host "Results will be stored in: $resultsDir" -ForegroundColor Gray
 Write-Host "Rebuilding Docker image..."
 docker build -t ethpillar-rebuild -f tests/integration/Dockerfile.test .
 
-$scripts = @(
-    "deploy-caplin-erigon.py",
-    "deploy-lighthouse-reth.py",
-    "deploy-lodestar-besu.py",
-    "deploy-nimbus-nethermind.py",
-    "deploy-teku-besu.py"
+# Common docker flags required for systemd-in-Docker
+# We use an array for proper argument passing in PowerShell
+$DOCKER_SYSTEMD_FLAGS = @(
+    "--privileged",
+    "--cgroupns=host",
+    "--tmpfs", "/run",
+    "--tmpfs", "/run/lock"
+)
+
+$combos = @(
+    "Caplin-Erigon",
+    "Lighthouse-Reth",
+    "Lodestar-Besu",
+    "Nimbus-Nethermind",
+    "Teku-Besu"
 )
 
 $variations = @(
@@ -54,13 +63,13 @@ $testMetadata = @()
 $jobs = @()
 $maxConcurrent = 5
 
-foreach ($script in $scripts) {
+foreach ($combo in $combos) {
     foreach ($var in $variations) {
         $cleanVar = $var -replace '[^a-zA-Z0-9-]', '_'
-        $logName = "$script`_$cleanVar"
+        $logName = "$combo`_$cleanVar"
         
         $meta = [PSCustomObject]@{
-            Script = $script
+            Script = $combo
             Variation = $var
             LogFile = "$logName.log"
             Status = "Pending"
@@ -68,30 +77,45 @@ foreach ($script in $scripts) {
         }
 
         # Skip caplin for Holesky as it's not supported
-        if ($script -eq "deploy-caplin-erigon.py" -and $var -match "HOLESKY") {
-            Write-Host "Skipping Holesky test for Caplin ($script) as it's unsupported." -ForegroundColor Yellow
+        if ($combo -eq "Caplin-Erigon" -and $var -match "HOLESKY") {
+            Write-Host "Skipping Holesky test for Caplin ($combo) as it's unsupported." -ForegroundColor Yellow
             $meta.Status = "Skipped"
             $testMetadata += $meta
             continue
         }
 
         # Switch Nimbus/Nethermind to Ephemery, since they dropped Holesky support in 2025/2026
-        if ($script -eq "deploy-nimbus-nethermind.py" -and $var -match "HOLESKY") {
+        if ($combo -eq "Nimbus-Nethermind" -and $var -match "HOLESKY") {
             $var = $var -replace "HOLESKY", "EPHEMERY"
             $meta.Variation = $var
         }
 
-        Write-Host "Starting background test for $script [ $var ]..." -ForegroundColor Cyan
+        Write-Host "Starting background test for $combo [ $var ]..." -ForegroundColor Cyan
         
         $job = Start-Job -ScriptBlock {
-            param($ScriptToRun, $VariationArgs, $WorkingDir, $ResultsPath, $LogName)
+            param($ComboName, $VariationArgs, $WorkingDir, $ResultsPath, $LogName, $DockerFlags)
             Set-Location -Path $WorkingDir
             
             $logFile = Join-Path $ResultsPath "$LogName.log"
-            # Using Invoke-Expression to correctly handle the quoted arguments inside variation
-            Invoke-Expression "docker run --rm -v `"$WorkingDir`:/ethpillar`" ethpillar-rebuild python3 /ethpillar/tests/integration/run_inside_docker.py $ScriptToRun $VariationArgs > `"$logFile`" 2>&1"
-            if ($LASTEXITCODE -ne 0) { throw "Integration test failed for $ScriptToRun $VariationArgs" }
-        } -ArgumentList $script, $var, $pwd.Path, $resultsDir, $logName
+            $containerName = "ep-test-$LogName" -replace '[^a-zA-Z0-9-]', '-'
+            
+            try {
+                # Start a persistent container with systemd as PID 1
+                & docker run -d --name $containerName @DockerFlags -v "$($WorkingDir):/ethpillar" ethpillar-rebuild | Out-Null
+                
+                # Wait briefly for systemd to initialize
+                Start-Sleep -Seconds 3
+                
+                # Run the test via exec using deploy/deploy-node.py
+                $execCmd = "docker exec $containerName python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo $ComboName $VariationArgs"
+                Invoke-Expression "$execCmd > `"$logFile`" 2>&1"
+                $exitCode = $LASTEXITCODE
+            } finally {
+                & docker rm -f $containerName | Out-Null
+            }
+            
+            if ($exitCode -ne 0) { throw "Integration test failed for $ComboName $VariationArgs" }
+        } -ArgumentList $combo, $var, $pwd.Path, $resultsDir, $logName, $DOCKER_SYSTEMD_FLAGS
         
         $meta.JobId = $job.Id
         $testMetadata += $meta
@@ -121,12 +145,28 @@ foreach ($customTest in $customTests) {
     Write-Host "Starting background test for $($customTest.Label)..." -ForegroundColor Cyan
 
     $job = Start-Job -ScriptBlock {
-        param($DockerCmd, $WorkingDir, $ResultsPath, $LogName)
+        param($DockerCmd, $WorkingDir, $ResultsPath, $LogName, $DockerFlags)
         Set-Location -Path $WorkingDir
         $logFile = Join-Path $ResultsPath "$LogName.log"
-        Invoke-Expression "docker run --rm -v `"$WorkingDir`:/ethpillar`" ethpillar-rebuild $DockerCmd > `"$logFile`" 2>&1"
-        if ($LASTEXITCODE -ne 0) { throw "Custom integration test failed: $DockerCmd" }
-    } -ArgumentList $dockerCmd, $pwd.Path, $resultsDir, $logName
+        $containerName = "ep-test-$LogName" -replace '[^a-zA-Z0-9-]', '-'
+        
+        try {
+            # Start a persistent container with systemd as PID 1
+            & docker run -d --name $containerName @DockerFlags -v "$($WorkingDir):/ethpillar" ethpillar-rebuild | Out-Null
+            Start-Sleep -Seconds 3
+            
+            # Run the test via exec (DockerCmd already includes 'python3 ... run_inside_docker.py ...')
+            # Strip the 'docker run --rm ... ethpillar-rebuild' prefix and run just the python part
+            $pythonCmd = $DockerCmd -replace '^.*ethpillar-rebuild\s+', ''
+            $execCmd = "docker exec $containerName $pythonCmd"
+            Invoke-Expression "$execCmd > `"$logFile`" 2>&1"
+            $exitCode = $LASTEXITCODE
+        } finally {
+            & docker rm -f $containerName | Out-Null
+        }
+        
+        if ($exitCode -ne 0) { throw "Custom integration test failed: $DockerCmd" }
+    } -ArgumentList $dockerCmd, $pwd.Path, $resultsDir, $logName, $DOCKER_SYSTEMD_FLAGS
 
     $meta.JobId = $job.Id
     $testMetadata += $meta

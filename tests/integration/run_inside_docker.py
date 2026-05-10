@@ -50,6 +50,18 @@ def check_service(service_name: str) -> bool:
     """Checks if a systemd service file exists."""
     return os.path.isfile(f"/etc/systemd/system/{service_name}.service")
 
+def systemd_available() -> bool:
+    """Returns True if systemd is running as PID 1 (real systemd, not container stub)."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-system-running"],
+            capture_output=True, text=True, timeout=5
+        )
+        # States: running, degraded, maintenance, starting — all indicate live systemd
+        return result.stdout.strip() in ("running", "degraded", "maintenance", "starting")
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
 def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]]:
     """Determines expected artifacts based on CLI arguments."""
     binaries = []
@@ -60,7 +72,9 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
     is_validator_only = "Validator Client Only" in config
     is_node_only = "Full Node Only" in config
     mev_enabled = args.mev
-    is_staking = any(p in config for p in ["Solo Staking", "Lido CSM Staking", "Failover Staking"])
+    is_staking = any(p in config for p in ["Solo Staking", "Lido CSM Staking"])
+    is_failover = "Failover Staking" in config
+    is_staking_or_failover = is_staking or is_failover
     
     combo = args.combo.lower() if args.combo else ""
     ec = args.ec.lower() if args.ec else ""
@@ -93,15 +107,21 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
         if "caplin" in combo or "caplin" in cc:
             # Erigon-Caplin shares execution service
             pass
+        if "grandine" in combo or "grandine" in cc:
+            binaries.append("grandine"); users.append("consensus"); services.append("consensus")
             
     # MEV Boost
     if mev_enabled and not is_validator_only:
         binaries.append("mev-boost"); users.append("mevboost"); services.append("mevboost")
 
     # VC artifacts
-    if not is_node_only:
+    target_vc = vc if vc else cc if cc else combo
+    # Grandine is special: it has an integrated VC, so if Grandine is the target VC, 
+    # we don't expect a separate validator service.
+    is_grandine_integrated = "grandine" in target_vc
+    
+    if not is_node_only and not is_failover and not is_grandine_integrated:
         # If VC is "Same as CC" or not specified, check based on CC/Combo
-        target_vc = vc if vc else cc if cc else combo
         if "lighthouse" in target_vc:
             users.append("validator"); services.append("validator")
         if "lodestar" in target_vc:
@@ -135,38 +155,94 @@ def run_install(args: Any, fee_address: str):
         return False
     return True
 
-def check_service_start(service_name):
-    print(f"  Attempting to dry-run service {service_name}...")
+def check_service_start(service_name: str) -> bool:
+    """Validates the service file via systemd and verifies it can start.
+    
+    With real systemd (Dockerfile uses systemd as PID 1):
+      1. daemon-reload to pick up the file and catch syntax errors
+      2. start the service
+      3. verify it is active (running)
+      4. stop the service cleanly
+    Without systemd (fallback): parse ExecStart and do a timed process check.
+    """
     service_path = f"/etc/systemd/system/{service_name}.service"
-    if not os.path.exists(service_path): return False
-    exec_start = ""; user = "root"; working_dir = "/"; in_exec_start = False
-    with open(service_path, "r") as f:
-        for line in f:
-            stripped = line.strip()
-            if in_exec_start:
-                exec_start += " " + stripped.rstrip("\\").strip()
-                if not stripped.endswith("\\"): in_exec_start = False
-            elif stripped.startswith("ExecStart="):
-                exec_start = stripped.split("=", 1)[1].rstrip("\\").strip()
-                if stripped.endswith("\\"): in_exec_start = True
-            elif stripped.startswith("User="): user = stripped.split("=", 1)[1].strip()
-            elif stripped.startswith("WorkingDirectory="): working_dir = stripped.split("=", 1)[1].strip('"\'')
-
-    if not exec_start: return False
-    try:
-        cmd = shlex.split(exec_start)
-        # We use a timeout to see if it starts without immediate crash
-        process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=working_dir, preexec_fn=os.setsid)
-        time.sleep(5)
-        if process.poll() is not None:
-            print(f"  ❌ Service {service_name} crashed immediately with code {process.returncode}")
-            return False
-        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-        print(f"  ✅ Service {service_name} started successfully.")
-        return True
-    except Exception as e:
-        print(f"  ❌ Failed to run service: {e}")
+    if not os.path.exists(service_path):
         return False
+
+    if systemd_available():
+        print(f"  [systemd] Validating {service_name} service via systemctl...")
+
+        # Step 1: reload daemon — this validates unit file syntax
+        result = subprocess.run(
+            ["systemctl", "daemon-reload"],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            print(f"  ❌ daemon-reload failed for {service_name}:\n{result.stderr}")
+            return False
+        print(f"  ✅ daemon-reload succeeded (service file syntax OK)")
+
+        # Step 2: start the service
+        result = subprocess.run(
+            ["systemctl", "start", service_name],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode != 0:
+            print(f"  ❌ systemctl start {service_name} failed:\n{result.stderr}")
+            # Dump the journal for debugging
+            subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "20"])
+            return False
+
+        # Step 3: wait briefly and check active state
+        import time
+        time.sleep(3)
+        result = subprocess.run(
+            ["systemctl", "is-active", service_name],
+            capture_output=True, text=True
+        )
+        active_state = result.stdout.strip()
+        if active_state not in ("active", "activating"):
+            print(f"  ❌ Service {service_name} is not active (state: {active_state})")
+            subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "20"])
+            return False
+        print(f"  ✅ Service {service_name} is active")
+
+        # Step 4: stop cleanly
+        subprocess.run(["systemctl", "stop", service_name], capture_output=True)
+        return True
+
+    else:
+        # Fallback: parse ExecStart and do a timed process check (original behaviour)
+        print(f"  [no-systemd] Dry-run process check for {service_name}...")
+        exec_start = ""; user = "root"; working_dir = "/"; in_exec_start = False
+        with open(service_path, "r") as f:
+            for line in f:
+                stripped = line.strip()
+                if in_exec_start:
+                    exec_start += " " + stripped.rstrip("\\").strip()
+                    if not stripped.endswith("\\"): in_exec_start = False
+                elif stripped.startswith("ExecStart="):
+                    exec_start = stripped.split("=", 1)[1].rstrip("\\").strip()
+                    if stripped.endswith("\\"): in_exec_start = True
+                elif stripped.startswith("User="): user = stripped.split("=", 1)[1].strip()
+                elif stripped.startswith("WorkingDirectory="): working_dir = stripped.split("=", 1)[1].strip('"\'')
+
+        if not exec_start: return False
+        try:
+            import shlex, signal, time
+            cmd = shlex.split(exec_start)
+            process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                       cwd=working_dir, preexec_fn=os.setsid)
+            time.sleep(5)
+            if process.poll() is not None:
+                print(f"  ❌ Service {service_name} crashed immediately (code {process.returncode})")
+                return False
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            print(f"  ✅ Service {service_name} started (process dry-run)")
+            return True
+        except Exception as e:
+            print(f"  ❌ Failed to run service: {e}")
+            return False
 
 def verify(args: Any):
     print(f"\n🔍 Verifying Artifacts...")

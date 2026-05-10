@@ -11,7 +11,8 @@ Type=simple
 Restart=on-failure
 RestartSec=5
 WorkingDirectory=/opt/ethpillar/plugin-dora
-ExecStart=/opt/ethpillar/plugin-dora/dora-explorer -config=/opt/ethpillar/plugin-dora/explorer-config.yaml
+ExecStart=/opt/ethpillar/plugin-dora/dora-explorer \\
+    -config=/opt/ethpillar/plugin-dora/explorer-config.yaml
 
 [Install]
 WantedBy=multi-user.target

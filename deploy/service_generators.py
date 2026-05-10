@@ -1,6 +1,10 @@
 from typing import List, Dict, Optional
 from deploy.common import BASE_DATA_DIR, INSTALL_DIR
 
+def form_exec_start(args: List[str]) -> str:
+    """Helper to join command line arguments into a multi-line ExecStart string."""
+    return " \\\n    ".join([a for a in args if a])
+
 def generate_mevboost_service(eth_network: str, mev_min_bid: str, relay_options: List[Dict[str, str]]) -> str:
     """Generate MEV-Boost systemd service file content.
 
@@ -67,6 +71,23 @@ def generate_besu_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
     else:
         _network = f'--network={eth_network}'
 
+    _args = [
+        f"{INSTALL_DIR}/besu/bin/besu",
+        _network,
+        f"--p2p-port={el_p2p_port}",
+        f"--rpc-http-port={el_rpc_port}",
+        "--engine-rpc-port=8551",
+        f"--max-peers={el_max_peer_count}",
+        "--metrics-enabled=true",
+        "--metrics-port=6060",
+        "--rpc-http-enabled=true",
+        "--sync-mode=SNAP",
+        "--data-storage-format=BONSAI",
+        f"--data-path=\"{BASE_DATA_DIR}/besu\"",
+        f"--engine-jwt-secret={jwtsecret_path}"
+    ]
+    _exec_start = form_exec_start(_args)
+
     return f'''[Unit]
 Description=Besu Execution Layer Client service for {eth_network.upper()}
 After=network-online.target
@@ -82,7 +103,7 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 Environment="JAVA_OPTS=-Xmx5g"
-ExecStart={INSTALL_DIR}/besu/bin/besu {_network} --p2p-port={el_p2p_port} --rpc-http-port={el_rpc_port} --engine-rpc-port=8551 --max-peers={el_max_peer_count} --metrics-enabled=true --metrics-port=6060 --rpc-http-enabled=true --sync-mode=SNAP --data-storage-format=BONSAI --data-path="{BASE_DATA_DIR}/besu" --engine-jwt-secret={jwtsecret_path}
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -111,6 +132,26 @@ def generate_nethermind_service(eth_network: str, el_p2p_port: str, el_rpc_port:
     else:
         _network = f'--config {eth_network}'
 
+    _args = [
+        f"{INSTALL_DIR}/nethermind/nethermind",
+        _network,
+        f"--datadir=\"{BASE_DATA_DIR}/nethermind\"",
+        f"--Network.DiscoveryPort {el_p2p_port}",
+        f"--Network.P2PPort {el_p2p_port}",
+        f"--Network.MaxActivePeers {el_max_peer_count}",
+        f"--JsonRpc.Port {el_rpc_port}",
+        "--Metrics.Enabled true",
+        "--Metrics.ExposePort 6060",
+        f"--JsonRpc.JwtSecretFile {jwtsecret_path}",
+        "--Pruning.Mode=Hybrid",
+        "--Pruning.FullPruningTrigger=VolumeFreeSpace",
+        "--Pruning.FullPruningThresholdMb=300000"
+    ]
+    if sync_parameters:
+        _args.append(sync_parameters.strip())
+    
+    _exec_start = form_exec_start(_args)
+
     return f'''[Unit]
 Description=Nethermind Execution Layer Client service for {eth_network.upper()}
 After=network-online.target
@@ -127,7 +168,7 @@ KillSignal=SIGINT
 TimeoutStopSec=900
 WorkingDirectory={BASE_DATA_DIR}/nethermind
 Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR={BASE_DATA_DIR}/nethermind/bundle-extract"
-ExecStart={INSTALL_DIR}/nethermind/nethermind {_network} --datadir="{BASE_DATA_DIR}/nethermind" --Network.DiscoveryPort {el_p2p_port} --Network.P2PPort {el_p2p_port} --Network.MaxActivePeers {el_max_peer_count} --JsonRpc.Port {el_rpc_port} --Metrics.Enabled true --Metrics.ExposePort 6060 --JsonRpc.JwtSecretFile {jwtsecret_path} --Pruning.Mode=Hybrid --Pruning.FullPruningTrigger=VolumeFreeSpace --Pruning.FullPruningThresholdMb=300000 {sync_parameters}
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -157,6 +198,29 @@ def generate_reth_service(eth_network: str, el_p2p_port: str, el_p2p_port_2: str
     else:
         _network = f'--chain {eth_network}'
 
+    _args = [
+        f"{INSTALL_DIR}/reth node",
+        _network,
+        "--full",
+        f"--datadir={BASE_DATA_DIR}/reth",
+        f"--log.file.directory={BASE_DATA_DIR}/reth/logs",
+        "--metrics 127.0.0.1:6060",
+        f"--port {el_p2p_port}",
+        f"--discovery.port {el_p2p_port}",
+        "--enable-discv5-discovery",
+        f"--discovery.v5.port {el_p2p_port_2}",
+        f"--max-outbound-peers {el_max_peer_count}",
+        f"--max-inbound-peers {el_max_peer_count}",
+        "--http",
+        f"--http.port {el_rpc_port}",
+        "--http.api=\"rpc,eth,web3,net,debug\"",
+        f"--authrpc.jwtsecret {jwtsecret_path}"
+    ]
+    if sync_parameters:
+        _args.append(sync_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
     return f'''[Unit]
 Description=Reth Execution Layer Client service for {eth_network.upper()}
 After=network-online.target
@@ -172,7 +236,7 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 Environment=RUST_LOG=info
-ExecStart={INSTALL_DIR}/reth node {_network} --full --datadir={BASE_DATA_DIR}/reth --log.file.directory={BASE_DATA_DIR}/reth/logs --metrics 127.0.0.1:6060 --port {el_p2p_port} --discovery.port {el_p2p_port} --enable-discv5-discovery --discovery.v5.port {el_p2p_port_2} --max-outbound-peers {el_max_peer_count} --max-inbound-peers {el_max_peer_count} --http --http.port {el_rpc_port} --http.api="rpc,eth,web3,net,debug" --authrpc.jwtsecret {jwtsecret_path} {sync_parameters}
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -207,6 +271,26 @@ def generate_geth_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
         else:
             _network = f"--{eth_network.lower()}"
 
+    _args = [
+        f"{INSTALL_DIR}/geth",
+        _network,
+        "--cache 8192",
+        f"--port {el_p2p_port}",
+        f"--http.port {el_rpc_port}",
+        "--authrpc.port 8551",
+        f"--maxpeers {el_max_peer_count}",
+        "--metrics",
+        "--http",
+        f"--datadir={BASE_DATA_DIR}/geth",
+        "--pprof",
+        "--state.scheme=path",
+        f"--authrpc.jwtsecret={jwtsecret_path}",
+        "--ws",
+        "--ws.port 8546",
+        "--ws.api eth,net,web3"
+    ]
+    _exec_start = form_exec_start(_args)
+
     return f'''[Unit]
 Description=Geth Execution Layer Client service for {eth_network.upper()}
 Wants=network-online.target
@@ -221,22 +305,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-ExecStart={INSTALL_DIR}/geth \\
-    {_network} \\
-    --cache 8192 \\
-    --port {el_p2p_port} \\
-    --http.port {el_rpc_port} \\
-    --authrpc.port 8551 \\
-    --maxpeers {el_max_peer_count} \\
-    --metrics \\
-    --http \\
-    --datadir={BASE_DATA_DIR}/geth \\
-    --pprof \\
-    --state.scheme=path \\
-    --authrpc.jwtsecret={jwtsecret_path} \\
-    --ws \\
-    --ws.port 8546 \\
-    --ws.api eth,net,web3
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -273,14 +342,41 @@ def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str
     else:
         _network = f'--chain={eth_network}'
 
-    _caplin = (
-        f'--caplin.enable-upnp --caplin.discovery.addr=0.0.0.0 '
-        f'--caplin.discovery.port={cl_p2p_port} --caplin.discovery.tcpport={cl_p2p_port} '
-        f'--caplin.max-peer-count={cl_max_peer_count} '
-        f'--beacon.api.addr=0.0.0.0 --beacon.api.port={cl_rest_port} '
-        f'--beacon.api=beacon,validator,builder,config,debug,events,node,lighthouse '
-        f'--caplin.checkpoint-sync-url={sync_url}/eth/v2/debug/beacon/states/finalized'
-    )
+    _args = [
+        f"{INSTALL_DIR}/erigon",
+        f"--datadir={BASE_DATA_DIR}/erigon",
+        _network,
+        f"--port={el_p2p_port}",
+        "--torrent.port=42069",
+        f"--http.port={el_rpc_port}",
+        f"--maxpeers={el_max_peer_count}",
+        "--http.api=web3,eth,net,engine",
+        "--metrics",
+        "--pprof",
+        "--prune.mode=minimal",
+        f"--authrpc.jwtsecret={jwtsecret_path}"
+    ]
+    
+    if sync_parameters:
+        _args.append(sync_parameters.strip())
+    
+    # Caplin flags
+    _args.extend([
+        "--caplin.enable-upnp",
+        "--caplin.discovery.addr=0.0.0.0",
+        f"--caplin.discovery.port={cl_p2p_port}",
+        f"--caplin.discovery.tcpport={cl_p2p_port}",
+        f"--caplin.max-peer-count={cl_max_peer_count}",
+        "--beacon.api.addr=127.0.0.1",
+        f"--beacon.api.port={cl_rest_port}",
+        "--beacon.api=beacon,validator,builder,config,debug,events,node,lighthouse",
+        f"--caplin.checkpoint-sync-url={sync_url}/eth/v2/debug/beacon/states/finalized"
+    ])
+
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
 
     return f'''[Unit]
 Description=Erigon-Caplin Integrated Execution-Consensus Client for {eth_network.upper()}
@@ -296,7 +392,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-ExecStart={INSTALL_DIR}/erigon --datadir={BASE_DATA_DIR}/erigon {_network} --port={el_p2p_port} --torrent.port=42069 --http.port={el_rpc_port} --maxpeers={el_max_peer_count} --http.api=web3,eth,net,engine --metrics --pprof --prune.mode=minimal --authrpc.jwtsecret={jwtsecret_path} {sync_parameters} {_caplin} {mev_parameters}
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -325,6 +421,26 @@ def generate_erigon_standalone_service(eth_network: str, el_p2p_port: str, el_rp
     else:
         _network = f'--chain={eth_network}'
 
+    _args = [
+        f"{INSTALL_DIR}/erigon",
+        f"--datadir={BASE_DATA_DIR}/erigon",
+        _network,
+        f"--port={el_p2p_port}",
+        "--torrent.port=42069",
+        f"--http.port={el_rpc_port}",
+        f"--maxpeers={el_max_peer_count}",
+        "--http.api=web3,eth,net,engine",
+        "--metrics",
+        "--pprof",
+        "--prune.mode=minimal",
+        f"--authrpc.jwtsecret={jwtsecret_path}"
+    ]
+    if sync_parameters:
+        _args.append(sync_parameters.strip())
+    _args.append("--externalcl")
+
+    _exec_start = form_exec_start(_args)
+
     return f'''[Unit]
 Description=Erigon Execution Layer Client service for {eth_network.upper()}
 After=network-online.target
@@ -339,7 +455,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-ExecStart={INSTALL_DIR}/erigon --datadir={BASE_DATA_DIR}/erigon {_network} --port={el_p2p_port} --torrent.port=42069 --http.port={el_rpc_port} --maxpeers={el_max_peer_count} --http.api=web3,eth,net,engine --metrics --pprof --prune.mode=minimal --authrpc.jwtsecret={jwtsecret_path} {sync_parameters} --externalcl
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -368,6 +484,28 @@ def generate_teku_bn_service(eth_network: str, sync_url: str, jwtsecret_path: st
     Returns:
         Service file content as a string
     """
+    _args = [
+        f"{INSTALL_DIR}/teku/bin/teku",
+        f"--network={eth_network}",
+        f"--data-path={BASE_DATA_DIR}/teku",
+        "--data-storage-mode=minimal",
+        f"--checkpoint-sync-url={sync_url}",
+        "--ee-endpoint=http://127.0.0.1:8551",
+        f"--ee-jwt-secret-file={jwtsecret_path}",
+        "--rest-api-enabled=true",
+        f"--rest-api-port={cl_rest_port}",
+        f"--p2p-port={cl_p2p_port}",
+        f"--p2p-peer-upper-bound={cl_max_peer_count}",
+        "--metrics-enabled=true",
+        "--metrics-port=8008"
+    ]
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
     return f'''[Unit]
 Description=Teku Beacon Node Consensus Client service for {eth_network.upper()}
 Wants=network-online.target
@@ -384,7 +522,7 @@ KillSignal=SIGINT
 TimeoutStopSec=900
 Environment=JAVA_OPTS=-Xmx6g
 Environment=TEKU_OPTS=-XX:-HeapDumpOnOutOfMemoryError
-ExecStart={INSTALL_DIR}/teku/bin/teku --network={eth_network} --data-path={BASE_DATA_DIR}/teku --data-storage-mode=minimal --checkpoint-sync-url={sync_url} --ee-endpoint=http://127.0.0.1:8551 --ee-jwt-secret-file={jwtsecret_path} --rest-api-enabled=true --rest-api-port={cl_rest_port} --p2p-port={cl_p2p_port} --p2p-peer-upper-bound={cl_max_peer_count} --metrics-enabled=true --metrics-port=8008 {fee_parameters} {mev_parameters}
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -405,6 +543,23 @@ def generate_teku_vc_service(eth_network: str, graffiti: str, beacon_node_addres
     Returns:
         Service file content as a string
     """
+    _args = [
+        f"{INSTALL_DIR}/teku/bin/teku validator-client",
+        f"--network={eth_network}",
+        f"--data-path={BASE_DATA_DIR}/teku_validator",
+        f"--validator-keys={BASE_DATA_DIR}/teku_validator/validator_keys:{BASE_DATA_DIR}/teku_validator/validator_keys",
+        "--metrics-enabled=true",
+        "--metrics-port=8009",
+        f"--validators-graffiti={graffiti}",
+        beacon_node_address
+    ]
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
     return f'''[Unit]
 Description=Teku Validator Client service for {eth_network.upper()}
 Wants=network-online.target
@@ -420,7 +575,7 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 LimitNOFILE=65536
-ExecStart={INSTALL_DIR}/teku/bin/teku validator-client --network={eth_network} --data-path={BASE_DATA_DIR}/teku_validator --validator-keys={BASE_DATA_DIR}/teku_validator/validator_keys:{BASE_DATA_DIR}/teku_validator/validator_keys --metrics-enabled=true --metrics-port=8009 --validators-graffiti={graffiti} {beacon_node_address} {fee_parameters} {mev_parameters}
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -456,6 +611,26 @@ def generate_lodestar_bn_service(eth_network: str, sync_url: str, jwtsecret_path
     else:
         _network = f'--network={eth_network}'
 
+    _args = [
+        f"{INSTALL_DIR}/lodestar/lodestar beacon",
+        _network,
+        f"--dataDir={BASE_DATA_DIR}/lodestar",
+        f"--checkpointSyncUrl={sync_url}",
+        "--execution.urls=http://127.0.0.1:8551",
+        f"--jwt-secret={jwtsecret_path}",
+        f"--rest.port={cl_rest_port}",
+        f"--port={cl_p2p_port}",
+        f"--targetPeers={cl_max_peer_count}",
+        "--metrics=true",
+        "--metrics.port=8008"
+    ]
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
     return f'''[Unit]
 Description=Lodestar Consensus Client service for {eth_network.upper()}
 Wants=network-online.target
@@ -472,7 +647,7 @@ KillSignal=SIGINT
 TimeoutStopSec=900
 Environment="TMPDIR={BASE_DATA_DIR}/lodestar/tmp"
 WorkingDirectory={INSTALL_DIR}/lodestar
-ExecStart={INSTALL_DIR}/lodestar/lodestar beacon {_network} --dataDir={BASE_DATA_DIR}/lodestar --checkpointSyncUrl={sync_url} --execution.urls=http://127.0.0.1:8551 --jwt-secret={jwtsecret_path} --rest.port={cl_rest_port} --port={cl_p2p_port} --targetPeers={cl_max_peer_count} --metrics=true --metrics.port=8008 {fee_parameters} {mev_parameters}
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -500,6 +675,22 @@ def generate_lodestar_vc_service(eth_network: str, graffiti: str, beacon_node_ad
     else:
         _network = f'--network={eth_network}'
 
+    _args = [
+        f"{INSTALL_DIR}/lodestar/lodestar validator",
+        _network,
+        f"--dataDir={BASE_DATA_DIR}/lodestar_validator",
+        "--metrics=true",
+        "--metrics.port=8009",
+        f"--graffiti={graffiti}",
+        beacon_node_address
+    ]
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
     return f'''[Unit]
 Description=Lodestar Validator Client service for {eth_network.upper()}
 Wants=network-online.target
@@ -517,7 +708,7 @@ TimeoutStopSec=300
 LimitNOFILE=65536
 Environment="TMPDIR={BASE_DATA_DIR}/lodestar_validator/tmp"
 WorkingDirectory={INSTALL_DIR}/lodestar
-ExecStart={INSTALL_DIR}/lodestar/lodestar validator {_network} --dataDir={BASE_DATA_DIR}/lodestar_validator --metrics=true --metrics.port=8009 --graffiti={graffiti} {beacon_node_address} {fee_parameters} {mev_parameters}
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -554,6 +745,31 @@ def generate_nimbus_bn_service(eth_network: str, jwtsecret_path: str,
     else:
         _network = f'--network={eth_network}'
 
+    _args = [
+        f"{INSTALL_DIR}/nimbus_beacon_node",
+        _network,
+        f"--data-dir={BASE_DATA_DIR}/nimbus",
+        f"--tcp-port={cl_p2p_port}",
+        f"--udp-port={cl_p2p_port}",
+        f"--max-peers={cl_max_peer_count}",
+        f"--rest-port={cl_rest_port}",
+        "--enr-auto-update=true",
+        "--web3-url=http://127.0.0.1:8551",
+        "--rest",
+        "--metrics",
+        "--metrics-port=8008",
+        f"--jwt-secret={jwtsecret_path}",
+        "--non-interactive",
+        "--status-bar=false",
+        "--in-process-validators=false"
+    ]
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
     return f'''[Unit]
 Description=Nimbus Beacon Node Consensus Client service for {eth_network.upper()}
 Wants=network-online.target
@@ -568,7 +784,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-ExecStart={INSTALL_DIR}/nimbus_beacon_node {_network} --data-dir={BASE_DATA_DIR}/nimbus --tcp-port={cl_p2p_port} --udp-port={cl_p2p_port} --max-peers={cl_max_peer_count} --rest-port={cl_rest_port} --enr-auto-update=true --web3-url=http://127.0.0.1:8551 --rest --metrics --metrics-port=8008 --jwt-secret={jwtsecret_path} --non-interactive --status-bar=false --in-process-validators=false {fee_parameters} {mev_parameters}
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -590,6 +806,24 @@ def generate_nimbus_vc_service(eth_network: str, graffiti: str, beacon_node_addr
         Service file content as a string
     """
     _network = "--network=/opt/ethpillar/testnet/config.yaml" if eth_network == "ephemery" else f"--network={eth_network}"
+    _args = [
+        f"{INSTALL_DIR}/nimbus_validator_client",
+        f"--data-dir={BASE_DATA_DIR}/nimbus_validator",
+        "--metrics",
+        "--metrics-port=8009",
+        "--non-interactive",
+        "--doppelganger-detection=off",
+        f"--graffiti={graffiti}",
+        beacon_node_address,
+        _network
+    ]
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
     return f'''[Unit]
 Description=Nimbus Validator Client service for {eth_network.upper()}
 Wants=network-online.target
@@ -605,7 +839,7 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 LimitNOFILE=65536
-ExecStart={INSTALL_DIR}/nimbus_validator_client --data-dir={BASE_DATA_DIR}/nimbus_validator --metrics --metrics-port=8009 --non-interactive --doppelganger-detection=off --graffiti={graffiti} {beacon_node_address} {_network} {fee_parameters} {mev_parameters}
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -641,7 +875,34 @@ def generate_grandine_bn_service(eth_network: str, sync_url: str, jwtsecret_path
 
     _keystore_args = ""
     if is_integrated_vc:
-        _keystore_args = f" --keystore-dir={BASE_DATA_DIR}/grandine/validator_keys --keystore-password-dir={BASE_DATA_DIR}/grandine/validator_keys"
+        _keystore_args = f"--keystore-dir={BASE_DATA_DIR}/grandine/validator_keys --keystore-password-dir={BASE_DATA_DIR}/grandine/validator_keys"
+
+    _args = [
+        f"{INSTALL_DIR}/grandine",
+        _network,
+        f"--data-dir={BASE_DATA_DIR}/grandine",
+        f"--libp2p-port={cl_p2p_port}",
+        f"--discovery-port={cl_p2p_port}",
+        f"--quic-port={cl_p2p_port_2}",
+        f"--target-peers={cl_max_peer_count}",
+        "--http-address=127.0.0.1",
+        f"--http-port={cl_rest_port}",
+        f"--checkpoint-sync-url={sync_url}",
+        "--eth1-rpc-urls=http://127.0.0.1:8551",
+        "--metrics",
+        "--metrics-address=127.0.0.1",
+        "--metrics-port=8008",
+        f"--jwt-secret={jwtsecret_path}"
+    ]
+
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+    if _keystore_args:
+        _args.append(_keystore_args.strip())
+
+    _exec_start = form_exec_start(_args)
 
     return f'''[Unit]
 Description=Grandine Consensus Client service for {eth_network.upper()}
@@ -657,7 +918,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-ExecStart={INSTALL_DIR}/grandine {_network} --data-dir={BASE_DATA_DIR}/grandine --libp2p-port={cl_p2p_port} --discovery-port={cl_p2p_port} --quic-port={cl_p2p_port_2} --target-peers={cl_max_peer_count} --http-address=0.0.0.0 --http-port={cl_rest_port} --checkpoint-sync-url={sync_url} --eth1-rpc-urls=http://127.0.0.1:8551 --metrics --metrics-address=127.0.0.1 --metrics-port=8008 --jwt-secret={jwtsecret_path} {fee_parameters} {mev_parameters}{_keystore_args}
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -695,6 +956,29 @@ def generate_lighthouse_bn_service(eth_network: str, sync_url: str, jwtsecret_pa
     else:
         _network = f'--network={eth_network}'
 
+    _args = [
+        f"{INSTALL_DIR}/lighthouse bn",
+        _network,
+        f"--datadir={BASE_DATA_DIR}/lighthouse",
+        "--gui",
+        f"--port={cl_p2p_port}",
+        f"--quic-port={cl_p2p_port_2}",
+        f"--target-peers={cl_max_peer_count}",
+        f"--http-port={cl_rest_port}",
+        "--staking",
+        "--validator-monitor-auto",
+        f"--checkpoint-sync-url={sync_url}",
+        "--execution-endpoint=http://127.0.0.1:8551",
+        "--metrics",
+        "--metrics-address=127.0.0.1",
+        "--metrics-port=8008",
+        f"--execution-jwt={jwtsecret_path}"
+    ]
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
     return f'''[Unit]
 Description=Lighthouse Consensus Client service for {eth_network.upper()}
 Wants=network-online.target
@@ -709,7 +993,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-ExecStart={INSTALL_DIR}/lighthouse bn {_network} --datadir={BASE_DATA_DIR}/lighthouse --gui --port={cl_p2p_port} --quic-port={cl_p2p_port_2} --target-peers={cl_max_peer_count} --http-port={cl_rest_port} --staking --validator-monitor-auto --checkpoint-sync-url={sync_url} --execution-endpoint=http://127.0.0.1:8551 --metrics --metrics-address=127.0.0.1 --metrics-port=8008 --execution-jwt={jwtsecret_path} {mev_parameters}
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target
@@ -737,6 +1021,24 @@ def generate_lighthouse_vc_service(eth_network: str, graffiti: str, beacon_node_
     else:
         _network = f'--network={eth_network}'
 
+    _args = [
+        f"{INSTALL_DIR}/lighthouse vc",
+        _network,
+        f"--datadir={BASE_DATA_DIR}/lighthouse_validator",
+        "--http",
+        "--metrics",
+        "--metrics-address=127.0.0.1",
+        "--metrics-port=8009",
+        f"--graffiti={graffiti}",
+        beacon_node_address
+    ]
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
     return f'''[Unit]
 Description=Lighthouse Validator Client service for {eth_network.upper()}
 Wants=network-online.target
@@ -752,7 +1054,7 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 LimitNOFILE=65536
-ExecStart={INSTALL_DIR}/lighthouse vc {_network} --datadir={BASE_DATA_DIR}/lighthouse_validator --http --metrics --metrics-address=127.0.0.1 --metrics-port=8009 --graffiti={graffiti} {beacon_node_address} {fee_parameters} {mev_parameters}
+ExecStart={_exec_start}
 
 [Install]
 WantedBy=multi-user.target

@@ -124,8 +124,12 @@ function upgradeGrafanaPrometheus(){
 function installSystemd(){
 	# Create service user
 	sudo adduser --system --no-create-home --group ethereum-metrics-exporter
+	# Prepare formatted options
+	local _fmt_options
+	_fmt_options=$(printf ' \\\n    %s' "${ETHEREUM_METRICS_EXPORTER_OPTIONS[@]}")
+
 	# Create systemd service
-	sudo bash -c "cat << 'EOF' > /etc/systemd/system/ethereum-metrics-exporter.service
+	sudo bash -c "cat << EOF > /etc/systemd/system/ethereum-metrics-exporter.service
 [Unit]
 Description=Ethereum Metrics Exporter Service
 Wants=network-online.target
@@ -141,7 +145,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-ExecStart=/usr/local/bin/ethereum-metrics-exporter $(echo "${ETHEREUM_METRICS_EXPORTER_OPTIONS[@]}")
+ExecStart=/usr/local/bin/ethereum-metrics-exporter$_fmt_options
 
 [Install]
 WantedBy=multi-user.target

@@ -245,3 +245,8 @@ class TestRunInstallRouting:
     def test_custom_grandine_routing(self):
         mocks = self._run("Custom Setup", "Besu", "Grandine", "Lighthouse", flags_override={"validator": True, "mevboost": True})
         self._verify_only_called(mocks, ['besu', 'gr_dl', 'gr_bn', 'lh_dl', 'lh_vc', 'mev'])
+
+    def test_custom_grandine_integrated_routing(self):
+        mocks = self._run("Custom Setup", "Besu", "Grandine", "Grandine (integrated)", flags_override={"validator": True, "mevboost": True})
+        # Grandine integrated skips VC setup completely and appends flags to BN
+        self._verify_only_called(mocks, ['besu', 'gr_dl', 'gr_bn', 'mev'])

@@ -75,8 +75,13 @@ elif [[ -d /opt/ethpillar/aztec ]] && [[ -f /etc/systemd/system/consensus.servic
       exit 0
 fi
 
-# Check if integrated EL/CL client
-if grep --ignore-case -q "Integrated Execution-Consensus Client" /etc/systemd/system/execution.service; then isIntegrated=true; fi
+# Check if integrated EL/CL client (Erigon+Caplin)
+if grep --ignore-case -q "Integrated Execution-Consensus Client" /etc/systemd/system/execution.service 2>/dev/null; then isIntegrated=true; fi
+
+# Check if Grandine is running with an integrated validator (keystore-dir in consensus.service)
+# In this layout, consensus carries both BN+VC duties — log view shows consensus instead of validator.
+isGrandineIntegrated=false
+if grep -q 'keystore-dir' /etc/systemd/system/consensus.service 2>/dev/null; then isGrandineIntegrated=true; fi
 
 # Portrait view for narrow terminals <= 80 col
 if [[ $cols -lt 81 ]]; then
@@ -88,6 +93,14 @@ if [[ $cols -lt 81 ]]; then
            send-keys 'journalctl -fu validator --no-hostname | ccze -A' C-m \; \
            select-pane -t 0 \; \
            split-window -v \; \
+           send-keys 'journalctl -fu execution --no-hostname | ccze -A' C-m \; \
+           select-layout even-vertical \;
+   elif [[ -f /etc/systemd/system/execution.service ]] && [[ -f /etc/systemd/system/consensus.service ]] && [[ ${isGrandineIntegrated} == "true" ]]; then
+      # Grandine integrated: consensus carries BN+VC, show it alongside execution
+      tmux new-session -d -s logs \; \
+           send-keys 'journalctl -fu consensus --no-hostname | ccze -A' C-m \; \
+           split-window -h \; \
+           select-pane -t 1 \; \
            send-keys 'journalctl -fu execution --no-hostname | ccze -A' C-m \; \
            select-layout even-vertical \;
    elif [[ -f /etc/systemd/system/execution.service || ${isIntegrated:-false} == "true" ]] && [[ -f /etc/systemd/system/validator.service ]]; then
@@ -135,6 +148,15 @@ else
            send-keys 'journalctl -fu validator --no-hostname | ccze -A' C-m \; \
            select-pane -t 0 \; \
            split-window -v \; \
+           send-keys 'journalctl -fu execution --no-hostname | ccze -A' C-m \;
+   elif [[ -f /etc/systemd/system/execution.service ]] && [[ -f /etc/systemd/system/consensus.service ]] && [[ ${isGrandineIntegrated} == "true" ]]; then
+      # Grandine integrated: consensus carries BN+VC, show it alongside execution and btop
+      tmux new-session -d -s logs \; \
+           send-keys 'journalctl -fu consensus --no-hostname | ccze -A' C-m \; \
+           split-window -v \; \
+           split-window -h \; \
+           send-keys 'btop --utf-force' C-m \; \
+           select-pane -t 1 \; \
            send-keys 'journalctl -fu execution --no-hostname | ccze -A' C-m \;
    elif [[ -f /etc/systemd/system/execution.service || ${isIntegrated:-false} == "true" ]] && [[ -f /etc/systemd/system/validator.service ]]; then
       # Integrated EL-CL Node i.e. Caplin-Erigon

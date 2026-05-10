@@ -615,7 +615,7 @@ WantedBy=multi-user.target
 def generate_grandine_bn_service(eth_network: str, sync_url: str, jwtsecret_path: str,
                                  cl_rest_port: str, cl_p2p_port: str, cl_p2p_port_2: str, cl_max_peer_count: str,
                                  fee_parameters: str = '', mev_parameters: str = '',
-                                 network_override: Optional[str] = None) -> str:
+                                 network_override: Optional[str] = None, is_integrated_vc: bool = False) -> str:
     """Generate Grandine beacon node systemd service file content.
 
     Args:
@@ -629,6 +629,7 @@ def generate_grandine_bn_service(eth_network: str, sync_url: str, jwtsecret_path
         fee_parameters: Optional fee recipient parameters
         mev_parameters: Optional MEV relay parameters
         network_override: Optional network flag override
+        is_integrated_vc: Whether the validator is integrated
 
     Returns:
         Service file content as a string
@@ -637,6 +638,10 @@ def generate_grandine_bn_service(eth_network: str, sync_url: str, jwtsecret_path
         _network = network_override
     else:
         _network = f'--network={eth_network}'
+
+    _keystore_args = ""
+    if is_integrated_vc:
+        _keystore_args = f" --keystore-dir={BASE_DATA_DIR}/grandine/validator_keys --keystore-password-dir={BASE_DATA_DIR}/grandine/validator_keys"
 
     return f'''[Unit]
 Description=Grandine Consensus Client service for {eth_network.upper()}
@@ -652,7 +657,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
-ExecStart={INSTALL_DIR}/grandine {_network} --data-dir={BASE_DATA_DIR}/grandine --libp2p-port={cl_p2p_port} --discovery-port={cl_p2p_port} --quic-port={cl_p2p_port_2} --target-peers={cl_max_peer_count} --http-address=0.0.0.0 --http-port={cl_rest_port} --http-allowed-origins=* --checkpoint-sync-url={sync_url} --eth1-rpc-urls=http://127.0.0.1:8551 --metrics --metrics-address=127.0.0.1 --metrics-port=8008 --jwt-secret={jwtsecret_path} {fee_parameters} {mev_parameters}
+ExecStart={INSTALL_DIR}/grandine {_network} --data-dir={BASE_DATA_DIR}/grandine --libp2p-port={cl_p2p_port} --discovery-port={cl_p2p_port} --quic-port={cl_p2p_port_2} --target-peers={cl_max_peer_count} --http-address=0.0.0.0 --http-port={cl_rest_port} --checkpoint-sync-url={sync_url} --eth1-rpc-urls=http://127.0.0.1:8551 --metrics --metrics-address=127.0.0.1 --metrics-port=8008 --jwt-secret={jwtsecret_path} {fee_parameters} {mev_parameters}{_keystore_args}
 
 [Install]
 WantedBy=multi-user.target

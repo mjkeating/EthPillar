@@ -698,3 +698,12 @@ class TestGrandineService:
         )
         assert "--network-dir=/opt/ethpillar/testnet" in result
 
+    def test_bn_integrated_vc(self):
+        result = generate_grandine_bn_service(
+            "mainnet", SYNC_URL, JWTSECRET_PATH,
+            CL_REST_PORT, CL_P2P_PORT, CL_P2P_PORT_2, CL_MAX_PEER_COUNT,
+            is_integrated_vc=True
+        )
+        assert "--keystore-dir=/var/lib/grandine/validator_keys" in result
+        assert "--keystore-password-dir=/var/lib/grandine/validator_keys" in result
+

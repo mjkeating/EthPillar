@@ -10,21 +10,19 @@ import requests
 # ==============================================================================
 # Grandine Client Support Note:
 # 
-# EthPillar currently only supports Grandine as a Consensus Client (Beacon Node).
-# Grandine does not support running as a standalone Validator Client that can connect
-# to a remote Beacon Node. Its design mandates that the Validator Client is an 
-# embedded component within the main `grandine` process, activated by passing
-# keystore paths directly to the binary.
+# EthPillar supports Grandine as both a standalone Consensus Client (Beacon Node)
+# and as an integrated Consensus + Validator Client. 
 # 
-# Since EthPillar's architecture strictly relies on separated systemd services 
-# (`consensus.service` and `validator.service`) to manage client lifecycles, view 
-# split logs, and utilize our `manage_validator_keys.sh` workflows, trying to 
-# shoehorn Grandine's embedded validator into our system would break these paradigms.
+# Grandine does not natively support a "Validator Client Only" mode via standard HTTP 
+# Beacon APIs in the same way Lighthouse or Teku do. Instead, the Validator Client 
+# is an embedded component within the main `grandine` process, activated by simply 
+# passing keystore directory paths to the binary.
 # 
-# Therefore, when users choose Grandine as their Consensus Client, they must 
-# pair it with another compatible Validator Client (such as Lighthouse, Teku, or 
-# Lodestar) which will communicate with Grandine via its standard Beacon Node API 
-# on port 5052.
+# When users select "Grandine (integrated)" as their Validator Client, EthPillar skips 
+# generating the standard `validator.service` file. Instead, the keystore flags 
+# are appended to `consensus.service`. The EthPillar key management scripts have 
+# been adapted to copy the `.json` and `.txt` keystore files directly into 
+# `/var/lib/grandine/validator_keys/` and set proper permissions for the `consensus` user.
 # ==============================================================================
 
 def download_grandine(eth_network: str) -> str:
@@ -95,12 +93,18 @@ def download_grandine(eth_network: str) -> str:
 
 def install_grandine_bn(eth_network: str, checkpoint_sync_url: str, jwtsecret_path: str,
                          cl_rest_port: str, cl_p2p_port: str, cl_p2p_port_2: str, cl_max_peer_count: str,
-                         fee_parameters: str = '', mev_parameters: str = '') -> str:
+                         fee_parameters: str = '', mev_parameters: str = '', is_integrated_vc: bool = False) -> str:
     service_content = generate_grandine_bn_service(
         eth_network, checkpoint_sync_url, jwtsecret_path,
         cl_rest_port, cl_p2p_port, cl_p2p_port_2, cl_max_peer_count,
-        fee_parameters, mev_parameters
+        fee_parameters, mev_parameters, is_integrated_vc=is_integrated_vc
     )
+    
+    if is_integrated_vc:
+        subprocess.run(["sudo", "mkdir", "-p", "/var/lib/grandine/validator_keys"])
+        subprocess.run(["sudo", "chown", "-R", "consensus:consensus", "/var/lib/grandine/validator_keys"])
+        subprocess.run(["sudo", "chmod", "700", "/var/lib/grandine/validator_keys"])
+
     service_file_path = '/etc/systemd/system/consensus.service'
     write_service_file(service_content, service_file_path, 'consensus_temp.service')
     return service_file_path

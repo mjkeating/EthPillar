@@ -24,6 +24,15 @@ function switchClient(){
     local SYSTEMD_DIR=${SYSTEMD_DIR:-/etc/systemd/system}
     local BASE_DATA_DIR=${BASE_DATA_DIR:-/var/lib}
 
+    # Safety check: if switching away from Grandine while using the integrated VC,
+    # the new consensus client will NOT have a validator configured. Warn the user.
+    if [ "$TARGET_CLIENT" == "consensus" ] && grep -q 'keystore-dir' "${SYSTEMD_DIR}/consensus.service" 2>/dev/null; then
+        if ! whiptail --title "⚠️ Grandine Integrated Validator Warning" --yesno \
+            "Your current Grandine consensus.service has an INTEGRATED VALIDATOR CLIENT.\n\nSwitching the consensus client will leave your validators INACTIVE until you manually reconfigure the new client with your keystore files.\n\nProceed anyway?" 12 78; then
+            exit 0
+        fi
+    fi
+
     # 1) Backup systemd file
     if [ -f ${SYSTEMD_DIR}/${SERVICE} ]; then
         if whiptail --title "Switch $TARGET_CLIENT Client" --yesno "Backup existing ${SERVICE} file to ${SERVICE}.bak?" 8 78; then

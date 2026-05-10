@@ -101,11 +101,9 @@ def get_vc_options_for_cc(cc_name: str) -> List[str]:
         return get_vc_menu()
     
     if cc_name == 'Grandine':
-        # If the user selects Grandine as their Consensus Client, they MUST select a different
-        # client as their Validator Client (e.g. Lighthouse, Teku) which will connect to Grandine's
-        # standard Beacon Node API. "Same as CC" is not an option since we do not natively support
-        # configuring Grandine's embedded validator client within EthPillar's separated service architecture.
-        return get_vc_menu()
+        # Grandine can run its embedded validator client seamlessly alongside its beacon node.
+        # "Grandine (integrated)" bypasses standalone VC installation.
+        return ['Grandine (integrated)'] + get_vc_menu()
 
     return ['Same as CC'] + get_vc_menu()
 
@@ -207,7 +205,8 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
             fee_params = f'--suggested-fee-recipient={fee_recipient}'
             mev_params = '--builder-api-url=http://127.0.0.1:18550' if flags['mevboost'] else ''
             cl_ver = grandine.download_grandine(network)
-            cl_path = grandine.install_grandine_bn(network, sync_url, jwtsecret_path, str(cl_rest_port), str(cl_p2p_port), str(cl_p2p_port_2), str(cl_max_peers), fee_parameters=fee_params, mev_parameters=mev_params)
+            is_integrated_vc = (vc_name == 'Grandine (integrated)' and flags['validator'])
+            cl_path = grandine.install_grandine_bn(network, sync_url, jwtsecret_path, str(cl_rest_port), str(cl_p2p_port), str(cl_p2p_port_2), str(cl_max_peers), fee_parameters=fee_params, mev_parameters=mev_params, is_integrated_vc=is_integrated_vc)
 
     val_path = ""
     val_ver = ""

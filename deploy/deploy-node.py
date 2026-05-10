@@ -193,8 +193,12 @@ if flags['validator_only'] and not beacon_node_address:
         print("Beacon node address is required for VC-only setup.")
         exit(1)
 
-# Fee recipient prompt for non-CSM roles with validator
-if flags['validator'] and not FEE_RECIPIENT_ADDRESS:
+# Fee recipient: prompt if not set.
+# Some clients (Nimbus, Teku, Lodestar, Grandine) embed the fee recipient at the BN level,
+# so we must prompt even when there is no separate validator service.
+_cc_needs_fee = cc_name in ['Nimbus', 'Teku', 'Lodestar', 'Grandine']
+_vc_needs_fee = flags['validator'] and vc_name not in ['Grandine (integrated)', None]
+if (_cc_needs_fee or _vc_needs_fee) and not FEE_RECIPIENT_ADDRESS:
     if "Lido CSM" not in role:
         FEE_RECIPIENT_ADDRESS = input("What is your fee recipient address? (0x...): ").strip()
 

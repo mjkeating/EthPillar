@@ -305,8 +305,14 @@ function checkLido(){
 # Load validator keys into validator client
 function loadKeys(){
    case $1 in
-      default)
-        getClientVC && sudo systemctl stop validator
+       default)
+        getClientVC
+        if [[ "$VC" == "Grandine" ]]; then
+            # VC is integrated into Grandine BN. So stop the consensus client.
+            sudo systemctl stop consensus
+        else
+            sudo systemctl stop validator
+        fi
         ;;
       plugin_csm_validator)
         VC="Nimbus"
@@ -382,9 +388,38 @@ function loadKeys(){
         sudo chown -R validator:validator /var/lib/prysm/validators
         sudo chmod 700 /var/lib/prysm/validators
       ;;
+     Grandine)
+        if [[ -z $_KEYSTOREPASSWORD ]]; then
+            while true; do
+                _KEYSTOREPASSWORD=$(whiptail --title "Grandine Keystore Password" --inputbox "Enter your keystore password" 10 78 --ok-button "Submit" 3>&1 1>&2 2>&3)
+                VERIFY_PASS=$(whiptail --title "Verify Password" --inputbox "Confirm your keystore password" 10 78 --ok-button "Submit" 3>&1 1>&2 2>&3)
+                if [[ "${_KEYSTOREPASSWORD}" = "${VERIFY_PASS}" ]]; then
+                    ohai "Password is same."
+                    break
+                else
+                    whiptail --title "Error" --msgbox "Passwords not the same. Try again." 8 78
+                fi
+            done
+        fi
+        echo "$_KEYSTOREPASSWORD" > "$HOME"/validators-password.txt
+        # Create password file for each keystore
+        for f in "$KEYFOLDER"/keystore*.json; do sudo cp "$HOME"/validators-password.txt "$KEYFOLDER"/"$(basename "$f" .json)".txt; done
+        sudo mkdir -p /var/lib/grandine/validator_keys
+        sudo cp "$KEYFOLDER"/keystore* /var/lib/grandine/validator_keys
+        sudo chown -R consensus:consensus /var/lib/grandine/validator_keys
+        sudo chmod -R 700 /var/lib/grandine/validator_keys
+        rm "$HOME"/validators-password.txt
+      ;;
      esac
      ohai "Starting validator"
-     [[ $1 == "default" ]] && sudo systemctl start validator
+     if [[ $1 == "default" ]]; then
+        if [[ "$VC" == "Grandine" ]]; then
+            # VC is integrated into Grandine BN. So start the consensus client.
+            sudo systemctl start consensus
+        else
+            sudo systemctl start validator
+        fi
+     fi
      [[ $1 == "plugin_csm_validator" ]] && sudo systemctl start "${__SERVICE_NAME}"
      queryEntryQueue
      setLaunchPadMessage
@@ -487,7 +522,14 @@ function queryEntryQueue(){
 }
 
 function getClientVC(){
-    VC=$(grep "Description=" /etc/systemd/system/validator.service | awk -F'=' '{print $2}' | awk '{print $1}')
+    if [ -f /etc/systemd/system/validator.service ]; then
+        VC=$(grep "Description=" /etc/systemd/system/validator.service | awk -F'=' '{print $2}' | awk '{print $1}')
+    else
+        # VC is integrated into Grandine BN. So check for Grandine.
+        if grep -q "Grandine" /etc/systemd/system/consensus.service 2>/dev/null; then
+            VC="Grandine"
+        fi
+    fi
 }
 
 function promptViewLogs(){

@@ -139,7 +139,7 @@ class TestWriteServiceFile:
         expected_temp = f"{pid}_test.service"
 
         with patch('builtins.open', mock_open()) as mock_file, \
-             patch('os.system') as mock_system, \
+             patch('subprocess.run') as mock_run, \
              patch('os.remove') as mock_remove:
             write_service_file(content, '/etc/systemd/system/test.service', 'test.service')
             mock_file.assert_called_once_with(expected_temp, 'w')
@@ -152,10 +152,10 @@ class TestWriteServiceFile:
         target = '/etc/systemd/system/test.service'
 
         with patch('builtins.open', mock_open()), \
-             patch('os.system') as mock_system, \
+             patch('subprocess.run') as mock_run, \
              patch('os.remove'):
             write_service_file(content, target, 'test.service')
-            mock_system.assert_called_once_with(f'sudo cp {expected_temp} {target}')
+            mock_run.assert_called_once_with(['sudo', 'cp', expected_temp, target], check=True)
 
     def test_removes_temp_file_after_copy(self):
         content = "[Unit]\nDescription=Test\n"
@@ -163,7 +163,7 @@ class TestWriteServiceFile:
         expected_temp = f"{pid}_test.service"
 
         with patch('builtins.open', mock_open()), \
-             patch('os.system'), \
+             patch('subprocess.run'), \
              patch('os.remove') as mock_remove:
             write_service_file(content, '/etc/systemd/system/test.service', 'test.service')
             mock_remove.assert_called_once_with(expected_temp)
@@ -171,10 +171,9 @@ class TestWriteServiceFile:
     def test_temp_filename_includes_pid_to_prevent_collisions(self):
         """Two calls from different PIDs must produce different temp filenames."""
         content = "[Unit]\nDescription=Test\n"
-        seen_names = set()
 
         with patch('builtins.open', mock_open()) as mock_file, \
-             patch('os.system'), \
+             patch('subprocess.run'), \
              patch('os.remove'):
             write_service_file(content, '/etc/systemd/system/test.service', 'test.service')
             # The PID-prefixed temp name is always the same within this process
@@ -184,7 +183,7 @@ class TestWriteServiceFile:
     def test_missing_temp_file_on_remove_does_not_raise(self):
         content = "[Unit]\nDescription=Test\n"
         with patch('builtins.open', mock_open()), \
-             patch('os.system'), \
+             patch('subprocess.run'), \
              patch('os.remove', side_effect=FileNotFoundError):
             # Should not raise
             write_service_file(content, '/etc/systemd/system/test.service', 'test.service')
@@ -199,7 +198,7 @@ class TestSetupNode:
     def test_full_node_creates_jwt_directory(self, mock_run):
         setup_node('/secrets/jwtsecret', validator_only=False)
         calls_as_str = [str(c) for c in mock_run.call_args_list]
-        assert any('mkdir -p' in s for s in calls_as_str)
+        assert any('mkdir' in s and '-p' in s for s in calls_as_str)
 
     @patch('subprocess.run')
     def test_full_node_runs_openssl_to_generate_jwt(self, mock_run):

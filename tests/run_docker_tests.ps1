@@ -10,11 +10,12 @@ docker build -t ethpillar-test -f ./integration/Dockerfile.test ..
 # 2. Run the Integration Tests
 Write-Host "Running Integration Tests..."
 
-$combinations = @("Caplin-Erigon", "Lighthouse-Reth", "Lodestar-Besu", "Nimbus-Nethermind", "Teku-Besu")
+$combinations = @("Caplin-Erigon", "Lighthouse-Reth", "Lodestar-Besu", "Nimbus-Nethermind", "Teku-Besu", "Grandine-Nethermind")
 $networks = @("SEPOLIA", "HOLESKY")
 $configs = @("Solo Staking Node", "Full Node Only")
 
 $rootPath = (Get-Item $PWD).Parent.FullName
+$containerName = "ep-test-harness"
 
 foreach ($combo in $combinations) {
     foreach ($network in $networks) {
@@ -24,17 +25,22 @@ foreach ($combo in $combinations) {
 
             Write-Host "Testing: $combo | $network | $config"
             
-            $mevFlag = $null
+            # Start persistent container with systemd
+            $systemdFlags = @("--privileged", "--cgroupns=host", "--tmpfs", "/run", "--tmpfs", "/run/lock")
+            docker run -d --name $containerName $systemdFlags -v "${rootPath}:/ethpillar" ethpillar-test
+
+            # Execute test
+            $mevFlag = ""
             if ($config -eq "Solo Staking Node") { $mevFlag = "--mev" }
 
-            $cmdArgs = @("run", "--rm", "-v", "${rootPath}:/ethpillar", "ethpillar-test", "python3", "/ethpillar/tests/integration/run_inside_docker.py", "deploy/deploy-node.py", "--combo", $combo, "--config", $config, "--network", $network)
-            if ($mevFlag) { $cmdArgs += $mevFlag }
-
-            # Join args into a single string for Start-Process to handle spaces correctly
-            $argString = ($cmdArgs | ForEach-Object { if ($_ -match ' ') { "`"$_`"" } else { $_ } }) -join ' '
-            $process = Start-Process -FilePath "docker" -ArgumentList $argString -NoNewWindow -Wait -PassThru
+            docker exec $containerName python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo $combo --config $config --network $network $mevFlag
             
-            if ($process.ExitCode -ne 0) {
+            $exitCode = $LASTEXITCODE
+
+            # Cleanup
+            docker rm -f $containerName
+
+            if ($exitCode -ne 0) {
                 Write-Host "FAILED: $combo"
                 exit 1
             }

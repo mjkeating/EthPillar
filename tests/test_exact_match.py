@@ -26,7 +26,7 @@ def test_besu_exact_match():
     EL_MAX_PEER_COUNT = 50
     JWTSECRET_PATH = "/secrets/jwtsecret"
     
-    # EXACT copied literal string from deploy-teku-besu.py lines 510-529
+    # EXACT copied literal string from deploy-teku-besu.py lines 510-529 (updated for multi-line)
     expected = f'''[Unit]
 Description=Besu Execution Layer Client service for {eth_network.upper()}
 After=network-online.target
@@ -42,7 +42,19 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=900
 Environment="JAVA_OPTS=-Xmx5g"
-ExecStart={INSTALL_DIR}/besu/bin/besu --network={eth_network} --p2p-port={EL_P2P_PORT} --rpc-http-port={EL_RPC_PORT} --engine-rpc-port=8551 --max-peers={EL_MAX_PEER_COUNT} --metrics-enabled=true --metrics-port=6060 --rpc-http-enabled=true --sync-mode=SNAP --data-storage-format=BONSAI --data-path="{BASE_DATA_DIR}/besu" --engine-jwt-secret={JWTSECRET_PATH}
+ExecStart={INSTALL_DIR}/besu/bin/besu \\
+    --network={eth_network} \\
+    --p2p-port={EL_P2P_PORT} \\
+    --rpc-http-port={EL_RPC_PORT} \\
+    --engine-rpc-port=8551 \\
+    --max-peers={EL_MAX_PEER_COUNT} \\
+    --metrics-enabled=true \\
+    --metrics-port=6060 \\
+    --rpc-http-enabled=true \\
+    --sync-mode=SNAP \\
+    --data-storage-format=BONSAI \\
+    --data-path="{BASE_DATA_DIR}/besu" \\
+    --engine-jwt-secret={JWTSECRET_PATH}
 
 [Install]
 WantedBy=multi-user.target
@@ -99,4 +111,3 @@ def test_mevboost_exact_match():
     # Expected uses precise logic from original script, verify our pure function
     # matches that legacy string builder perfectly.
     assert actual == expected
-

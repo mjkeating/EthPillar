@@ -43,8 +43,16 @@ cd tests
 
 ### On Linux/macOS (Manual)
 You can run individual integration tests directly:
+To run a specific test scenario with full systemd validation:
 ```bash
-docker run --rm -v "${PWD}:/ethpillar" ethpillar-test python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Lighthouse-Reth --config "Solo Staking Node" --network SEPOLIA
+# Start a persistent container
+docker run -d --name ep-test --privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock -v "${PWD}:/ethpillar" ethpillar-test
+
+# Execute the test script inside the container
+docker exec ep-test python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Lighthouse-Reth --config "Solo Staking Node" --network SEPOLIA
+
+# Clean up
+docker rm -f ep-test
 ```
 
 ## Test Structure
@@ -58,13 +66,23 @@ docker run --rm -v "${PWD}:/ethpillar" ethpillar-test python3 /ethpillar/tests/i
 
 ## Manual Testing
 
-Run a fresh container
+Run a fresh container with systemd support:
 ```bash
 # From the project root
-docker run -it --rm -v "${PWD}:/ethpillar" ethpillar-test bash
+docker run -d --name ep-manual --privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock -v "${PWD}:/ethpillar" ethpillar-test
+```
+
+Enter the running container:
+```bash
+docker exec -it ep-manual bash
 ```
 
 In the container, simply run the TUI:
 ```bash
 ./ethpillar.sh
+```
+
+When finished, clean up the container:
+```bash
+docker rm -f ep-manual
 ```

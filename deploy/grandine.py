@@ -86,10 +86,12 @@ def download_grandine(eth_network: str) -> str:
         print(f"Error: Unable to download file. Try again later. {e}")
         exit(1)
 
-    subprocess.run(["sudo", "mv", download_path, f"{INSTALL_DIR}/{filename}"])
-    subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/{filename}"])
+    subprocess.run(["sudo", "mv", download_path, f"{INSTALL_DIR}/{filename}"], check=True)
+    subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/{filename}"], check=True)
+    # Create a stable symlink so consensus.service can always reference /usr/local/bin/grandine
+    subprocess.run(["sudo", "ln", "-sf", f"{INSTALL_DIR}/{filename}", f"{INSTALL_DIR}/grandine"], check=True)
 
-    return f"v{gr_version}"
+    return gr_version
 
 def install_grandine_bn(eth_network: str, checkpoint_sync_url: str, jwtsecret_path: str,
                          cl_rest_port: str, cl_p2p_port: str, cl_p2p_port_2: str, cl_max_peer_count: str,

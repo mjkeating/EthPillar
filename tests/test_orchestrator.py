@@ -238,9 +238,57 @@ class TestRunInstallRouting:
         self._verify_only_called(mocks, ['nethermind'])
 
     def test_switch_consensus_client_only(self):
-        # When switching CC, ec_name is None, and validator/mevboost flags are False
+        # When switching CC, ec_name and vc_name are None, and validator/mevboost flags are False
         mocks = self._run("Switch Consensus Client", None, "Lighthouse", None, flags_override={"validator": False, "mevboost": False})
         self._verify_only_called(mocks, ['lh_dl', 'lh_bn'])
+        # Verify NO MEV params are passed to the BN installation
+        call_kwargs = mocks['lh_bn'].call_args
+        mev_params = call_kwargs.kwargs.get('mev_parameters', '')
+        assert mev_params == '', f"Expected no MEV params when mevboost=False, got: {mev_params}"
+
+    def test_switch_consensus_client_with_mevboost(self):
+        # When switching CC with mevboost enabled, mevboost.service is preserved
+        # and should NOT be reconfigured. The new CC service file MUST include MEV params.
+        mocks = self._run("Switch Consensus Client", None, "Lighthouse", None, flags_override={"validator": False, "mevboost": True, "switch_client": "consensus"})
+        # Verify only BN is installed (no VC, no mevboost reinstall)
+        self._verify_only_called(mocks, ['lh_dl', 'lh_bn'])
+        # Verify MEV params are passed to the BN installation
+        mev_url = 'http://127.0.0.1:18550'
+        mev_params_expected = f'--builder {mev_url}'
+        mocks['lh_bn'].assert_called_once()
+        call_kwargs = mocks['lh_bn'].call_args
+        assert mev_params_expected in call_kwargs.kwargs.get('mev_parameters', ''), \
+            f"Expected MEV params '{mev_params_expected}' in lighthouse install, got: {call_kwargs}"
+
+    def test_switch_consensus_client_nimbus_with_mevboost(self):
+        # Verify Nimbus gets MEV params when switching with mevboost enabled
+        mocks = self._run("Switch Consensus Client", None, "Nimbus", None, flags_override={"validator": False, "mevboost": True, "switch_client": "consensus"})
+        self._verify_only_called(mocks, ['nb_dl', 'nb_bn'])
+        mev_url = 'http://127.0.0.1:18550'
+        mev_params_expected = f'--payload-builder=true --payload-builder-url={mev_url}'
+        call_kwargs = mocks['nb_bn'].call_args
+        assert mev_params_expected in call_kwargs.kwargs.get('mev_parameters', ''), \
+            f"Expected MEV params '{mev_params_expected}' in nimbus install, got: {call_kwargs}"
+
+    def test_switch_consensus_client_teku_with_mevboost(self):
+        # Verify Teku gets MEV params when switching with mevboost enabled
+        mocks = self._run("Switch Consensus Client", None, "Teku", None, flags_override={"validator": False, "mevboost": True, "switch_client": "consensus"})
+        self._verify_only_called(mocks, ['tk_dl', 'tk_bn'])
+        mev_url = 'http://127.0.0.1:18550'
+        mev_params_expected = f'--validators-builder-registration-default-enabled=true --builder-endpoint={mev_url}'
+        call_kwargs = mocks['tk_bn'].call_args
+        assert mev_params_expected in call_kwargs.kwargs.get('mev_parameters', ''), \
+            f"Expected MEV params '{mev_params_expected}' in teku install, got: {call_kwargs}"
+
+    def test_switch_consensus_client_grandine_with_mevboost(self):
+        # Verify Grandine gets MEV params when switching with mevboost enabled
+        mocks = self._run("Switch Consensus Client", None, "Grandine", None, flags_override={"validator": False, "mevboost": True, "switch_client": "consensus"})
+        self._verify_only_called(mocks, ['gr_dl', 'gr_bn'])
+        mev_url = 'http://127.0.0.1:18550'
+        mev_params_expected = f'--builder-api-url={mev_url}'
+        call_kwargs = mocks['gr_bn'].call_args
+        assert mev_params_expected in call_kwargs.kwargs.get('mev_parameters', ''), \
+            f"Expected MEV params '{mev_params_expected}' in grandine install, got: {call_kwargs}"
 
     def test_custom_grandine_routing(self):
         mocks = self._run("Custom Setup", "Besu", "Grandine", "Lighthouse", flags_override={"validator": True, "mevboost": True})

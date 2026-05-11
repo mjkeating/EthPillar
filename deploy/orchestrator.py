@@ -150,7 +150,7 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
         common.setup_ephemery_network("ephemery-testnet/ephemery-genesis")
 
     mev_ver, mev_path = "", ""
-    if flags['mevboost'] and not flags['validator_only']:
+    if flags['mevboost'] and not flags['validator_only'] and not flags.get('switch_client'):
         # Need to load config properly or pass it
         import config
         relay_options = getattr(config, f"{network}_relay_options", [])

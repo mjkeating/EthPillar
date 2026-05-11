@@ -92,11 +92,17 @@ function switchClient(){
     # 4) Stop the service before installing the new one
     sudo systemctl stop ${TARGET_CLIENT} > /dev/null 2>&1
 
-    # 5) Launch the python script to select new client and install
+    # 5) Detect if MEV-Boost is enabled (only relevant when switching CC)
+    MEVBOOST_FLAG=""
+    if [ "$TARGET_CLIENT" == "consensus" ] && [ -f /etc/systemd/system/mevboost.service ]; then
+        MEVBOOST_FLAG="--with_mevboost"
+    fi
+
+    # 6) Launch the python script to select new client and install
     if [ "$TARGET_CLIENT" == "execution" ]; then
         runScript deploy/install-node.sh deploy/deploy-node.py --switch_client execution --cc "$CL" $NETWORK_ARG
     elif [ "$TARGET_CLIENT" == "consensus" ]; then
-        runScript deploy/install-node.sh deploy/deploy-node.py --switch_client consensus --ec "$EL" $NETWORK_ARG
+        runScript deploy/install-node.sh deploy/deploy-node.py --switch_client consensus --ec "$EL" $MEVBOOST_FLAG $NETWORK_ARG
     fi
 }
 

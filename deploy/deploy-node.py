@@ -74,10 +74,11 @@ else:
 if args.switch_client:
     role = f"Switch {args.switch_client.capitalize()} Client"
     flags = {
-        "mevboost": False,
+        "mevboost": args.with_mevboost,
         "validator": False,
         "validator_only": False,
-        "node_only": False
+        "node_only": False,
+        "switch_client": args.switch_client
     }
 else:
     # 2. Role selection

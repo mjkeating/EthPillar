@@ -11,7 +11,7 @@ Group=contributoor
 Restart=always
 RestartSec=5
 WorkingDirectory=/opt/ethpillar/plugin-contributoor
-ExecStart=/opt/ethpillar/plugin-contributoor/sentry \\
+ExecStart=/opt/ethpillar/plugin-contributoor/sentry \
     --config /opt/ethpillar/plugin-contributoor/config.yaml
 
 [Install]

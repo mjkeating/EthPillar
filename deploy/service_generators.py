@@ -1,6 +1,31 @@
 from typing import List, Dict, Optional
 from deploy.common import BASE_DATA_DIR, INSTALL_DIR
 
+
+def _generate_systemd_template(description: str, user: str, exec_start: str, extra_env: Optional[List[str]] = None, working_dir: Optional[str] = None, timeout_stop_sec: int = 900, limit_nofile: Optional[int] = None) -> str:
+    env_str = "".join(f"Environment={e}\n" for e in extra_env) if extra_env else ""
+    wd_str = f"WorkingDirectory={working_dir}\n" if working_dir else ""
+    nofile_str = f"LimitNOFILE={limit_nofile}\n" if limit_nofile else ""
+    return f'''[Unit]
+Description={description}
+After=network-online.target
+Wants=network-online.target
+Documentation=https://docs.coincashew.com
+
+[Service]
+Type=simple
+User={user}
+Group={user}
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec={timeout_stop_sec}
+{nofile_str}{wd_str}{env_str}ExecStart={exec_start}
+
+[Install]
+WantedBy=multi-user.target
+'''
+
 def form_exec_start(args: List[str]) -> str:
     """Helper to join command line arguments into a multi-line ExecStart string."""
     return " \\\n    ".join([a for a in args if a])
@@ -88,26 +113,7 @@ def generate_besu_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
     ]
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Besu Execution Layer Client service for {eth_network.upper()}
-After=network-online.target
-Wants=network-online.target
-Documentation=https://docs.coincashew.com
-
-[Service]
-Type=simple
-User=execution
-Group=execution
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-Environment="JAVA_OPTS=-Xmx5g"
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Besu Execution Layer Client service for {eth_network.upper()}", user="execution", exec_start=_exec_start, extra_env=['"JAVA_OPTS=-Xmx5g"'], working_dir=None, timeout_stop_sec=900, limit_nofile=None)
 
 
 def generate_nethermind_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
@@ -152,27 +158,7 @@ def generate_nethermind_service(eth_network: str, el_p2p_port: str, el_rpc_port:
     
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Nethermind Execution Layer Client service for {eth_network.upper()}
-After=network-online.target
-Wants=network-online.target
-Documentation=https://docs.coincashew.com
-
-[Service]
-Type=simple
-User=execution
-Group=execution
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-WorkingDirectory={BASE_DATA_DIR}/nethermind
-Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR={BASE_DATA_DIR}/nethermind/bundle-extract"
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Nethermind Execution Layer Client service for {eth_network.upper()}", user="execution", exec_start=_exec_start, extra_env=['"DOTNET_BUNDLE_EXTRACT_BASE_DIR={BASE_DATA_DIR}/nethermind/bundle-extract"'], working_dir=f"{BASE_DATA_DIR}/nethermind", timeout_stop_sec=900, limit_nofile=None)
 
 
 def generate_reth_service(eth_network: str, el_p2p_port: str, el_p2p_port_2: str,
@@ -221,26 +207,7 @@ def generate_reth_service(eth_network: str, el_p2p_port: str, el_p2p_port_2: str
 
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Reth Execution Layer Client service for {eth_network.upper()}
-After=network-online.target
-Wants=network-online.target
-Documentation=https://docs.coincashew.com
-
-[Service]
-Type=simple
-User=execution
-Group=execution
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-Environment=RUST_LOG=info
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Reth Execution Layer Client service for {eth_network.upper()}", user="execution", exec_start=_exec_start, extra_env=['RUST_LOG=info'], working_dir=None, timeout_stop_sec=900, limit_nofile=None)
 
 
 def generate_geth_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
@@ -291,25 +258,7 @@ def generate_geth_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
     ]
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Geth Execution Layer Client service for {eth_network.upper()}
-Wants=network-online.target
-After=network-online.target
-Documentation=https://docs.coincashew.com
-
-[Service]
-Type=simple
-User=execution
-Group=execution
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Geth Execution Layer Client service for {eth_network.upper()}", user="execution", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
 
 
 def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
@@ -378,25 +327,7 @@ def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str
 
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Erigon-Caplin Integrated Execution-Consensus Client for {eth_network.upper()}
-After=network-online.target
-Wants=network-online.target
-Documentation=https://docs.coincashew.com
-
-[Service]
-Type=simple
-User=execution
-Group=execution
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Erigon-Caplin Integrated Execution-Consensus Client for {eth_network.upper()}", user="execution", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
 
 
 def generate_erigon_standalone_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
@@ -441,25 +372,7 @@ def generate_erigon_standalone_service(eth_network: str, el_p2p_port: str, el_rp
 
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Erigon Execution Layer Client service for {eth_network.upper()}
-After=network-online.target
-Wants=network-online.target
-Documentation=https://docs.coincashew.com
-
-[Service]
-Type=simple
-User=execution
-Group=execution
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Erigon Execution Layer Client service for {eth_network.upper()}", user="execution", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
 
 
 # ──────────────────────────────────────────────
@@ -506,27 +419,7 @@ def generate_teku_bn_service(eth_network: str, sync_url: str, jwtsecret_path: st
 
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Teku Beacon Node Consensus Client service for {eth_network.upper()}
-Wants=network-online.target
-After=network-online.target
-Documentation=https://docs.coincashew.com
-
-[Service]
-Type=simple
-User=consensus
-Group=consensus
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-Environment=JAVA_OPTS=-Xmx6g
-Environment=TEKU_OPTS=-XX:-HeapDumpOnOutOfMemoryError
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Teku Beacon Node Consensus Client service for {eth_network.upper()}", user="consensus", exec_start=_exec_start, extra_env=['JAVA_OPTS=-Xmx6g', 'TEKU_OPTS=-XX:-HeapDumpOnOutOfMemoryError'], working_dir=None, timeout_stop_sec=900, limit_nofile=None)
 
 
 def generate_teku_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
@@ -560,26 +453,7 @@ def generate_teku_vc_service(eth_network: str, graffiti: str, beacon_node_addres
 
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Teku Validator Client service for {eth_network.upper()}
-Wants=network-online.target
-After=network-online.target
-Documentation=https://docs.coincashew.com
-
-[Service]
-Type=simple
-User=validator
-Group=validator
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-LimitNOFILE=65536
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Teku Validator Client service for {eth_network.upper()}", user="validator", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=65536)
 
 
 # ──────────────────────────────────────────────
@@ -631,27 +505,7 @@ def generate_lodestar_bn_service(eth_network: str, sync_url: str, jwtsecret_path
 
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Lodestar Consensus Client service for {eth_network.upper()}
-Wants=network-online.target
-After=network-online.target
-Documentation=https://docs.coincashew.com
-
-[Service]
-Type=simple
-User=consensus
-Group=consensus
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-Environment="TMPDIR={BASE_DATA_DIR}/lodestar/tmp"
-WorkingDirectory={INSTALL_DIR}/lodestar
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Lodestar Consensus Client service for {eth_network.upper()}", user="consensus", exec_start=_exec_start, extra_env=['"TMPDIR={BASE_DATA_DIR}/lodestar/tmp"'], working_dir=f"{INSTALL_DIR}/lodestar", timeout_stop_sec=900, limit_nofile=None)
 
 
 def generate_lodestar_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
@@ -691,28 +545,7 @@ def generate_lodestar_vc_service(eth_network: str, graffiti: str, beacon_node_ad
 
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Lodestar Validator Client service for {eth_network.upper()}
-Wants=network-online.target
-After=network-online.target
-Documentation=https://docs.coincashew.com
-
-[Service]
-Type=simple
-User=validator
-Group=validator
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=300
-LimitNOFILE=65536
-Environment="TMPDIR={BASE_DATA_DIR}/lodestar_validator/tmp"
-WorkingDirectory={INSTALL_DIR}/lodestar
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Lodestar Validator Client service for {eth_network.upper()}", user="validator", exec_start=_exec_start, extra_env=['"TMPDIR={BASE_DATA_DIR}/lodestar_validator/tmp"'], working_dir=f"{INSTALL_DIR}/lodestar", timeout_stop_sec=300, limit_nofile=65536)
 
 
 # ──────────────────────────────────────────────
@@ -770,25 +603,7 @@ def generate_nimbus_bn_service(eth_network: str, jwtsecret_path: str,
 
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Nimbus Beacon Node Consensus Client service for {eth_network.upper()}
-Wants=network-online.target
-After=network-online.target
-Documentation=https://docs.coincashew.com
-
-[Service]
-Type=simple
-User=consensus
-Group=consensus
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Nimbus Beacon Node Consensus Client service for {eth_network.upper()}", user="consensus", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
 
 
 def generate_nimbus_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
@@ -824,26 +639,7 @@ def generate_nimbus_vc_service(eth_network: str, graffiti: str, beacon_node_addr
 
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Nimbus Validator Client service for {eth_network.upper()}
-Wants=network-online.target
-After=network-online.target
-Documentation=https://docs.coincashew.com
- 
-[Service]
-Type=simple
-User=validator
-Group=validator
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-LimitNOFILE=65536
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Nimbus Validator Client service for {eth_network.upper()}", user="validator", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=65536)
 
 
 def generate_grandine_bn_service(eth_network: str, sync_url: str, jwtsecret_path: str,
@@ -904,25 +700,7 @@ def generate_grandine_bn_service(eth_network: str, sync_url: str, jwtsecret_path
 
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Grandine Consensus Client service for {eth_network.upper()}
-Wants=network-online.target
-After=network-online.target
-Documentation=https://docs.coincashew.com
-
-[Service]
-Type=simple
-User=consensus
-Group=consensus
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Grandine Consensus Client service for {eth_network.upper()}", user="consensus", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
 
 
 # ──────────────────────────────────────────────
@@ -979,25 +757,7 @@ def generate_lighthouse_bn_service(eth_network: str, sync_url: str, jwtsecret_pa
 
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Lighthouse Consensus Client service for {eth_network.upper()}
-Wants=network-online.target
-After=network-online.target
-Documentation=https://docs.coincashew.com
-
-[Service]
-Type=simple
-User=consensus
-Group=consensus
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-ExecStart={_exec_start}
-
-[Install]
-WantedBy=multi-user.target
-'''
+    return _generate_systemd_template(description=f"Lighthouse Consensus Client service for {eth_network.upper()}", user="consensus", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
 
 
 def generate_lighthouse_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
@@ -1039,23 +799,119 @@ def generate_lighthouse_vc_service(eth_network: str, graffiti: str, beacon_node_
 
     _exec_start = form_exec_start(_args)
 
-    return f'''[Unit]
-Description=Lighthouse Validator Client service for {eth_network.upper()}
-Wants=network-online.target
-After=network-online.target
-Documentation=https://docs.coincashew.com
+    return _generate_systemd_template(description=f"Lighthouse Validator Client service for {eth_network.upper()}", user="validator", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=65536)
 
-[Service]
-Type=simple
-User=validator
-Group=validator
-Restart=on-failure
-RestartSec=3
-KillSignal=SIGINT
-TimeoutStopSec=900
-LimitNOFILE=65536
-ExecStart={_exec_start}
+# ──────────────────────────────────────────────
+# Prysm consensus client
+# ──────────────────────────────────────────────
 
-[Install]
-WantedBy=multi-user.target
-'''
+def generate_prysm_bn_service(eth_network: str, sync_url: str, jwtsecret_path: str,
+                              cl_rest_port: str, cl_p2p_port: str, cl_p2p_port_2: str, cl_max_peer_count: str,
+                              fee_parameters: str = '', mev_parameters: str = '',
+                              network_override: Optional[str] = None) -> str:
+    """Generate Prysm beacon node systemd service file content.
+
+    Args:
+        eth_network: Network name
+        sync_url: Checkpoint sync URL
+        jwtsecret_path: Path to JWT secret file
+        cl_rest_port: CL REST port
+        cl_p2p_port: CL P2P port
+        cl_p2p_port_2: CL secondary P2P port
+        cl_max_peer_count: CL max peer count
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+        network_override: Optional network flag override
+
+    Returns:
+        Service file content as a string
+    """
+    if network_override:
+        _network = network_override
+    else:
+        if eth_network.lower() == "mainnet":
+            _network = "--mainnet"
+        elif eth_network.lower() == "sepolia":
+            _network = "--sepolia"
+        elif eth_network.lower() == "holesky":
+            _network = "--holesky"
+        elif eth_network.lower() == "hoodi":
+            _network = "--hoodi"
+        else:
+            _network = f"--{eth_network.lower()}"
+
+    _args = [
+        f"{INSTALL_DIR}/prysm-beacon-chain",
+        _network,
+        f"--datadir={BASE_DATA_DIR}/prysm",
+        f"--p2p-tcp-port={cl_p2p_port}",
+        f"--p2p-udp-port={cl_p2p_port}",
+        f"--p2p-max-peers={cl_max_peer_count}",
+        "--rpc-host=127.0.0.1",
+        "--rpc-port=4000",
+        "--http-host=127.0.0.1",
+        f"--http-port={cl_rest_port}",
+        "--execution-endpoint=http://127.0.0.1:8551",
+        f"--jwt-secret={jwtsecret_path}",
+        f"--checkpoint-sync-url={sync_url}",
+        f"--genesis-beacon-api-url={sync_url}",
+        "--accept-terms-of-use"
+    ]
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
+    return _generate_systemd_template(description=f"Prysm Consensus Client service for {eth_network.upper()}", user="consensus", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
+
+
+def generate_prysm_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
+                              fee_parameters: str = '', mev_parameters: str = '',
+                              network_override: Optional[str] = None) -> str:
+    """Generate Prysm validator client systemd service file content.
+
+    Args:
+        eth_network: Network name
+        graffiti: Graffiti string
+        beacon_node_address: Beacon node address parameter (usually full flag string from orchestrator)
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+        network_override: Optional network flag override
+
+    Returns:
+        Service file content as a string
+    """
+    if network_override:
+        _network = network_override
+    else:
+        if eth_network.lower() == "mainnet":
+            _network = "--mainnet"
+        elif eth_network.lower() == "sepolia":
+            _network = "--sepolia"
+        elif eth_network.lower() == "holesky":
+            _network = "--holesky"
+        elif eth_network.lower() == "hoodi":
+            _network = "--hoodi"
+        else:
+            _network = f"--{eth_network.lower()}"
+
+    _args = [
+        f"{INSTALL_DIR}/prysm-validator",
+        _network,
+        f"--datadir={BASE_DATA_DIR}/prysm_validator",
+        f"--wallet-dir={BASE_DATA_DIR}/prysm_validator/validator_keys",
+        f"--wallet-password-file={BASE_DATA_DIR}/prysm_validator/password.txt",
+        beacon_node_address,
+        f"--graffiti={graffiti}",
+        "--accept-terms-of-use"
+    ]
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
+    return _generate_systemd_template(description=f"Prysm Validator Client service for {eth_network.upper()}", user="validator", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=65536)

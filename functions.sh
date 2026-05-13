@@ -854,7 +854,7 @@ exposeRpcCL(){
         Nimbus     ) _flag='--rest-address';;
         Lodestar   ) _flag='--rest.address';;
         Lighthouse ) _flag='--http-address';;
-        Prysm      ) _flag='--grpc-gateway-host';;
+        Prysm      ) _flag='--http-host';;
         Teku       ) _flag='--rest-api-interface';;
         * ) echo "Consensus client not detected."; return 0;;
     esac

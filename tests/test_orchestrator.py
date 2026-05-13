@@ -156,6 +156,10 @@ class TestRunInstallRouting:
             gr_dl = stack.enter_context(patch('deploy.grandine.download_grandine', return_value="v1"))
             gr_bn = stack.enter_context(patch('deploy.grandine.install_grandine_bn', return_value="p"))
             
+            pr_dl = stack.enter_context(patch('deploy.prysm.download_prysm', return_value="v1"))
+            pr_bn = stack.enter_context(patch('deploy.prysm.install_prysm_bn', return_value="p"))
+            pr_vc = stack.enter_context(patch('deploy.prysm.install_prysm_vc', return_value="p"))
+            
             mv_dl = stack.enter_context(patch('deploy.mevboost.install_mevboost', return_value=("v1", "p")))
             
             stack.enter_context(patch('deploy.common.setup_node'))
@@ -170,6 +174,7 @@ class TestRunInstallRouting:
                 'tk_bn': tk_bn, 'tk_vc': tk_vc, 'tk_dl': tk_dl,
                 'ls_bn': ls_bn, 'ls_vc': ls_vc, 'ls_dl': ls_dl,
                 'gr_bn': gr_bn, 'gr_dl': gr_dl,
+                'pr_bn': pr_bn, 'pr_vc': pr_vc, 'pr_dl': pr_dl,
                 'mev': mv_dl
             }
     def _verify_only_called(self, mocks, expected_keys):
@@ -289,6 +294,16 @@ class TestRunInstallRouting:
         call_kwargs = mocks['gr_bn'].call_args
         assert mev_params_expected in call_kwargs.kwargs.get('mev_parameters', ''), \
             f"Expected MEV params '{mev_params_expected}' in grandine install, got: {call_kwargs}"
+
+    def test_switch_consensus_client_prysm_with_mevboost(self):
+        # Verify Prysm gets MEV params when switching with mevboost enabled
+        mocks = self._run("Switch Consensus Client", None, "Prysm", None, flags_override={"validator": False, "mevboost": True, "switch_client": "consensus"})
+        self._verify_only_called(mocks, ['pr_dl', 'pr_bn'])
+        mev_url = 'http://127.0.0.1:18550'
+        mev_params_expected = f'--http-mev-relay={mev_url}'
+        call_kwargs = mocks['pr_bn'].call_args
+        assert mev_params_expected in call_kwargs.kwargs.get('mev_parameters', ''), \
+            f"Expected MEV params '{mev_params_expected}' in prysm install, got: {call_kwargs}"
 
     def test_custom_grandine_routing(self):
         mocks = self._run("Custom Setup", "Besu", "Grandine", "Lighthouse", flags_override={"validator": True, "mevboost": True})

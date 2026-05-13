@@ -56,6 +56,10 @@ $customTests = @(
     [PSCustomObject]@{
         Label     = "Nethermind-Grandine-Custom-Setup-SEPOLIA"
         DockerCmd = "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Grandine --vc Lighthouse --network SEPOLIA --mev --config `"Custom Setup`""
+    },
+    [PSCustomObject]@{
+        Label     = "Prysm-Reth-Custom-Setup-SEPOLIA"
+        DockerCmd = "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Prysm --vc Prysm --network SEPOLIA --mev --config `"Custom Setup`""
     }
 )
 

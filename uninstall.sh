@@ -109,7 +109,7 @@ function uninstallCL(){
 		sudo rm -rf /var/lib/nimbus
 
 		#Prysm from Binaries
-		sudo rm -rf /usr/local/bin/beacon-chain
+		sudo rm -rf /usr/local/bin/prysm-beacon-chain
 		#Prysm from Build from Source
 		sudo rm -rf /usr/local/bin/prysm
 		sudo rm -rf /var/lib/prysm
@@ -174,7 +174,8 @@ function uninstallVC(){
 		sudo rm -rf /usr/local/bin/nimbus_validator_client
 
 		#Prysm from Binaries
-		sudo rm -rf /usr/local/bin/validator
+		sudo rm -rf /usr/local/bin/prysm-validator
+		sudo rm -rf /var/lib/prysm_validator
 		sudo rm -rf /var/lib/prysm/validators
 
 		sudo userdel validator

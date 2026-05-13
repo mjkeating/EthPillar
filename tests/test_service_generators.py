@@ -707,3 +707,54 @@ class TestGrandineService:
         assert "--keystore-dir=/var/lib/grandine/validator_keys" in result
         assert "--keystore-password-dir=/var/lib/grandine/validator_keys" in result
 
+
+# ═══════════════════════════════════════════════
+# Prysm service tests
+# ═══════════════════════════════════════════════
+
+class TestPrysmService:
+    """Test Prysm BN and VC service file generation."""
+
+    def test_bn_mainnet_with_mev(self):
+        fee_params = f'--suggested-fee-recipient={FEE_RECIPIENT_ADDRESS}'
+        mev_params = '--http-mev-relay=http://127.0.0.1:18550'
+        from deploy.service_generators import generate_prysm_bn_service
+        result = generate_prysm_bn_service(
+            "mainnet", SYNC_URL, JWTSECRET_PATH,
+            CL_REST_PORT, CL_P2P_PORT, CL_P2P_PORT_2, CL_MAX_PEER_COUNT,
+            fee_parameters=fee_params, mev_parameters=mev_params
+        )
+        assert "Description=Prysm Consensus Client service for MAINNET" in result
+        assert "--mainnet" in result
+        assert f"--p2p-tcp-port={CL_P2P_PORT}" in result
+        assert f"--p2p-udp-port={CL_P2P_PORT}" in result
+        assert f"--http-port={CL_REST_PORT}" in result
+        assert f"--p2p-max-peers={CL_MAX_PEER_COUNT}" in result
+        assert f"--checkpoint-sync-url={SYNC_URL}" in result
+        assert f"--jwt-secret={JWTSECRET_PATH}" in result
+        assert f"--suggested-fee-recipient={FEE_RECIPIENT_ADDRESS}" in result
+        assert "--http-mev-relay=http://127.0.0.1:18550" in result
+        assert "User=consensus" in result
+
+    def test_bn_no_mev(self):
+        from deploy.service_generators import generate_prysm_bn_service
+        result = generate_prysm_bn_service(
+            "mainnet", SYNC_URL, JWTSECRET_PATH,
+            CL_REST_PORT, CL_P2P_PORT, CL_P2P_PORT_2, CL_MAX_PEER_COUNT
+        )
+        assert "--http-mev-relay" not in result
+
+    def test_vc_mainnet_with_mev(self):
+        fee_params = f'--suggested-fee-recipient={FEE_RECIPIENT_ADDRESS}'
+        mev_params = '--enable-builder'
+        bn_addr = f'--beacon-rest-api-provider=http://{CL_IP_ADDRESS}:{CL_REST_PORT}'
+        from deploy.service_generators import generate_prysm_vc_service
+        result = generate_prysm_vc_service(
+            "mainnet", GRAFFITI, bn_addr,
+            fee_parameters=fee_params, mev_parameters=mev_params
+        )
+        assert "Description=Prysm Validator Client service for MAINNET" in result
+        assert f"--graffiti={GRAFFITI}" in result
+        assert "--enable-builder" in result
+        assert "--datadir=/var/lib/prysm_validator" in result
+        assert f"--beacon-rest-api-provider=http://{CL_IP_ADDRESS}:{CL_REST_PORT}" in result

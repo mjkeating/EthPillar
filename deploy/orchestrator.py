@@ -11,6 +11,7 @@ import deploy.teku as teku
 import deploy.lodestar as lodestar
 import deploy.grandine as grandine
 import deploy.mevboost as mevboost
+import deploy.prysm as prysm
 
 VALID_ROLES = [
     'Solo Staking Node',
@@ -23,7 +24,7 @@ VALID_ROLES = [
 ]
 
 EXECUTION_CLIENTS = ['Besu', 'Nethermind', 'Reth', 'Erigon', 'Geth']
-CONSENSUS_CLIENTS = ['Lighthouse', 'Nimbus', 'Teku', 'Lodestar', 'Grandine']
+CONSENSUS_CLIENTS = ['Lighthouse', 'Nimbus', 'Teku', 'Lodestar', 'Grandine', 'Prysm']
 
 PREDEFINED_COMBOS = {
     'Nimbus-Nethermind': ('Nethermind', 'Nimbus'),
@@ -207,6 +208,11 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
             cl_ver = grandine.download_grandine(network)
             is_integrated_vc = (vc_name == 'Grandine (integrated)' and flags['validator'])
             cl_path = grandine.install_grandine_bn(network, sync_url, jwtsecret_path, str(cl_rest_port), str(cl_p2p_port), str(cl_p2p_port_2), str(cl_max_peers), fee_parameters=fee_params, mev_parameters=mev_params, is_integrated_vc=is_integrated_vc)
+        elif cc_name == 'Prysm':
+            fee_params = f'--suggested-fee-recipient={fee_recipient}'
+            mev_params = '--http-mev-relay=http://127.0.0.1:18550' if flags['mevboost'] else ''
+            cl_ver = prysm.download_prysm(network)
+            cl_path = prysm.install_prysm_bn(network, sync_url, jwtsecret_path, str(cl_rest_port), str(cl_p2p_port), str(cl_p2p_port_2), str(cl_max_peers), fee_parameters=fee_params, mev_parameters=mev_params)
 
     val_path = ""
     val_ver = ""
@@ -243,6 +249,13 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
             mev_params = '--builder' if flags['mevboost'] else ''
             bn_arg = f'--beaconNodes={addr}'
             val_path = lodestar.install_lodestar_vc(v_ver, network, str(cl_rest_port), graffiti, bn_arg, fee_params, mev_params)
+        elif vc_name == 'Prysm':
+            v_ver = cl_ver if vc_name == cc_name and cl_ver else prysm.download_prysm(network)
+            val_ver = v_ver
+            fee_params = f'--suggested-fee-recipient={fee_recipient}'
+            mev_params = '--enable-builder' if flags['mevboost'] else ''
+            bn_arg = f'--beacon-rest-api-provider={addr}'
+            val_path = prysm.install_prysm_vc(v_ver, network, str(cl_rest_port), graffiti, bn_arg, fee_params, mev_params)
 
     combo_name = role
     if ec_name and cc_name:

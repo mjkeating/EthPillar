@@ -58,6 +58,7 @@ function switchClient(){
         Lodestar) DATADIR="${BASE_DATA_DIR}/lodestar" ;;
         Caplin) DATADIR="${BASE_DATA_DIR}/erigon" ;;
         Grandine) DATADIR="${BASE_DATA_DIR}/grandine" ;;
+        Prysm) DATADIR="${BASE_DATA_DIR}/prysm" ;;
     esac
 
     if [ -n "$DATADIR" ] && [ -d "$DATADIR" ]; then

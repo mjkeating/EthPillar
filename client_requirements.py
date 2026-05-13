@@ -19,6 +19,7 @@ FUSAKA_MIN_VERSIONS = {
     'lodestar': 'v1.35.0',
     'prysm': 'v6.1.0',
     'grandine': 'v2.0.0',
+    'prysm': 'v7.0.0',
     # Execution clients
     'reth': 'v1.7.0',
     'besu': '25.7.0',

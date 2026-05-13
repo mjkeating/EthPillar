@@ -232,10 +232,12 @@ function updateClient(){
 		chmod +x beacon-chain validator prysmctl
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm /usr/local/bin/beacon-chain
-		sudo rm /usr/local/bin/validator
-		sudo rm /usr/local/bin/prysmctl
-		sudo mv beacon-chain validator prysmctl /usr/local/bin || error "❌ Unable to move prysm files"
+		sudo rm -f /usr/local/bin/prysm-beacon-chain
+		sudo rm -f /usr/local/bin/prysm-validator
+		sudo rm -f /usr/local/bin/prysmctl
+		sudo mv beacon-chain /usr/local/bin/prysm-beacon-chain || error "❌ Unable to move beacon-chain"
+		sudo mv validator /usr/local/bin/prysm-validator || error "❌ Unable to move validator"
+		sudo mv prysmctl /usr/local/bin/prysmctl || error "❌ Unable to move prysmctl"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo systemctl start validator
 	    ;;

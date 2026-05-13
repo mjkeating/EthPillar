@@ -30,14 +30,18 @@ New users can skip this step — the installer below already points to this fork
 
 ---
 
-## ✨ v5.4.0 — Custom Client Combinations (Major Update)
+## ✨ v5.4.3 — Grandine Support
 
-You can now **mix and match any Execution Client + Consensus Client + Validator Client** exactly the way you want.
+**New Consensus Client: Grandine** (with integrated validator mode)
 
-### Major New Features
+### Highlights
+- Full support for **Grandine** Beacon Node + integrated Validator Client
+- No separate `validator.service` required for Grandine
+- Improved client switching reliability (JWT secret & MEV-Boost preservation)
+- Enhanced systemd service handling and testing
 
-- **Custom Setup** — Full flexibility: choose your execution client (Nethermind, Besu, Reth, Erigon), consensus (Lighthouse, Nimbus, Teku, Lodestar), and validation client
-- Improved role-based installs (Solo Staking, Full Node Only, Failover, Validator Only, Lido CSM, etc.)
+Thanks to **@b0a7** for yet another excellent contribution!
+
 ---
 
 ## 🚀 What is EthPillar?

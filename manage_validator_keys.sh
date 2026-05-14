@@ -381,12 +381,12 @@ function loadKeys(){
         fi
       ;;
      Prysm)
-        sudo /usr/local/bin/validator accounts import \
+        sudo /usr/local/bin/prysm-validator accounts import \
           --accept-terms-of-use \
-          --wallet-dir=/var/lib/prysm/validators \
+          --wallet-dir=/var/lib/prysm_validator/validator_keys \
           --keys-dir="$KEYFOLDER"
-        sudo chown -R validator:validator /var/lib/prysm/validators
-        sudo chmod 700 /var/lib/prysm/validators
+        sudo chown -R validator:validator /var/lib/prysm_validator
+        sudo chmod -R 700 /var/lib/prysm_validator
       ;;
      Grandine)
         if [[ -z $_KEYSTOREPASSWORD ]]; then

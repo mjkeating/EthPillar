@@ -75,11 +75,11 @@ def test_mevboost_exact_match():
     
     # EXACT logic from lines 380-417 of deploy-teku-besu.py
     mev_boost_service_file_lines = [
-    '[Unit]',
-    f'Description=MEV-Boost Service for {eth_network.upper()}',
-    'After=network-online.target',
-    'Wants=network-online.target',
-    'Documentation=https://docs.coincashew.com',
+        '[Unit]',
+        f'Description=MEV-Boost Service for {eth_network.upper()}',
+        'After=network-online.target',
+        'Wants=network-online.target',
+        'Documentation=https://docs.coincashew.com',
     '',
     '[Service]',
     'User=mevboost',

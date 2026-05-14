@@ -136,7 +136,7 @@ class TestWriteServiceFile:
     def test_writes_content_to_temp_file(self):
         content = "[Unit]\nDescription=Test\n"
         pid = os.getpid()
-        expected_temp = f"{pid}_test.service"
+        expected_temp = f"/tmp/{pid}_test.service"
 
         with patch('builtins.open', mock_open()) as mock_file, \
              patch('subprocess.run') as mock_run, \
@@ -148,7 +148,7 @@ class TestWriteServiceFile:
     def test_copies_temp_file_to_target_with_sudo(self):
         content = "[Unit]\nDescription=Test\n"
         pid = os.getpid()
-        expected_temp = f"{pid}_test.service"
+        expected_temp = f"/tmp/{pid}_test.service"
         target = '/etc/systemd/system/test.service'
 
         with patch('builtins.open', mock_open()), \
@@ -160,7 +160,7 @@ class TestWriteServiceFile:
     def test_removes_temp_file_after_copy(self):
         content = "[Unit]\nDescription=Test\n"
         pid = os.getpid()
-        expected_temp = f"{pid}_test.service"
+        expected_temp = f"/tmp/{pid}_test.service"
 
         with patch('builtins.open', mock_open()), \
              patch('subprocess.run'), \

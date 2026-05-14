@@ -1,8 +1,30 @@
 from typing import List, Dict, Optional
 from deploy.common import BASE_DATA_DIR, INSTALL_DIR
 
+ 
+def _generate_systemd_template(
+    description: str,
+    user: str,
+    exec_start: str,
+    extra_env: Optional[List[str]] = None,
+    working_dir: Optional[str] = None,
+    timeout_stop_sec: int = 900,
+    limit_nofile: Optional[int] = None
+) -> str:
+    """Generate a systemd service file content.
 
-def _generate_systemd_template(description: str, user: str, exec_start: str, extra_env: Optional[List[str]] = None, working_dir: Optional[str] = None, timeout_stop_sec: int = 900, limit_nofile: Optional[int] = None) -> str:
+    Args:
+        description: Service description.
+        user: System user to run the service.
+        exec_start: Multi-line ExecStart value.
+        extra_env: Optional list of environment variables.
+        working_dir: Optional working directory.
+        timeout_stop_sec: Timeout for stopping the service.
+        limit_nofile: Optional file descriptor limit.
+
+    Returns:
+        Complete systemd service file content as a string.
+    """
     env_str = "".join(f"Environment={e}\n" for e in extra_env) if extra_env else ""
     wd_str = f"WorkingDirectory={working_dir}\n" if working_dir else ""
     nofile_str = f"LimitNOFILE={limit_nofile}\n" if limit_nofile else ""
@@ -113,7 +135,15 @@ def generate_besu_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
     ]
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Besu Execution Layer Client service for {eth_network.upper()}", user="execution", exec_start=_exec_start, extra_env=['"JAVA_OPTS=-Xmx5g"'], working_dir=None, timeout_stop_sec=900, limit_nofile=None)
+    return _generate_systemd_template(
+        description=f"Besu Execution Layer Client service for {eth_network.upper()}",
+        user="execution",
+        exec_start=_exec_start,
+        extra_env=['"JAVA_OPTS=-Xmx5g"'],
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
 
 
 def generate_nethermind_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
@@ -158,7 +188,15 @@ def generate_nethermind_service(eth_network: str, el_p2p_port: str, el_rpc_port:
     
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Nethermind Execution Layer Client service for {eth_network.upper()}", user="execution", exec_start=_exec_start, extra_env=['"DOTNET_BUNDLE_EXTRACT_BASE_DIR={BASE_DATA_DIR}/nethermind/bundle-extract"'], working_dir=f"{BASE_DATA_DIR}/nethermind", timeout_stop_sec=900, limit_nofile=None)
+    return _generate_systemd_template(
+        description=f"Nethermind Execution Layer Client service for {eth_network.upper()}",
+        user="execution",
+        exec_start=_exec_start,
+        extra_env=['"DOTNET_BUNDLE_EXTRACT_BASE_DIR={BASE_DATA_DIR}/nethermind/bundle-extract"'],
+        working_dir=f"{BASE_DATA_DIR}/nethermind",
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
 
 
 def generate_reth_service(eth_network: str, el_p2p_port: str, el_p2p_port_2: str,
@@ -207,7 +245,15 @@ def generate_reth_service(eth_network: str, el_p2p_port: str, el_p2p_port_2: str
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Reth Execution Layer Client service for {eth_network.upper()}", user="execution", exec_start=_exec_start, extra_env=['RUST_LOG=info'], working_dir=None, timeout_stop_sec=900, limit_nofile=None)
+    return _generate_systemd_template(
+        description=f"Reth Execution Layer Client service for {eth_network.upper()}",
+        user="execution",
+        exec_start=_exec_start,
+        extra_env=['RUST_LOG=info'],
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
 
 
 def generate_geth_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
@@ -258,7 +304,15 @@ def generate_geth_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
     ]
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Geth Execution Layer Client service for {eth_network.upper()}", user="execution", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
+    return _generate_systemd_template(
+        description=f"Geth Execution Layer Client service for {eth_network.upper()}",
+        user="execution",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
 
 
 def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
@@ -327,7 +381,15 @@ def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Erigon-Caplin Integrated Execution-Consensus Client for {eth_network.upper()}", user="execution", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
+    return _generate_systemd_template(
+        description=f"Erigon-Caplin Integrated Execution-Consensus Client for {eth_network.upper()}",
+        user="execution",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
 
 
 def generate_erigon_standalone_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
@@ -372,7 +434,15 @@ def generate_erigon_standalone_service(eth_network: str, el_p2p_port: str, el_rp
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Erigon Execution Layer Client service for {eth_network.upper()}", user="execution", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
+    return _generate_systemd_template(
+        description=f"Erigon Execution Layer Client service for {eth_network.upper()}",
+        user="execution",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
 
 
 # ──────────────────────────────────────────────
@@ -419,7 +489,15 @@ def generate_teku_bn_service(eth_network: str, sync_url: str, jwtsecret_path: st
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Teku Beacon Node Consensus Client service for {eth_network.upper()}", user="consensus", exec_start=_exec_start, extra_env=['JAVA_OPTS=-Xmx6g', 'TEKU_OPTS=-XX:-HeapDumpOnOutOfMemoryError'], working_dir=None, timeout_stop_sec=900, limit_nofile=None)
+    return _generate_systemd_template(
+        description=f"Teku Beacon Node Consensus Client service for {eth_network.upper()}",
+        user="consensus",
+        exec_start=_exec_start,
+        extra_env=['JAVA_OPTS=-Xmx6g', 'TEKU_OPTS=-XX:-HeapDumpOnOutOfMemoryError'],
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
 
 
 def generate_teku_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
@@ -453,7 +531,15 @@ def generate_teku_vc_service(eth_network: str, graffiti: str, beacon_node_addres
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Teku Validator Client service for {eth_network.upper()}", user="validator", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=65536)
+    return _generate_systemd_template(
+        description=f"Teku Validator Client service for {eth_network.upper()}",
+        user="validator",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=65536
+    )
 
 
 # ──────────────────────────────────────────────
@@ -505,7 +591,15 @@ def generate_lodestar_bn_service(eth_network: str, sync_url: str, jwtsecret_path
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Lodestar Consensus Client service for {eth_network.upper()}", user="consensus", exec_start=_exec_start, extra_env=['"TMPDIR={BASE_DATA_DIR}/lodestar/tmp"'], working_dir=f"{INSTALL_DIR}/lodestar", timeout_stop_sec=900, limit_nofile=None)
+    return _generate_systemd_template(
+        description=f"Lodestar Consensus Client service for {eth_network.upper()}",
+        user="consensus",
+        exec_start=_exec_start,
+        extra_env=['"TMPDIR={BASE_DATA_DIR}/lodestar/tmp"'],
+        working_dir=f"{INSTALL_DIR}/lodestar",
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
 
 
 def generate_lodestar_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
@@ -545,7 +639,15 @@ def generate_lodestar_vc_service(eth_network: str, graffiti: str, beacon_node_ad
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Lodestar Validator Client service for {eth_network.upper()}", user="validator", exec_start=_exec_start, extra_env=['"TMPDIR={BASE_DATA_DIR}/lodestar_validator/tmp"'], working_dir=f"{INSTALL_DIR}/lodestar", timeout_stop_sec=300, limit_nofile=65536)
+    return _generate_systemd_template(
+        description=f"Lodestar Validator Client service for {eth_network.upper()}",
+        user="validator",
+        exec_start=_exec_start,
+        extra_env=['"TMPDIR={BASE_DATA_DIR}/lodestar_validator/tmp"'],
+        working_dir=f"{INSTALL_DIR}/lodestar",
+        timeout_stop_sec=300,
+        limit_nofile=65536
+    )
 
 
 # ──────────────────────────────────────────────
@@ -603,7 +705,15 @@ def generate_nimbus_bn_service(eth_network: str, jwtsecret_path: str,
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Nimbus Beacon Node Consensus Client service for {eth_network.upper()}", user="consensus", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
+    return _generate_systemd_template(
+        description=f"Nimbus Beacon Node Consensus Client service for {eth_network.upper()}",
+        user="consensus",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
 
 
 def generate_nimbus_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
@@ -639,7 +749,15 @@ def generate_nimbus_vc_service(eth_network: str, graffiti: str, beacon_node_addr
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Nimbus Validator Client service for {eth_network.upper()}", user="validator", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=65536)
+    return _generate_systemd_template(
+        description=f"Nimbus Validator Client service for {eth_network.upper()}",
+        user="validator",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=65536
+    )
 
 
 def generate_grandine_bn_service(eth_network: str, sync_url: str, jwtsecret_path: str,
@@ -700,7 +818,15 @@ def generate_grandine_bn_service(eth_network: str, sync_url: str, jwtsecret_path
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Grandine Consensus Client service for {eth_network.upper()}", user="consensus", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
+    return _generate_systemd_template(
+        description=f"Grandine Consensus Client service for {eth_network.upper()}",
+        user="consensus",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
 
 
 # ──────────────────────────────────────────────
@@ -757,7 +883,15 @@ def generate_lighthouse_bn_service(eth_network: str, sync_url: str, jwtsecret_pa
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Lighthouse Consensus Client service for {eth_network.upper()}", user="consensus", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
+    return _generate_systemd_template(
+        description=f"Lighthouse Consensus Client service for {eth_network.upper()}",
+        user="consensus",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
 
 
 def generate_lighthouse_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
@@ -799,7 +933,15 @@ def generate_lighthouse_vc_service(eth_network: str, graffiti: str, beacon_node_
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Lighthouse Validator Client service for {eth_network.upper()}", user="validator", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=65536)
+    return _generate_systemd_template(
+        description=f"Lighthouse Validator Client service for {eth_network.upper()}",
+        user="validator",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=65536
+    )
 
 # ──────────────────────────────────────────────
 # Prysm consensus client
@@ -864,7 +1006,15 @@ def generate_prysm_bn_service(eth_network: str, sync_url: str, jwtsecret_path: s
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Prysm Consensus Client service for {eth_network.upper()}", user="consensus", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=None)
+    return _generate_systemd_template(
+        description=f"Prysm Consensus Client service for {eth_network.upper()}",
+        user="consensus",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
 
 
 def generate_prysm_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
@@ -914,4 +1064,12 @@ def generate_prysm_vc_service(eth_network: str, graffiti: str, beacon_node_addre
 
     _exec_start = form_exec_start(_args)
 
-    return _generate_systemd_template(description=f"Prysm Validator Client service for {eth_network.upper()}", user="validator", exec_start=_exec_start, extra_env=None, working_dir=None, timeout_stop_sec=900, limit_nofile=65536)
+    return _generate_systemd_template(
+        description=f"Prysm Validator Client service for {eth_network.upper()}",
+        user="validator",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=65536
+    )

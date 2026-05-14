@@ -211,8 +211,8 @@ def check_service_start(service_name: str) -> bool:
             return False
         print(f"  ✅ Service {service_name} is active")
 
-        # Step 4: stop cleanly
-        subprocess.run(["systemctl", "stop", service_name], capture_output=True)
+        # Skip stopping the service - leave it running for the test
+        # The container will be destroyed after the test anyway
         return True
 
     else:

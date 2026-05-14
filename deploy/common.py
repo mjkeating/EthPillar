@@ -199,7 +199,10 @@ def write_service_file(content: str, target_path: str, temp_filename: str = 'tem
         temp_filename: Temporary filename to use.
     """
     # Prepend PID to avoid race conditions when multiple containers share the same mapped volume directory
-    actual_temp_filename = f"{os.getpid()}_{temp_filename}"
+    # Use /tmp for absolute path to avoid working directory issues
+    import tempfile
+    temp_dir = tempfile.gettempdir()
+    actual_temp_filename = f"{temp_dir}/{os.getpid()}_{temp_filename}"
     with open(actual_temp_filename, 'w') as f:
         f.write(content)
     subprocess.run(['sudo', 'cp', actual_temp_filename, target_path], check=True)

@@ -22,15 +22,15 @@ docker build -t ethpillar-rebuild -f tests/integration/Dockerfile.test .
 DOCKER_SYSTEMD_FLAGS="--privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock"
 
 test_commands=(
-    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Erigon-Caplin --network SEPOLIA --config 'Full Node Only'"
-    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Reth-Lighthouse --network HOLESKY --mev --config 'Solo Staking Node'"
-    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Besu-Lodestar --network HOLESKY --mev --config 'Lido CSM Staking Node'"
-    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Nethermind-Nimbus --network EPHEMERY --mev --config 'Solo Staking Node'"
-    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Besu-Teku --network HOLESKY --mev --config 'Failover Staking Node'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Lighthouse-Reth --network HOLESKY --mev --config 'Solo Staking Node'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Lodestar-Besu --network HOLESKY --mev --config 'Lido CSM Staking Node'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Nimbus-Nethermind --network EPHEMERY --mev --config 'Solo Staking Node'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Teku-Besu --network HOLESKY --mev --config 'Failover Staking Node'"
     "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lighthouse --network SEPOLIA --mev --config 'Custom Setup' --vc Lighthouse"
-    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Besu-Lodestar --network HOLESKY --mev --config 'Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Lodestar-Besu --network HOLESKY --mev --config 'Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052"
     "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Grandine --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup'"
     "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Prysm --vc Prysm --network SEPOLIA --mev --config 'Custom Setup'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Caplin-Erigon --network SEPOLIA --config 'Full Node Only'"
 )
 
 # Use a temporary file to store results from parallel processes
@@ -54,7 +54,7 @@ for cmd in "${test_commands[@]}"; do
             sleep 3  # wait for systemd to initialize
             
             # Run the test via exec
-            docker exec "$container_name" $cmd > "$log_file" 2>&1
+            docker exec "$container_name" bash -c "$cmd" > "$log_file" 2>&1
             status=$?
             
             # Always clean up the container

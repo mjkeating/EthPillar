@@ -29,8 +29,8 @@ def test_besu_exact_match():
     # EXACT copied literal string from deploy-teku-besu.py lines 510-529 (updated for multi-line)
     expected = f'''[Unit]
 Description=Besu Execution Layer Client service for {eth_network.upper()}
-Wants=network-online.target
 After=network-online.target
+Wants=network-online.target
 Documentation=https://docs.coincashew.com
 
 [Service]

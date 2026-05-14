@@ -44,8 +44,8 @@ def generate_mevboost_service(eth_network: str, mev_min_bid: str, relay_options:
     lines = [
         '[Unit]',
         f'Description=MEV-Boost Service for {eth_network.upper()}',
-        'Wants=network-online.target',
         'After=network-online.target',
+        'Wants=network-online.target',
         'Documentation=https://docs.coincashew.com',
         '',
         '[Service]',

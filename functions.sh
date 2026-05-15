@@ -249,13 +249,19 @@ getCurrentVersion(){
       Nimbus)
         test -f /usr/local/bin/nimbus_beacon_node && VERSION=$(nimbus_beacon_node --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+") || test -f /usr/local/bin/nimbus_validator_client && VERSION=$(nimbus_validator_client --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
-      Prysm)
-        test -f /usr/local/bin/beacon-chain && VERSION=$(beacon-chain --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+") || test -f /usr/local/bin/validator && VERSION=$(validator --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
-        ;;
       Grandine)
         VERSION=$(/usr/local/bin/grandine --version | head -1 | grep -oE "v?[0-9]+\.[0-9]+\.[0-9]+")
         if [[ $VERSION != v* ]]; then VERSION="v$VERSION"; fi
         ;;
+      Prysm)
+        # Prysm Beacon Chain
+        if [[ -f /usr/local/bin/prysm-beacon-chain ]]; then
+            VERSION=$(/usr/local/bin/prysm-beacon-chain --version | head -1 | grep -oE "v[0-9]+\.[0-9]+\.[0-9]+")
+        # Prysm Validator (separate binary)
+        elif [[ -f /usr/local/bin/prysm-validator ]]; then
+            VERSION=$(/usr/local/bin/prysm-validator --version | head -1 | grep -oE "v[0-9]+\.[0-9]+\.[0-9]+")
+        fi
+        ;;   
       *)
         echo "ERROR: Unable to determine client."
         exit 1

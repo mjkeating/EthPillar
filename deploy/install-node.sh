@@ -30,6 +30,10 @@ if [[ ${#} -gt 0 ]]; then
   skip_prompt="true"
 fi
 
+# Tracks if this is a truly non-interactive (automated) run.
+# Only set when --skip_prompts true is explicitly passed to deploy-node.py.
+non_interactive="false"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     deploy-*.py|deploy/deploy-*.py)
@@ -38,6 +42,13 @@ while [[ $# -gt 0 ]]; do
       ;;
     true|false)
       skip_prompt="$1"
+      shift
+      ;;
+    --skip_prompts)
+      extra_args+=("$1")
+      if [[ "${2:-}" == "true" ]]; then
+        non_interactive="true"
+      fi
       shift
       ;;
     *)
@@ -167,7 +178,7 @@ linux_install_validator-install() {
     exit_on_error $?
 
     # Offer monitoring install if not already installed and not in non-interactive mode
-    if [[ -z "$skip_prompt" ]] && [[ ! -f /etc/systemd/system/ethereum-metrics-exporter.service ]]; then
+    if [[ "$non_interactive" != "true" ]] && [[ ! -f /etc/systemd/system/ethereum-metrics-exporter.service ]]; then
         if whiptail --title "Enable Monitoring?" --yesno \
             "Would you like to install monitoring?\n\n🚨 Grafana + Prometheus + node-exporter\n\n- View dashboards for your node's performance\n- Set up alerts for any issues\n- All runs locally on your node" \
             14 70; then

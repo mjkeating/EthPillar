@@ -80,8 +80,19 @@ function resyncClient(){
 		sudo systemctl restart consensus
 		;;
 	  Grandine)
+		getNetwork
+		if [ "$NETWORK" == "Network Syncing" ] || [ -z "$NETWORK" ]; then
+			if [ -f /etc/systemd/system/consensus.service ]; then
+				NETWORK=$(grep "Description=" "/etc/systemd/system/consensus.service" | grep -oEi "(MAINNET|HOLESKY|SEPOLIA|HOODI|EPHEMERY)" | head -1)
+			fi
+		fi
+		_net_lower=$(echo "$NETWORK" | tr '[:upper:]' '[:lower:]')
+		if [ -z "$_net_lower" ]; then
+			_net_lower="mainnet"
+		fi
+
 		sudo systemctl stop consensus
-		sudo rm -rf /var/lib/grandine/beacon
+		sudo rm -rf /var/lib/grandine/$_net_lower/beacon
 		sudo systemctl restart consensus
 		;;
 	  esac

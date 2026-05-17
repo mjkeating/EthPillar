@@ -23,8 +23,32 @@ def setup_client_user_and_dir(user: str, client_name: str) -> None:
     """
     data_dir = os.path.join(BASE_DATA_DIR, client_name)
 
-    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", user], 
-                   stderr=subprocess.DEVNULL, check=False)
+    # Check if the user already exists
+    user_exists = False
+    try:
+        with open("/etc/passwd", "r") as f:
+            for line in f:
+                if line.startswith(f"{user}:"):
+                    user_exists = True
+                    break
+    except Exception:
+        # Fallback if /etc/passwd is not directly readable
+        res = subprocess.run(["id", "-u", user], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        user_exists = (res.returncode == 0)
+
+    # 1. Ensure the group exists first to prevent useradd from failing if the group exists
+    subprocess.run(["sudo", "groupadd", "-f", user], stderr=subprocess.DEVNULL, check=False)
+
+    if not user_exists:
+        # 2. Try creating the user with the specified primary group
+        res = subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "-g", user, user],
+                             stderr=subprocess.DEVNULL, check=False)
+        if res.returncode != 0:
+            # 3. Fallback to standard useradd if the primary group specification failed
+            subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", user], 
+                           stderr=subprocess.DEVNULL, check=False)
+
+    # 4. Create the data directory and set correct permissions
     subprocess.run(["sudo", "mkdir", "-p", data_dir], check=True)
     subprocess.run(["sudo", "chown", "-R", f"{user}:{user}", data_dir], check=True)
 

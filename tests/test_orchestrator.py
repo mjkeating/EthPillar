@@ -290,7 +290,7 @@ class TestRunInstallRouting:
         mocks = self._run("Switch Consensus Client", None, "Grandine", None, flags_override={"validator": False, "mevboost": True, "switch_client": "consensus"})
         self._verify_only_called(mocks, ['gr_dl', 'gr_bn'])
         mev_url = 'http://127.0.0.1:18550'
-        mev_params_expected = f'--builder-api-url={mev_url}'
+        mev_params_expected = f'--builder-url={mev_url}'
         call_kwargs = mocks['gr_bn'].call_args
         assert mev_params_expected in call_kwargs.kwargs.get('mev_parameters', ''), \
             f"Expected MEV params '{mev_params_expected}' in grandine install, got: {call_kwargs}"

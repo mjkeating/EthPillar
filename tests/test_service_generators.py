@@ -663,7 +663,7 @@ class TestGrandineService:
 
     def test_bn_mainnet_with_mev(self):
         fee_params = f'--suggested-fee-recipient={FEE_RECIPIENT_ADDRESS}'
-        mev_params = '--builder-api-url=http://127.0.0.1:18550'
+        mev_params = '--builder-url=http://127.0.0.1:18550'
         result = generate_grandine_bn_service(
             "mainnet", SYNC_URL, JWTSECRET_PATH,
             CL_REST_PORT, CL_P2P_PORT, CL_P2P_PORT_2, CL_MAX_PEER_COUNT,
@@ -679,7 +679,7 @@ class TestGrandineService:
         assert f"--checkpoint-sync-url={SYNC_URL}" in result
         assert f"--jwt-secret={JWTSECRET_PATH}" in result
         assert f"--suggested-fee-recipient={FEE_RECIPIENT_ADDRESS}" in result
-        assert "--builder-api-url=http://127.0.0.1:18550" in result
+        assert "--builder-url=http://127.0.0.1:18550" in result
         assert "User=consensus" in result
 
     def test_bn_no_mev(self):
@@ -687,7 +687,7 @@ class TestGrandineService:
             "mainnet", SYNC_URL, JWTSECRET_PATH,
             CL_REST_PORT, CL_P2P_PORT, CL_P2P_PORT_2, CL_MAX_PEER_COUNT
         )
-        assert "--builder-api-url" not in result
+        assert "--builder-url" not in result
 
     def test_bn_ephemery(self):
         custom_network = '--network-dir=/opt/ethpillar/testnet --boot-nodes=enr1,enr2'

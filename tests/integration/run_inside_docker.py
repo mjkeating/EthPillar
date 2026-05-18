@@ -248,7 +248,51 @@ def check_service_start(service_name: str) -> bool:
             print(f"  ❌ Failed to run service: {e}")
             return False
 
-def verify(args: Any):
+def check_p2p_ports(expected_services: List[str]) -> bool:
+    """Check that expected client P2P ports are listening after services start.
+
+    Checks the standard EL (30303) and CL (9000) P2P ports over both TCP and UDP
+    using `ss -lntu`. Results are advisory — clients may still be binding ports
+    immediately after startup, so failures warn but do not fail the test.
+    """
+    if not systemd_available():
+        print("  [no-systemd] Skipping port checks (no live services in fallback mode)")
+        return True
+
+    port_checks = []
+    if "execution" in expected_services:
+        port_checks.append((30303, "Execution P2P"))
+    if "consensus" in expected_services:
+        port_checks.append((9000, "Consensus P2P"))
+
+    if not port_checks:
+        return True
+
+    # Give services a moment to bind their ports after startup
+    time.sleep(5)
+
+    print("\n🔌 Checking P2P listening ports...")
+    try:
+        result = subprocess.run(["ss", "-lntu"], capture_output=True, text=True, check=True)
+    except (FileNotFoundError, subprocess.CalledProcessError) as e:
+        print(f"  ⚠️  Could not run ss: {e}")
+        return True
+
+    lines = result.stdout.splitlines()
+    for port, label in port_checks:
+        for proto in ("tcp", "udp"):
+            listening = any(
+                line.lower().startswith(proto) and f":{port}" in line
+                for line in lines
+            )
+            status = "✅" if listening else "⚠️ "
+            state = "listening" if listening else "not yet listening (client may still be starting)"
+            print(f"  {status} Port {port}/{proto.upper()} ({label}): {state}")
+
+    return True  # Advisory — never fails the integration test
+
+
+def verify(args: Any):\
     print(f"\n🔍 Verifying Artifacts...")
     expected_binaries, expected_users, expected_services = parse_expected_artifacts(args)
     success = True
@@ -265,6 +309,12 @@ def verify(args: Any):
         print(f"{'✅' if present else '❌'} Service File: {s}")
         if not present: success = False
         elif not check_service_start(s): success = False
+
+    # Advisory port checks — runs after services are started
+    is_validator_only = "Validator Client Only" in args.config
+    if not is_validator_only:
+        check_p2p_ports(expected_services)
+
     return success
 
 if __name__ == "__main__":

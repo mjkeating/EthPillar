@@ -156,8 +156,8 @@ Recommended next key steps:
 
 ## 📞 Support & Community
 
-- Join [Discord](https://discord.gg/dEpAVWgFNB)
-- Open issues or pull requests on [GitHub](https://github.com/coincashew/EthPillar)
+- Join [Discord](https://discord.gg/Kjrnkv8dgs)
+- Open issues or pull requests on [GitHub](https://github.com/mjkeating/EthPillar)
 
 ---
 

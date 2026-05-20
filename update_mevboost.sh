@@ -113,11 +113,19 @@ function updateClient(){
 	tar -xzvf "$FILENAME" -C "$HOME" || error "❌ Failed to extract mev-boost archive."
 	# Cleanup
 	rm "$FILENAME" LICENSE README.md 2>/dev/null || true
+	EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/mevboost.service" "/usr/local/bin/mev-boost")
 	sudo systemctl stop mevboost
-	sudo mv "$HOME"/mev-boost /usr/local/bin || error "❌ Failed to move mev-boost binary to /usr/local/bin."
+	sudo rm -f "$EXEC_PATH"
+	sudo mkdir -p "$(dirname "$EXEC_PATH")"
+	sudo mv "$HOME"/mev-boost "$EXEC_PATH" || error "❌ Failed to move mev-boost binary."
 	sudo systemctl start mevboost
 }
 
-getCurrentVersion
-getLatestVersion
-promptYesNo
+if [[ "$1" == "--auto" ]]; then
+    getLatestVersion
+    updateClient "LATEST"
+else
+    getCurrentVersion
+    getLatestVersion
+    promptYesNo
+fi

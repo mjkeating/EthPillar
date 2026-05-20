@@ -44,6 +44,7 @@ custom_tests=(
     "Geth-Lighthouse-Custom-Setup-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lighthouse --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup'"
     "Geth-Teku-FullNodeOnly-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Teku --network SEPOLIA --config 'Full Node Only'"
     "Nethermind-Grandine-Custom-Setup-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Grandine --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup'"
+    "Updates-Geth-Lodestar-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lodestar --network SEPOLIA --config 'Full Node Only' --test-updates"
     "Prysm-Reth-Custom-Setup-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Prysm --vc Prysm --network SEPOLIA --mev --config 'Custom Setup'"
 )
 

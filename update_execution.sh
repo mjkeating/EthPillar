@@ -135,9 +135,12 @@ function updateClient(){
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
 		unzip -o "$FILENAME" -d "$HOME"/nethermind || error "❌ Unable to unzip file"
 		rm -f "$FILENAME"
+		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/nethermind/nethermind")
+		BASE_DIR=$(dirname "$EXEC_PATH")
 		sudo systemctl stop execution
-		sudo rm -rf /usr/local/bin/nethermind
-		sudo mv "$HOME"/nethermind /usr/local/bin/nethermind || error "❌ Unable to move file"
+		sudo rm -rf "$BASE_DIR"
+		sudo mkdir -p "$(dirname "$BASE_DIR")"
+		sudo mv "$HOME"/nethermind "$BASE_DIR" || error "❌ Unable to move file"
 		sudo systemctl start execution		
 		;;
 	  Besu)
@@ -148,10 +151,12 @@ function updateClient(){
 		cd "$HOME" || true
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
 		tar -xzvf "$FILENAME" -C "$HOME" || error "❌ Unable to untar file"
-		sudo mv besu-"${TAG}" besu
+		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/besu/bin/besu")
+		BASE_DIR=$(dirname "$(dirname "$EXEC_PATH")")
 		sudo systemctl stop execution
-		sudo rm -rf /usr/local/bin/besu
-		sudo mv "$HOME"/besu /usr/local/bin/besu || error "❌ Unable to move file"
+		sudo rm -rf "$BASE_DIR"
+		sudo mkdir -p "$(dirname "$BASE_DIR")"
+		sudo mv besu-"${TAG}" "$BASE_DIR" || error "❌ Unable to move file"
 		sudo systemctl start execution
 		rm "$FILENAME"
 	    ;;
@@ -161,12 +166,18 @@ function updateClient(){
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-		tar -xzvf "$FILENAME" -C "$HOME" || error "❌ Unable to untar file"
-		mv erigon_*_"${_arch}" erigon
+		EXTRACTED_DIR="$HOME/erigon_temp"
+		mkdir -p "$EXTRACTED_DIR"
+		tar -xzvf "$FILENAME" -C "$EXTRACTED_DIR" || error "❌ Unable to untar file"
+		rm "$FILENAME"
+		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/erigon")
+		ERIGON_BIN=$(find "$EXTRACTED_DIR" -type f -name "erigon" | head -n 1)
 		sudo systemctl stop execution
-		sudo mv "$HOME"/erigon/erigon /usr/local/bin || error "❌ Unable to move file"
+		sudo rm -f "$EXEC_PATH"
+		sudo mkdir -p "$(dirname "$EXEC_PATH")"
+		sudo mv "$ERIGON_BIN" "$EXEC_PATH" || error "❌ Unable to move file"
 		sudo systemctl start execution
-		rm -rf erigon "$FILENAME"
+		rm -rf "$EXTRACTED_DIR"
 		;;
 	  Geth)
 		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')
@@ -181,10 +192,13 @@ function updateClient(){
 		if [ -z "$GETH_BIN" ]; then
 			error "❌ Could not find the extracted geth binary"
 		fi
+		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/geth")
 		sudo systemctl stop execution
-		sudo mv "$GETH_BIN" /usr/local/bin/geth || error "❌ Unable to move file"
-		sudo chmod +x /usr/local/bin/geth
-		sudo chown execution:execution /usr/local/bin/geth
+		sudo rm -f "$EXEC_PATH"
+		sudo mkdir -p "$(dirname "$EXEC_PATH")"
+		sudo mv "$GETH_BIN" "$EXEC_PATH" || error "❌ Unable to move file"
+		sudo chmod +x "$EXEC_PATH"
+		sudo chown execution:execution "$EXEC_PATH"
 		sudo systemctl start execution
 		rm -rf "$EXTRACTED_DIR" "$FILENAME"
 	    ;;
@@ -196,8 +210,11 @@ function updateClient(){
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
 		tar -xzvf "$FILENAME" -C "$HOME" || error "❌ Unable to untar file"
 		rm "$FILENAME"
+		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/reth")
 		sudo systemctl stop execution
-		sudo mv "$HOME"/reth /usr/local/bin || error "❌ Unable to move file"
+		sudo rm -f "$EXEC_PATH"
+		sudo mkdir -p "$(dirname "$EXEC_PATH")"
+		sudo mv "$HOME"/reth "$EXEC_PATH" || error "❌ Unable to move file"
 		sudo systemctl start execution
 	    ;;
 	esac
@@ -222,7 +239,13 @@ function updateJRE(){
 	fi
 }
 
-getClient
-getCurrentVersion
-getLatestVersion
-promptYesNo
+if [[ "$1" == "--auto" ]]; then
+    getClient
+    getLatestVersion
+    updateClient "LATEST"
+else
+    getClient
+    getCurrentVersion
+    getLatestVersion
+    promptYesNo
+fi

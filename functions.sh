@@ -33,6 +33,20 @@ function error {
   exit 1
 }
 
+get_systemd_exec_path() {
+  local service_file="$1"
+  local default_path="$2"
+  if [[ -f "$service_file" ]]; then
+    local exec_start
+    exec_start=$(grep -E "^ExecStart=" "$service_file" | head -n 1)
+    if [[ -n "$exec_start" ]]; then
+      echo "$exec_start" | sed -e 's/^ExecStart=//' | awk '{print $1}'
+      return
+    fi
+  fi
+  echo "$default_path"
+}
+
 getNetworkConfig() {
     ip_current=$( hostname --all-ip-address | awk '{print $1}')
     interface_current=$(ip route | grep default | head -1 | sed 's/.*dev \([^ ]*\) .*/\1/')

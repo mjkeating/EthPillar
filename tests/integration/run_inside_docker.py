@@ -329,6 +329,7 @@ if __name__ == "__main__":
     parser.add_argument('--config', type=str, default='Solo Staking Node')
     parser.add_argument('--network', type=str, default='SEPOLIA')
     parser.add_argument('--vc_only_bn_address', type=str, default="http://192.168.1.123:5052")
+    parser.add_argument('--test-updates', action='store_true', default=False)
     args = parser.parse_args()
 
     with open(".env", "w") as f:
@@ -344,6 +345,11 @@ if __name__ == "__main__":
             sys.exit(1)
         if not verify(args):
             sys.exit(1)
+        if args.test_updates:
+            print("\n=========================================")
+            print(" Running Updates Integration Test...")
+            print("=========================================")
+            subprocess.run(["bash", "/ethpillar/tests/integration/test_updates.sh"], check=True)
         print(f"\n🐳 Integration Test PASSED for {args.combo or args.ec}.")
     finally:
         for f in [".env"] + [p for p in os.listdir(".") if p.endswith((".tar.gz", ".tar.xz", ".zip"))]:

@@ -130,10 +130,12 @@ function updateClient(){
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
 		tar -xzvf "$FILENAME" -C "$HOME" || error "❌ Unable to untar file"
 		rm "$FILENAME"
+		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lighthouse")
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm /usr/local/bin/lighthouse
-		sudo mv "$HOME"/lighthouse /usr/local/bin/lighthouse || error "❌ Unable to move file"
+		sudo rm -f "$EXEC_PATH"
+		sudo mkdir -p "$(dirname "$EXEC_PATH")"
+		sudo mv "$HOME"/lighthouse "$EXEC_PATH" || error "❌ Unable to move file"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
 	    ;;
@@ -143,13 +145,19 @@ function updateClient(){
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-		tar -xzvf "$FILENAME" -C "$HOME" || error "❌ Unable to untar file"
+		EXTRACTED_DIR="$HOME/lodestar_temp"
+		mkdir -p "$EXTRACTED_DIR"
+		tar -xzvf "$FILENAME" -C "$EXTRACTED_DIR" || error "❌ Unable to untar file"
 		rm "$FILENAME"
+		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar")
+		LODESTAR_BIN=$(find "$EXTRACTED_DIR" -type f -name "lodestar" | head -n 1)
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm -rf /usr/local/bin/lodestar
-		sudo mkdir -p /usr/local/bin/lodestar
-		sudo mv "$HOME"/lodestar /usr/local/bin/lodestar || error "❌ Unable to move file"
+		sudo rm -f "$EXEC_PATH"
+		sudo mkdir -p "$(dirname "$EXEC_PATH")"
+		sudo mv "$LODESTAR_BIN" "$EXEC_PATH" || error "❌ Unable to move file"
+		sudo chmod +x "$EXEC_PATH"
+		rm -rf "$EXTRACTED_DIR"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
 	    ;;
@@ -165,10 +173,13 @@ function updateClient(){
 		_teku_v_num=${TAG#v}
 		mv teku-"${_teku_v_num}" teku
 		rm "$FILENAME"
+		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/teku/bin/teku")
+		BASE_DIR=$(dirname "$(dirname "$EXEC_PATH")")
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm -rf /usr/local/bin/teku
-		sudo mv "$HOME"/teku /usr/local/bin/teku || error "❌ Unable to move file"
+		sudo rm -rf "$BASE_DIR"
+		sudo mkdir -p "$(dirname "$BASE_DIR")"
+		sudo mv teku "$BASE_DIR" || error "❌ Unable to move file"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
 		;;
@@ -180,12 +191,15 @@ function updateClient(){
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
 		tar -xzvf "$FILENAME" -C "$HOME" || error "❌ Unable to untar file"
 		mv nimbus-eth2_"${_platform}"_"${_arch}"* nimbus
+		BN_EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/nimbus_beacon_node")
+		VC_EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/nimbus_validator_client")
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm /usr/local/bin/nimbus_beacon_node
-		sudo rm /usr/local/bin/nimbus_validator_client
-		sudo mv nimbus/build/nimbus_beacon_node /usr/local/bin || error "❌ Unable to move file"
-		sudo mv nimbus/build/nimbus_validator_client /usr/local/bin || error "❌ Unable to move file"
+		sudo rm -f "$BN_EXEC_PATH"
+		sudo rm -f "$VC_EXEC_PATH"
+		sudo mkdir -p "$(dirname "$BN_EXEC_PATH")" "$(dirname "$VC_EXEC_PATH")"
+		sudo mv nimbus/build/nimbus_beacon_node "$BN_EXEC_PATH" || error "❌ Unable to move file"
+		sudo mv nimbus/build/nimbus_validator_client "$VC_EXEC_PATH" || error "❌ Unable to move file"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
 		rm -r nimbus
@@ -207,14 +221,16 @@ function updateClient(){
 		curl -L -f "${_prysmctl_url}" -o prysmctl || error "❌ Unable to download prysmctl"
 		
 		chmod +x beacon-chain validator prysmctl
+		BN_EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/prysm-beacon-chain")
+		VC_EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/prysm-validator")
+		PRYSMCTL_EXEC_PATH="$(dirname "$BN_EXEC_PATH")/prysmctl"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm -f /usr/local/bin/prysm-beacon-chain
-		sudo rm -f /usr/local/bin/prysm-validator
-		sudo rm -f /usr/local/bin/prysmctl
-		sudo mv beacon-chain /usr/local/bin/prysm-beacon-chain || error "❌ Unable to move beacon-chain"
-		sudo mv validator /usr/local/bin/prysm-validator || error "❌ Unable to move validator"
-		sudo mv prysmctl /usr/local/bin/prysmctl || error "❌ Unable to move prysmctl"
+		sudo rm -f "$BN_EXEC_PATH" "$VC_EXEC_PATH" "$PRYSMCTL_EXEC_PATH"
+		sudo mkdir -p "$(dirname "$BN_EXEC_PATH")" "$(dirname "$VC_EXEC_PATH")"
+		sudo mv beacon-chain "$BN_EXEC_PATH" || error "❌ Unable to move beacon-chain"
+		sudo mv validator "$VC_EXEC_PATH" || error "❌ Unable to move validator"
+		sudo mv prysmctl "$PRYSMCTL_EXEC_PATH" || error "❌ Unable to move prysmctl"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo systemctl start validator
 	    ;;
@@ -225,10 +241,12 @@ function updateClient(){
 		cd "$HOME" || true
 		wget -O grandine "$BINARIES_URL" || error "❌ Unable to wget file"
 		chmod +x grandine
+		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/grandine")
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm -f /usr/local/bin/grandine
-		sudo mv "$HOME"/grandine /usr/local/bin/grandine || error "❌ Unable to move file"
+		sudo rm -f "$EXEC_PATH"
+		sudo mkdir -p "$(dirname "$EXEC_PATH")"
+		sudo mv "$HOME"/grandine "$EXEC_PATH" || error "❌ Unable to move file"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
 	    ;;
@@ -254,7 +272,13 @@ function updateJRE(){
 	fi
 }
 
-getClient
-getCurrentVersion
-getLatestVersion
-promptYesNo
+if [[ "$1" == "--auto" ]]; then
+    getClient
+    getLatestVersion
+    updateClient "LATEST"
+else
+    getClient
+    getCurrentVersion
+    getLatestVersion
+    promptYesNo
+fi

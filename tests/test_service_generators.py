@@ -508,7 +508,7 @@ class TestLodestarService:
         assert f"--port={CL_P2P_PORT}" in result
         assert "--builder" in result
         assert f"--suggestedFeeRecipient={FEE_RECIPIENT_ADDRESS}" in result
-        assert "WorkingDirectory=/usr/local/bin/lodestar" in result
+        assert "WorkingDirectory=" not in result
 
     def test_bn_ephemery(self):
         custom_network = '--paramsFile=/opt/ethpillar/testnet/config.yaml --genesisStateFile=/opt/ethpillar/testnet/genesis.ssz --bootnodes=enr1 --network.connectToDiscv5Bootnodes --ignoreWeakSubjectivityCheck'

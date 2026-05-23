@@ -35,7 +35,6 @@ def check_binary(binary_name: str) -> bool:
     """Checks if a binary or directory exists in the installation path."""
     subfolder_paths = {
         "besu": os.path.join(INSTALL_DIR, "besu", "bin", "besu"),
-        "lodestar": os.path.join(INSTALL_DIR, "lodestar", "lodestar"),
         "nethermind": os.path.join(INSTALL_DIR, "nethermind", "nethermind"),
         "teku": os.path.join(INSTALL_DIR, "teku") 
     }

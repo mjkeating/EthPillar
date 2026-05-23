@@ -67,7 +67,8 @@ function resyncClient(){
 		sudo systemctl stop consensus
 		sudo rm -rf /var/lib/nimbus/db
 
-		sudo -u consensus /usr/local/bin/nimbus_beacon_node trustedNodeSync \
+		NIMBUS_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/nimbus_beacon_node")
+		sudo -u consensus "$NIMBUS_BIN" trustedNodeSync \
 		${_checkpointsync} \
 		--data-dir=/var/lib/nimbus \
 		--backfill=false

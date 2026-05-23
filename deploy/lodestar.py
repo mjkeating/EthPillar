@@ -57,13 +57,15 @@ def download_lodestar(eth_network: str) -> str:
     download_file(download_url, download_path, "Lodestar")
 
     # The archive usually unpacks a lodestar directory or bare files.
-    # We want the binary to end up at /usr/local/bin/lodestar/lodestar
-    subprocess.run(["sudo", "mkdir", "-p", f"{INSTALL_DIR}/lodestar"])
+    # We want the binary to end up at /usr/local/bin/lodestar
     subprocess.run(["sudo", "mkdir", "-p", "/tmp/lodestar_extract"])
     subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/tmp/lodestar_extract"])
-    # Move the lodestar binary correctly
-    os.system("if [ -f /tmp/lodestar_extract/lodestar ]; then sudo mv /tmp/lodestar_extract/lodestar /usr/local/bin/lodestar/lodestar; fi")
-    os.system("if [ -f /tmp/lodestar_extract/bin/lodestar ]; then sudo mv /tmp/lodestar_extract/bin/lodestar /usr/local/bin/lodestar/lodestar; fi")
+    # Find the lodestar binary within the extracted archive and move it to the install dir
+    result = subprocess.run(["sudo", "find", "/tmp/lodestar_extract", "-type", "f", "-name", "lodestar"], capture_output=True, text=True)
+    lodestar_bin = result.stdout.strip().split("\n")[0]
+    if lodestar_bin:
+        subprocess.run(["sudo", "mv", lodestar_bin, f"{INSTALL_DIR}/lodestar"], check=True)
+        subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/lodestar"], check=True)
 
     # Remove the tar file and temporary extraction directory
     os.remove(download_path)

@@ -194,18 +194,19 @@ function updateClient(){
 		mkdir -p "$EXTRACT_DIR"
 		tar -xzvf "$FILENAME" -C "$EXTRACT_DIR" || error "❌ Unable to untar file"
 		rm "$FILENAME"
-		TEKU_BIN=$(find "$EXTRACT_DIR" -type f -name "teku" | head -n 1)
-		if [ -z "$TEKU_BIN" ]; then
-			error "❌ Could not find the extracted teku binary"
+		TEKU_DIR=$(find "$EXTRACT_DIR" -maxdepth 1 -type d -name "teku-*" | head -n 1)
+		if [ -z "$TEKU_DIR" ]; then
+			error "❌ Could not find the extracted teku directory"
 		fi
 		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/teku/bin/teku")
+		DEST_DIR=$(dirname "$(dirname "$EXEC_PATH")")
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm -rf "$(dirname "$(dirname "$EXEC_PATH")")"
-		sudo mkdir -p "$(dirname "$EXEC_PATH")"
-		sudo mv "$TEKU_BIN" "$EXEC_PATH" || error "❌ Unable to move file"
+		sudo rm -rf "$DEST_DIR"
+		sudo mv "$TEKU_DIR" "$DEST_DIR" || error "❌ Unable to move file"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
+		rm -rf "$EXTRACT_DIR"
 	    ;;
 	  Nimbus)
 		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')

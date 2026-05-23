@@ -154,7 +154,6 @@ function updateClient(){
 		BASE_DIR=$(dirname "$EXEC_PATH")
 		sudo systemctl stop execution
 		sudo rm -rf "$BASE_DIR"
-		sudo mkdir -p "$(dirname "$BASE_DIR")"
 		sudo mv "$HOME"/nethermind "$BASE_DIR" || error "❌ Unable to move file"
 		sudo systemctl start execution		
 		;;
@@ -170,11 +169,10 @@ function updateClient(){
 		BASE_DIR=$(dirname "$(dirname "$EXEC_PATH")")
 		sudo systemctl stop execution
 		sudo rm -rf "$BASE_DIR"
-		sudo mkdir -p "$(dirname "$BASE_DIR")"
-		sudo mv besu-"${TAG}" "$BASE_DIR" || error "❌ Unable to move file"
+		sudo mv "$HOME"/besu-"${TAG}" "$BASE_DIR" || error "❌ Unable to move file"
 		sudo systemctl start execution
 		rm "$FILENAME"
-	    ;;
+		;;
 	  Erigon)
 		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')
 		FILENAME=$(echo "$RELEASE_DATA" | jq -r '.filenames[0]')

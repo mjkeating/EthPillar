@@ -48,7 +48,7 @@ custom_tests=(
     "Updates-Reth-Lighthouse-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Lighthouse --network SEPOLIA --config 'Full Node Only' --test-updates"
     "Updates-Erigon-Caplin-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Erigon --cc Caplin --network SEPOLIA --config 'Full Node Only' --test-updates"
     "Updates-Besu-Teku-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Besu --cc Teku --network SEPOLIA --config 'Full Node Only' --test-updates"
-    "Updates-Nethermind-Nimbus-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Nimbus --network EPHEMERY --config 'Solo Staking Node' --test-updates"
+    "Updates-Nethermind-Nimbus-EPHEMERY|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Nimbus --network EPHEMERY --config 'Solo Staking Node' --test-updates"
     "Prysm-Reth-Custom-Setup-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Prysm --vc Prysm --network SEPOLIA --mev --config 'Custom Setup' --test-updates"
 )
 

@@ -272,6 +272,7 @@ function updateClient(){
 		test -f /etc/systemd/system/validator.service && sudo service validator start
 	    ;;
 	esac
+	true
 }
 
 function updateJRE(){

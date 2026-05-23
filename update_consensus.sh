@@ -199,15 +199,14 @@ function updateClient(){
 			error "❌ Could not find the extracted teku binary"
 		fi
 		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/teku/bin/teku")
-		BASE_DIR=$(dirname "$(dirname "$EXEC_PATH")")
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm -rf "$BASE_DIR"
-		sudo mkdir -p "$(dirname "$BASE_DIR")"
+		sudo rm -rf "$(dirname "$(dirname "$EXEC_PATH")")"
+		sudo mkdir -p "$(dirname "$EXEC_PATH")"
 		sudo mv "$TEKU_BIN" "$EXEC_PATH" || error "❌ Unable to move file"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
-		;;
+	    ;;
 	  Nimbus)
 		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')
 		FILENAME=$(echo "$RELEASE_DATA" | jq -r '.filenames[0]')

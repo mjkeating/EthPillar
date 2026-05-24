@@ -1,7 +1,7 @@
 import os
 import subprocess
 from deploy.service_generators import generate_teku_bn_service, generate_teku_vc_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory, ensure_java_available
 from client_requirements import validate_version_for_network
 from typing import Optional
 
@@ -47,6 +47,8 @@ def download_teku(eth_network: str) -> str:
     # Download the latest release binary
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Teku")
+    # Ensure Java is installed for Teku (best-effort)
+    ensure_java_available()
 
     # Extract to a temporary directory then install and harden
     tmp_dir = f"{DOWNLOAD_DIR}/teku_temp"

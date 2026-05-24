@@ -2,7 +2,7 @@ import os
 import subprocess
 from typing import Tuple, Optional
 from deploy.service_generators import generate_besu_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory, ensure_java_available
 from client_requirements import validate_version_for_network
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
@@ -36,7 +36,8 @@ def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: s
     # Create User and directories
     setup_client_user_and_dir("execution", "besu")
     print(f">> Installing dependencies")
-    subprocess.run(["sudo", "apt-get", '-qq', "install", "openjdk-21-jdk", "libjemalloc-dev", "-y"], check=True)
+    ensure_java_available()
+    subprocess.run(["sudo", "apt-get", '-qq', "install", "libjemalloc-dev", "-y"], check=True)
 
     # Resolve version and download URL
     arch_amd64 = get_machine_architecture() == "amd64"

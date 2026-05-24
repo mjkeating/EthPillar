@@ -172,6 +172,34 @@ def download_file(url: str, dest_path: str, label: str = "file") -> None:
         exit(1)
 
 
+def ensure_java_available() -> bool:
+    """Ensure a Java runtime is available on the system.
+
+    Returns True if Java is available or was installed successfully,
+    False otherwise. This helper performs a best-effort install of a
+    headless OpenJDK package when run with sufficient privileges.
+    """
+    import shutil
+    # If java is already on PATH, we're done
+    if shutil.which("java"):
+        print(">> Java runtime already available on PATH")
+        return True
+
+    # Try installing a common headless JRE package
+    try:
+        print(">> Java not found on PATH; attempting to install OpenJDK headless")
+        res = subprocess.run(["sudo", "apt-get", "-y", "-qq", "install", "openjdk-21-jre-headless"], check=False)
+        if res.returncode == 0:
+            print(">> OpenJDK installed")
+            return True
+        else:
+            print(">> Failed to install OpenJDK via apt; return code:", res.returncode)
+            return False
+    except Exception as e:
+        print(">> Exception while attempting to install Java:", e)
+        return False
+
+
 def clear_screen() -> None:
     """Clear the terminal screen based on the operating system."""
     if os.name == 'posix':  # Unix-based systems (e.g., Linux, macOS)

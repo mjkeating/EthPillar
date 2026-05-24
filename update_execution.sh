@@ -243,25 +243,6 @@ function updateClient(){
 	esac
 }
 
-function updateJRE(){
-	# Check if OpenJDK-21-JRE or OpenJDK-21-JDK is already installed
-	if dpkg --list | grep -q -E "openjdk-21-jre|openjdk-21-jdk"; then
-	   info "✅ OpenJDK-21-JRE or OpenJDK-21-JDK is already installed. Skipping installation."
-	else
-	   # Install OpenJDK-21-JRE
-	   sudo apt-get update
-	   sudo apt-get install -y openjdk-21-jre
-
-       # Check if the installation was successful
-       # shellcheck disable=SC2181
-       if [ $? -eq 0 ]; then
-	      info "✅ OpenJDK-21-JRE installed successfully!"
-	   else
-	      error "❌ Error installing OpenJDK-21-JRE. Please check the error log."
-	   fi
-	fi
-}
-
 if [[ "${1:-}" == "--auto" ]]; then
     getClient
     getLatestVersion

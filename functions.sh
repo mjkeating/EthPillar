@@ -247,6 +247,16 @@ getNetwork(){
     export NETWORK
 }
 
+# Ensure a Java runtime is available for JVM-based clients (Teku, Besu)
+updateJRE(){
+  # Delegate Java installation to the Python helper in deploy.common. This
+  # centralizes logic and allows the Python modules to call the same helper.
+  PYTHONPATH="${BASE_DIR}" python3 - <<'PY'
+from deploy.common import ensure_java_available
+ensure_java_available()
+PY
+}
+
 # Gets software version from binary
 getCurrentVersion(){
     VERSION="NotInstalled"

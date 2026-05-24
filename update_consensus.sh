@@ -171,14 +171,16 @@ function updateClient(){
 		mkdir -p "$EXTRACTED_DIR"
 		tar -xzvf "$FILENAME" -C "$EXTRACTED_DIR" || error "❌ Unable to untar file"
 		rm "$FILENAME"
-		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar")
+		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar/lodestar")
+		LODESTAR_DIR=$(dirname "$EXEC_PATH")
 		LODESTAR_BIN=$(find "$EXTRACTED_DIR" -type f -name "lodestar" | head -n 1)
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
 		sudo rm -f "$EXEC_PATH"
-		sudo mkdir -p "$(dirname "$EXEC_PATH")"
+		sudo mkdir -p "$LODESTAR_DIR/tmp"
 		sudo mv "$LODESTAR_BIN" "$EXEC_PATH" || error "❌ Unable to move file"
 		sudo chmod +x "$EXEC_PATH"
+		sudo chown consensus:consensus "$LODESTAR_DIR/tmp"
 		rm -rf "$EXTRACTED_DIR"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start

@@ -56,16 +56,18 @@ def download_lodestar(eth_network: str) -> str:
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Lodestar")
 
-    # The archive usually unpacks a lodestar directory or bare files.
-    # We want the binary to end up at /usr/local/bin/lodestar
+    # Install as a folder-style client: /usr/local/bin/lodestar/lodestar with a tmp dir for caxa
+    lodestar_dir = f"{INSTALL_DIR}/lodestar"
+    lodestar_bin_path = f"{lodestar_dir}/lodestar"
     subprocess.run(["sudo", "mkdir", "-p", "/tmp/lodestar_extract"])
     subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/tmp/lodestar_extract"])
-    # Find the lodestar binary within the extracted archive and move it to the install dir
     result = subprocess.run(["sudo", "find", "/tmp/lodestar_extract", "-type", "f", "-name", "lodestar"], capture_output=True, text=True)
     lodestar_bin = result.stdout.strip().split("\n")[0]
     if lodestar_bin:
-        subprocess.run(["sudo", "mv", lodestar_bin, f"{INSTALL_DIR}/lodestar"], check=True)
-        subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/lodestar"], check=True)
+        subprocess.run(["sudo", "mkdir", "-p", f"{lodestar_dir}/tmp"], check=True)
+        subprocess.run(["sudo", "mv", lodestar_bin, lodestar_bin_path], check=True)
+        subprocess.run(["sudo", "chmod", "+x", lodestar_bin_path], check=True)
+        subprocess.run(["sudo", "chown", "consensus:consensus", f"{lodestar_dir}/tmp"], check=True)
 
     # Remove the tar file and temporary extraction directory
     os.remove(download_path)

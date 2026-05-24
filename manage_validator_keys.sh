@@ -338,7 +338,7 @@ function loadKeys(){
       ;;
      Lodestar)
         [[ -d /var/lib/lodestar_validator ]] && vc_path="/var/lib/lodestar_validator" || vc_path="/var/lib/lodestar/validators"
-        LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar")
+        LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar/lodestar")
         sudo "$LODESTAR_BIN" validator import \
           --dataDir="$vc_path" \
           --keystore="$KEYFOLDER"

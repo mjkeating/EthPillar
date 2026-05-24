@@ -12,6 +12,7 @@ import pytest
 # Ensure the project root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from deploy.common import INSTALL_DIR
 from deploy.service_generators import (
     generate_mevboost_service,
     generate_besu_service,
@@ -261,6 +262,8 @@ class TestNethermindService:
         assert f"--JsonRpc.Port {EL_RPC_PORT}" in result
         assert f"--JsonRpc.JwtSecretFile {JWTSECRET_PATH}" in result
         assert "WorkingDirectory=/var/lib/nethermind" in result
+        assert "Environment=\"DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/lib/nethermind/bundle-extract\"" in result
+        assert "{BASE_DATA_DIR}" not in result
         assert "--Sync.AncientBodiesBarrier=15537394" in result
 
     def test_sepolia_service(self):
@@ -509,6 +512,9 @@ class TestLodestarService:
         assert "--builder" in result
         assert f"--suggestedFeeRecipient={FEE_RECIPIENT_ADDRESS}" in result
         assert "WorkingDirectory=" not in result
+        assert f"Environment=\"TMPDIR={INSTALL_DIR}/lodestar/tmp\"" in result
+        assert f"{INSTALL_DIR}/lodestar/lodestar beacon" in result
+        assert "{BASE_DATA_DIR}" not in result
 
     def test_bn_ephemery(self):
         custom_network = '--paramsFile=/opt/ethpillar/testnet/config.yaml --genesisStateFile=/opt/ethpillar/testnet/genesis.ssz --bootnodes=enr1 --network.connectToDiscv5Bootnodes --ignoreWeakSubjectivityCheck'
@@ -532,6 +538,9 @@ class TestLodestarService:
         assert f"--graffiti={GRAFFITI}" in result
         assert "TimeoutStopSec=300" in result  # Lodestar VC uses 300, not 900
         assert "--dataDir=/var/lib/lodestar_validator" in result
+        assert f"Environment=\"TMPDIR={INSTALL_DIR}/lodestar/tmp\"" in result
+        assert f"{INSTALL_DIR}/lodestar/lodestar validator" in result
+        assert "{BASE_DATA_DIR}" not in result
 
 
 # ═══════════════════════════════════════════════

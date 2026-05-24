@@ -36,7 +36,8 @@ def check_binary(binary_name: str) -> bool:
     subfolder_paths = {
         "besu": os.path.join(INSTALL_DIR, "besu", "bin", "besu"),
         "nethermind": os.path.join(INSTALL_DIR, "nethermind", "nethermind"),
-        "teku": os.path.join(INSTALL_DIR, "teku") 
+        "teku": os.path.join(INSTALL_DIR, "teku"),
+        "lodestar": os.path.join(INSTALL_DIR, "lodestar", "lodestar"),
     }
     if os.path.isfile(os.path.join(INSTALL_DIR, binary_name)) or os.path.isdir(os.path.join(INSTALL_DIR, binary_name)):
         return True
@@ -158,6 +159,34 @@ def run_install(args: Any, fee_address: str):
         return False
     return True
 
+def check_service_file_substitution(service_name: str) -> bool:
+    """Fail if a service file contains unreplaced template placeholders."""
+    service_path = f"/etc/systemd/system/{service_name}.service"
+    if not os.path.exists(service_path):
+        return True
+    with open(service_path, "r") as f:
+        content = f.read()
+    if "{BASE_DATA_DIR}" in content:
+        print(f"  ❌ Service {service_name} contains unreplaced {{BASE_DATA_DIR}} placeholder")
+        return False
+    return True
+
+
+def check_service_journal_errors(service_name: str) -> bool:
+    """Check journal for known fatal startup errors after a service start."""
+    result = subprocess.run(
+        ["journalctl", "-u", service_name, "--no-pager", "-n", "50"],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        return True
+    for pattern in ("caxa stub:", "Failed to create the lock directory"):
+        if pattern in result.stdout:
+            print(f"  ❌ Service {service_name} journal contains fatal error: {pattern}")
+            return False
+    return True
+
+
 def check_service_start(service_name: str) -> bool:
     """Validates the service file via systemd and verifies it can start.
     
@@ -209,6 +238,9 @@ def check_service_start(service_name: str) -> bool:
             subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "20"])
             return False
         print(f"  ✅ Service {service_name} is active")
+
+        if not check_service_journal_errors(service_name):
+            return False
 
         # Skip stopping the service - leave it running for the test
         # The container will be destroyed after the test anyway
@@ -307,6 +339,7 @@ def verify(args: Any):
         present = check_service(s)
         print(f"{'✅' if present else '❌'} Service File: {s}")
         if not present: success = False
+        elif not check_service_file_substitution(s): success = False
         elif not check_service_start(s): success = False
 
     # Advisory port checks — runs after services are started

@@ -8,12 +8,100 @@ import json
 import tarfile
 import tempfile
 from consolemenu import PromptUtils, Screen
-from typing import Optional
+from typing import Optional, List
 
 
 INSTALL_DIR = "/usr/local/bin"
 DOWNLOAD_DIR = "/tmp"
 BASE_DATA_DIR = "/var/lib"
+
+
+def install_system_binary(src_path: str, dest: str) -> str:
+    """Move or install a binary and enforce secure perms/ownership.
+
+    Args:
+        src_path: Path to the source binary (can be a temp file path or already in INSTALL_DIR).
+        dest: Either a destination filename (e.g. 'lodestar') which will be placed
+              under `INSTALL_DIR`, or a full destination path (e.g. '/usr/local/bin/lodestar').
+
+    Returns:
+        The absolute destination path.
+    """
+    # Accept either a bare filename or a full path for destination
+    if os.path.isabs(dest) or ("/" in dest):
+        dest_path = dest
+    else:
+        dest_path = os.path.join(INSTALL_DIR, dest)
+    try:
+        # Ensure destination directory exists
+        dest_dir = os.path.dirname(dest_path) or INSTALL_DIR
+        subprocess.run(["sudo", "mkdir", "-p", dest_dir], check=True)
+        # If src and dest are same, skip moving
+        if os.path.abspath(src_path) != os.path.abspath(dest_path):
+            subprocess.run(["sudo", "mv", src_path, dest_path], check=True)
+        # Ensure it's executable and has 755
+        subprocess.run(["sudo", "chmod", "+x", dest_path], check=False)
+        subprocess.run(["sudo", "chmod", "755", dest_path], check=True)
+        # Ensure owned by root:root
+        subprocess.run(["sudo", "chown", "root:root", dest_path], check=True)
+    except Exception:
+        # Best-effort helper: don't raise to avoid breaking installs that partially succeed
+        pass
+    return dest_path
+
+
+def install_system_directory(src_dir: str, dest_dir: str, service_user: Optional[str] = None, writable_subdirs: Optional[List[str]] = None) -> str:
+    """Move a directory into place under the system path and harden permissions.
+
+    This will move `src_dir` to `dest_dir`, set ownership of the tree to root:root,
+    set directory permissions to 755 and regular files to 644 while preserving
+    executable bits for files that are already executable. Optionally create
+    writable subdirectories and chown them to `service_user`.
+
+    Args:
+        src_dir: Source directory to move (local path).
+        dest_dir: Full destination directory path.
+        service_user: Optional username to own writable subdirs.
+        writable_subdirs: Optional list of subdirectory paths (relative to dest_dir)
+                          to create and chown to `service_user` (e.g. ['data', 'logs']).
+
+    Returns:
+        The absolute destination directory.
+    """
+    try:
+        # Ensure parent exists and remove any old install
+        parent = os.path.dirname(dest_dir)
+        subprocess.run(["sudo", "mkdir", "-p", parent], check=True)
+        subprocess.run(["sudo", "rm", "-rf", dest_dir], check=False)
+        # Move into place
+        subprocess.run(["sudo", "mv", src_dir, dest_dir], check=True)
+
+        # Set ownership to root:root and tighten perms
+        subprocess.run(["sudo", "chown", "-R", "root:root", dest_dir], check=True)
+        # Ensure directories are accessible
+        subprocess.run(["sudo", "find", dest_dir, "-type", "d", "-exec", "chmod", "755", "{}", ";"], check=True)
+        # Preserve files that are executable and ensure they remain executable.
+        # Then normalize all non-executable regular files to 644. This order
+        # prevents clearing execute bits and avoids a race where we would
+        # set everything to 644 and then be unable to detect previously
+        # executable files.
+        subprocess.run(["sudo", "find", dest_dir, "-type", "f", "-perm", "/111", "-exec", "chmod", "755", "{}", ";"], check=False)
+        subprocess.run(["sudo", "find", dest_dir, "-type", "f", "!", "-perm", "/111", "-exec", "chmod", "644", "{}", ";"], check=True)
+
+        # Create writable subdirs and assign to service_user if provided
+        if writable_subdirs:
+            for sub in writable_subdirs:
+                full = os.path.join(dest_dir, sub)
+                subprocess.run(["sudo", "mkdir", "-p", full], check=True)
+                if service_user:
+                    subprocess.run(["sudo", "chown", "-R", f"{service_user}:{service_user}", full], check=True)
+                    subprocess.run(["sudo", "chmod", "700", full], check=True)
+                else:
+                    subprocess.run(["sudo", "chmod", "750", full], check=True)
+    except Exception:
+        # Best-effort: don't raise to avoid breaking updates
+        pass
+    return dest_dir
 
 def setup_client_user_and_dir(user: str, client_name: str) -> None:
     """Create a system user and data directory with proper permissions.

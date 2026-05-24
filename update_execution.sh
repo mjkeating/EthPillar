@@ -154,7 +154,8 @@ function updateClient(){
 		BASE_DIR=$(dirname "$EXEC_PATH")
 		sudo systemctl stop execution
 		sudo rm -rf "$BASE_DIR"
-		sudo mv "$HOME"/nethermind "$BASE_DIR" || error "❌ Unable to move file"
+		# install_system_directory will move nethermind and harden perms
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_directory; install_system_directory('$HOME/nethermind', '${BASE_DIR}')"
 		sudo systemctl start execution		
 		;;
 	  Besu)
@@ -169,7 +170,8 @@ function updateClient(){
 		BASE_DIR=$(dirname "$(dirname "$EXEC_PATH")")
 		sudo systemctl stop execution
 		sudo rm -rf "$BASE_DIR"
-		sudo mv "$HOME"/besu-"${TAG}" "$BASE_DIR" || error "❌ Unable to move file"
+		# install_system_directory will move besu directory and harden perms
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_directory; install_system_directory('$HOME/besu-${TAG}', '${BASE_DIR}')"
 		sudo systemctl start execution
 		rm "$FILENAME"
 		;;
@@ -188,7 +190,8 @@ function updateClient(){
 		sudo systemctl stop execution
 		sudo rm -f "$EXEC_PATH"
 		sudo mkdir -p "$(dirname "$EXEC_PATH")"
-		sudo mv "$ERIGON_BIN" "$EXEC_PATH" || error "❌ Unable to move file"
+		# install_system_binary will move and configure the binary at the full exec path
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${ERIGON_BIN}', '${EXEC_PATH}')"
 		sudo systemctl start execution
 		rm -rf "$EXTRACTED_DIR"
 		;;
@@ -209,9 +212,8 @@ function updateClient(){
 		sudo systemctl stop execution
 		sudo rm -f "$EXEC_PATH"
 		sudo mkdir -p "$(dirname "$EXEC_PATH")"
-		sudo mv "$GETH_BIN" "$EXEC_PATH" || error "❌ Unable to move file"
-		sudo chmod +x "$EXEC_PATH"
-		sudo chown execution:execution "$EXEC_PATH"
+		# install_system_binary will move and configure the binary at the full exec path
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${GETH_BIN}', '${EXEC_PATH}')"
 		sudo systemctl start execution
 		rm -rf "$EXTRACTED_DIR" "$FILENAME"
 	    ;;
@@ -233,8 +235,8 @@ function updateClient(){
 		sudo systemctl stop execution
 		sudo rm -f "$EXEC_PATH"
 		sudo mkdir -p "$(dirname "$EXEC_PATH")"
-		sudo mv "$RETH_BIN" "$EXEC_PATH" || error "❌ Unable to move file"
-		sudo chmod +x "$EXEC_PATH"
+		# install_system_binary will move and configure the binary at the full exec path
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${RETH_BIN}', '${EXEC_PATH}')"
 		sudo systemctl start execution
 		rm -rf "$EXTRACTED_DIR"
 	    ;;

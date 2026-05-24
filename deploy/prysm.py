@@ -1,6 +1,8 @@
 import subprocess
+import os
 from deploy.service_generators import generate_prysm_bn_service, generate_prysm_vc_service
 from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture
+from deploy.common import install_system_binary
 from client_requirements import validate_version_for_network
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
@@ -70,12 +72,9 @@ def download_prysm(eth_network: str) -> str:
     vc_download_path = f"{DOWNLOAD_DIR}/{vc_filename}"
     download_file(vc_download_url, vc_download_path, "Prysm Validator Client")
 
-    # Move the binary to /usr/local/bin/ using sudo
-    subprocess.run(["sudo", "mv", bn_download_path, f"{INSTALL_DIR}/prysm-beacon-chain"])
-    subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/prysm-beacon-chain"])
-    
-    subprocess.run(["sudo", "mv", vc_download_path, f"{INSTALL_DIR}/prysm-validator"])
-    subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/prysm-validator"])
+    # Move/configure the binaries into INSTALL_DIR
+    install_system_binary(bn_download_path, os.path.join(INSTALL_DIR, "prysm-beacon-chain"))
+    install_system_binary(vc_download_path, os.path.join(INSTALL_DIR, "prysm-validator"))
 
     return pr_version
 

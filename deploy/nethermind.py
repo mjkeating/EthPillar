@@ -2,7 +2,7 @@ import os
 import subprocess
 from typing import Tuple, Optional
 from deploy.service_generators import generate_nethermind_service
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, install_system_directory
 from client_requirements import validate_version_for_network
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
@@ -65,14 +65,17 @@ def download_and_install_nethermind(eth_network: str, el_p2p_port: str, el_rpc_p
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Nethermind")
 
-    # Extract the binary using unzip
-    # First install unzip
-    subprocess.run(["sudo", "apt-get", "-y", "-qq", "install", "unzip"])
-    subprocess.run(["sudo", "mkdir", "-p", f"{INSTALL_DIR}/nethermind"])
-    subprocess.run(["sudo", "unzip", "-o", download_path, "-d", f"{INSTALL_DIR}/nethermind"])
+    # Extract to a temporary directory and install atomically
+    subprocess.run(["sudo", "apt-get", "-y", "-qq", "install", "unzip"], check=False)
+    tmp_dir = f"{DOWNLOAD_DIR}/nethermind_temp"
+    subprocess.run(["rm", "-rf", tmp_dir], check=False)
+    subprocess.run(["mkdir", "-p", tmp_dir], check=True)
+    subprocess.run(["unzip", "-o", download_path, "-d", tmp_dir], check=True)
+    install_system_directory(tmp_dir, f"{INSTALL_DIR}/nethermind")
 
-    # Remove the zip file
+    # Remove the zip file and temporary extraction directory
     os.remove(download_path)
+    subprocess.run(["rm", "-rf", tmp_dir], check=False)
 
     # Generate Service File Content
     service_content = generate_nethermind_service(

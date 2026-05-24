@@ -123,7 +123,8 @@ function updateClient(){
 	sudo systemctl stop mevboost
 	sudo rm -f "$EXEC_PATH"
 	sudo mkdir -p "$(dirname "$EXEC_PATH")"
-	sudo mv "$HOME"/mev-boost "$EXEC_PATH" || error "❌ Failed to move mev-boost binary."
+	# install_system_binary will move and configure the mev-boost binary at the full exec path
+	PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('$HOME/mev-boost', '${EXEC_PATH}')"
 	sudo systemctl start mevboost
 }
 

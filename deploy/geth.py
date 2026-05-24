@@ -2,7 +2,7 @@ import os
 import subprocess
 from typing import Tuple, Optional
 from deploy.service_generators import generate_geth_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_binary
 from client_requirements import validate_version_for_network
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
@@ -80,9 +80,7 @@ def download_and_install_geth(eth_network: str, el_p2p_port: str, el_rpc_port: s
     extracted_dirs = [d for d in os.listdir(temp_extract_dir) if d.startswith("geth-linux")]
     if extracted_dirs:
         geth_bin_path = f"{temp_extract_dir}/{extracted_dirs[0]}/geth"
-        subprocess.run(["sudo", "mv", geth_bin_path, f"{INSTALL_DIR}/geth"])
-        subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/geth"])
-        subprocess.run(["sudo", "chown", "execution:execution", f"{INSTALL_DIR}/geth"])
+        install_system_binary(geth_bin_path, f"{INSTALL_DIR}/geth")
     
     # Cleanup temp directory
     subprocess.run(["rm", "-rf", temp_extract_dir])

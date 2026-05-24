@@ -1,7 +1,7 @@
 import os
 import subprocess
 from deploy.service_generators import generate_teku_bn_service, generate_teku_vc_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory
 from client_requirements import validate_version_for_network
 from typing import Optional
 
@@ -48,12 +48,15 @@ def download_teku(eth_network: str) -> str:
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Teku")
 
-    # Extract the binary to /usr/local/bin/teku using sudo
-    subprocess.run(["sudo", "mkdir", "-p", f"{INSTALL_DIR}/teku"])
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}/teku", "--strip-components=1"])
-
-    # Remove the tar file
+    # Extract to a temporary directory then install and harden
+    tmp_dir = f"{DOWNLOAD_DIR}/teku_temp"
+    subprocess.run(["rm", "-rf", tmp_dir], check=False)
+    subprocess.run(["mkdir", "-p", tmp_dir], check=True)
+    subprocess.run(["tar", "xzf", download_path, "-C", tmp_dir, "--strip-components=1"], check=True)
+    install_system_directory(tmp_dir, f"{INSTALL_DIR}/teku")
+    # Remove the tar file and temp dir
     os.remove(download_path)
+    subprocess.run(["rm", "-rf", tmp_dir], check=False)
     return teku_version
 
 def install_teku_bn(eth_network: str, checkpoint_sync_url: str, jwtsecret_path: str,

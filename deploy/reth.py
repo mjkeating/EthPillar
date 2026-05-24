@@ -1,7 +1,7 @@
 import os
 import subprocess
 from deploy.service_generators import generate_reth_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture
+from deploy.common import install_system_binary, write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture
 from client_requirements import validate_version_for_network
 from typing import Tuple, Optional
 
@@ -70,8 +70,8 @@ def download_and_install_reth(eth_network: str, el_p2p_port: str, el_p2p_port_2:
     # Find the extracted reth binary and rename it
     subprocess.run(["sudo", "sh", "-c", "mv /usr/local/bin/reth-* /usr/local/bin/reth"])
 
-    # Ensure +x permissions
-    subprocess.run(["sudo", "chmod", "a+x", f"{INSTALL_DIR}/reth"])
+    # Ensure ownership and correct permissions via helper
+    install_system_binary(f"{INSTALL_DIR}/reth", os.path.join(INSTALL_DIR, "reth"))
 
     # Remove the tar file
     os.remove(download_path)

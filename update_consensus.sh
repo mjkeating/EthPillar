@@ -157,7 +157,8 @@ function updateClient(){
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
 		sudo rm -f "$EXEC_PATH"
 		sudo mkdir -p "$(dirname "$EXEC_PATH")"
-		sudo mv "$LH_BIN" "$EXEC_PATH" || error "❌ Unable to move file"
+		# install_system_binary will move and configure the binary at the full exec path
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${LH_BIN}', '${EXEC_PATH}')"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
 	    ;;
@@ -178,8 +179,8 @@ function updateClient(){
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
 		sudo rm -f "$EXEC_PATH"
 		sudo mkdir -p "$(dirname "$EXEC_PATH")"
-		sudo mv "$LODESTAR_BIN" "$EXEC_PATH" || error "❌ Unable to move file"
-		sudo chmod +x "$EXEC_PATH"
+		# install_system_binary will move and configure the binary at the full exec path
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${LODESTAR_BIN}', '${EXEC_PATH}')"
 		rm -rf "$EXTRACTED_DIR"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
@@ -204,7 +205,8 @@ function updateClient(){
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
 		sudo rm -rf "$DEST_DIR"
-		sudo mv "$TEKU_DIR" "$DEST_DIR" || error "❌ Unable to move file"
+		# install_system_directory will move the Teku directory and harden perms
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_directory; install_system_directory('${TEKU_DIR}', '${DEST_DIR}')"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
 		rm -rf "$EXTRACT_DIR"
@@ -230,8 +232,9 @@ function updateClient(){
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
 		sudo rm -f "$BN_EXEC_PATH" "$VC_EXEC_PATH"
 		sudo mkdir -p "$(dirname "$BN_EXEC_PATH")" "$(dirname "$VC_EXEC_PATH")"
-		sudo mv "$BN_BIN" "$BN_EXEC_PATH" || error "❌ Unable to move file"
-		sudo mv "$VC_BIN" "$VC_EXEC_PATH" || error "❌ Unable to move file"
+		# install_system_binary will move and configure the binaries at their exec paths
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${BN_BIN}', '${BN_EXEC_PATH}')"
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${VC_BIN}', '${VC_EXEC_PATH}')"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
 		rm -rf "$EXTRACT_DIR"
@@ -259,9 +262,10 @@ function updateClient(){
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
 		sudo rm -f "$BN_EXEC_PATH" "$VC_EXEC_PATH" "$PRYSMCTL_EXEC_PATH"
 		sudo mkdir -p "$(dirname "$BN_EXEC_PATH")" "$(dirname "$VC_EXEC_PATH")"
-		sudo mv beacon-chain "$BN_EXEC_PATH" || error "❌ Unable to move beacon-chain"
-		sudo mv validator "$VC_EXEC_PATH" || error "❌ Unable to move validator"
-		sudo mv prysmctl "$PRYSMCTL_EXEC_PATH" || error "❌ Unable to move prysmctl"
+		# install_system_binary will move and configure the binaries at their exec paths
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('$(pwd)/beacon-chain', '${BN_EXEC_PATH}')"
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('$(pwd)/validator', '${VC_EXEC_PATH}')"
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('$(pwd)/prysmctl', '${PRYSMCTL_EXEC_PATH}')"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo systemctl start validator
 	    ;;
@@ -277,7 +281,8 @@ function updateClient(){
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
 		sudo rm -f "$EXEC_PATH"
 		sudo mkdir -p "$(dirname "$EXEC_PATH")"
-		sudo mv "$HOME"/grandine "$EXEC_PATH" || error "❌ Unable to move file"
+		# install_system_binary will move and configure the binary at the full exec path
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('$HOME/grandine', '${EXEC_PATH}')"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
 	    ;;

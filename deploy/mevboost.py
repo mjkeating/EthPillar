@@ -2,7 +2,7 @@ import os
 import subprocess
 from typing import List, Dict, Tuple
 from deploy.service_generators import generate_mevboost_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, download_file, get_machine_architecture
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, download_file, get_machine_architecture, install_system_binary
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     """Get MEV-Boost release version, download URL, and filename.
@@ -57,9 +57,8 @@ def install_mevboost(eth_network: str, mev_min_bid: str, relay_options: List[Dic
     # Extract the binary
     subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}"])
 
-    # Ensure +x permissions, update owner
-    subprocess.run(["sudo", "chmod", "a+x", f"{INSTALL_DIR}/mev-boost"])
-    subprocess.run(["sudo", "chown", "mevboost:mevboost", f"{INSTALL_DIR}/mev-boost"])
+    # Ensure binary is moved/configured and follows system best-practices
+    install_system_binary(f"{INSTALL_DIR}/mev-boost", os.path.join(INSTALL_DIR, "mev-boost"))
 
     # Remove the downloaded .tar.gz file
     os.remove(download_path)

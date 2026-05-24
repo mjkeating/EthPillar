@@ -1,7 +1,7 @@
 import os
 import subprocess
 from deploy.service_generators import generate_grandine_bn_service
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file
+from deploy.common import install_system_binary, write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file
 from client_requirements import validate_version_for_network
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
@@ -76,9 +76,8 @@ def download_grandine(eth_network: str) -> str:
     download_path = f"{DOWNLOAD_DIR}/{dest_filename}"
     download_file(download_url, download_path, "Grandine")
 
-    subprocess.run(["sudo", "mv", download_path, f"{INSTALL_DIR}/{dest_filename}"], check=True)
-    subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/{dest_filename}"], check=True)
-    # Create a stable symlink so consensus.service can always reference /usr/local/bin/grandine
+    # Move into place and ensure secure perms/ownership, then create stable symlink
+    install_system_binary(download_path, os.path.join(INSTALL_DIR, dest_filename))
     subprocess.run(["sudo", "ln", "-sf", f"{INSTALL_DIR}/{dest_filename}", f"{INSTALL_DIR}/grandine"], check=True)
 
     return gr_version

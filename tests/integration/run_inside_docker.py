@@ -9,6 +9,8 @@ This script is designed to run INSIDE a Docker container. It performs the follow
 import subprocess
 import os
 import pwd
+import grp
+import stat
 import sys
 import signal
 import shlex
@@ -45,6 +47,51 @@ def check_binary(binary_name: str) -> bool:
         path = subfolder_paths[binary_name]
         return os.path.isfile(path) or os.path.isdir(path)
     return False
+
+
+def get_binary_path(binary_name: str) -> Optional[str]:
+    """Return full path to the binary if present, else None."""
+    subfolder_paths = {
+        "besu": os.path.join(INSTALL_DIR, "besu", "bin", "besu"),
+        "nethermind": os.path.join(INSTALL_DIR, "nethermind", "nethermind"),
+        "teku": os.path.join(INSTALL_DIR, "teku"),
+        "lodestar": os.path.join(INSTALL_DIR, "lodestar", "lodestar"),
+    }
+    candidates = [os.path.join(INSTALL_DIR, binary_name), os.path.join(INSTALL_DIR, binary_name.replace('-', '_'))]
+    if binary_name in subfolder_paths:
+        candidates.insert(0, subfolder_paths[binary_name])
+
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def check_binary_permissions(binary_name: str) -> bool:
+    """Check that the binary exists and is owned by root:root with mode 755."""
+    path = get_binary_path(binary_name)
+    if not path:
+        print(f"  ❌ Permissions: {binary_name} not found to check perms")
+        return False
+    # Resolve symlink targets
+    real = os.path.realpath(path)
+    try:
+        st = os.stat(real)
+    except FileNotFoundError:
+        print(f"  ❌ Permissions: resolved target {real} not found")
+        return False
+    uid = st.st_uid
+    mode = stat.S_IMODE(st.st_mode)
+    owner = pwd.getpwuid(uid).pw_name if uid != 0 else 'root'
+    ok_owner = (owner == 'root')
+    ok_mode = (mode == 0o755)
+    if not ok_owner:
+        print(f"  ❌ Binary owner for {binary_name} is {owner}, expected root")
+    if not ok_mode:
+        print(f"  ❌ Binary mode for {binary_name} is {oct(mode)}, expected 0o755")
+    if ok_owner and ok_mode:
+        print(f"  ✅ Binary perms OK: {binary_name} -> {real} ({owner}, {oct(mode)})")
+    return ok_owner and ok_mode
 
 def check_service(service_name: str) -> bool:
     """Checks if a systemd service file exists."""
@@ -341,6 +388,39 @@ def verify(args: Any):
         if not present: success = False
         elif not check_service_file_substitution(s): success = False
         elif not check_service_start(s): success = False
+
+    # Check binary ownership/permissions (should be root:root 755)
+    print("\n🔐 Verifying binary ownership/permissions...")
+    for b in expected_binaries:
+        ok = check_binary_permissions(b)
+        if not ok: success = False
+
+    # Check that /var/lib contains directories owned by expected service users
+    print("\n📁 Verifying /var/lib ownership for service users...")
+    base_dir = "/var/lib"
+    for u in expected_users:
+        found = False
+        try:
+            for entry in os.listdir(base_dir):
+                path = os.path.join(base_dir, entry)
+                try:
+                    st = os.stat(path)
+                except FileNotFoundError:
+                    continue
+                try:
+                    owner = pwd.getpwuid(st.st_uid).pw_name
+                except KeyError:
+                    owner = str(st.st_uid)
+                if owner == u:
+                    found = True
+                    print(f"  ✅ /var/lib entry owned by {u}: {path}")
+                    break
+        except FileNotFoundError:
+            print(f"  ❌ {base_dir} not found in container")
+            found = False
+        if not found:
+            print(f"  ❌ No /var/lib/* directory owned by user {u} (expected) ")
+            success = False
 
     # Advisory port checks — runs after services are started
     is_validator_only = "Validator Client Only" in args.config

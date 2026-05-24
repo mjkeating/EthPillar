@@ -2,7 +2,7 @@ import os
 import subprocess
 from typing import Tuple, Optional
 from deploy.service_generators import generate_lodestar_bn_service, generate_lodestar_vc_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_binary
 from client_requirements import validate_version_for_network
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
@@ -63,8 +63,7 @@ def download_lodestar(eth_network: str) -> str:
     result = subprocess.run(["sudo", "find", "/tmp/lodestar_extract", "-type", "f", "-name", "lodestar"], capture_output=True, text=True)
     lodestar_bin = result.stdout.strip().split("\n")[0]
     if lodestar_bin:
-        subprocess.run(["sudo", "mv", lodestar_bin, f"{INSTALL_DIR}/lodestar"], check=True)
-        subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/lodestar"], check=True)
+        install_system_binary(lodestar_bin, f"{INSTALL_DIR}/lodestar")
 
     # Remove the tar file and temporary extraction directory
     os.remove(download_path)

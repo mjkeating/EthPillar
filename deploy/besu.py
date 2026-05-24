@@ -2,7 +2,7 @@ import os
 import subprocess
 from typing import Tuple, Optional
 from deploy.service_generators import generate_besu_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory
 from client_requirements import validate_version_for_network
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
@@ -56,12 +56,16 @@ def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: s
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Besu")
 
-    # Extract the binary to /usr/local/bin/besu using sudo
-    subprocess.run(["sudo", "mkdir", "-p", f"{INSTALL_DIR}/besu"])
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}/besu", "--strip-components=1"])
+    # Extract to a temporary dir and install atomically with hardening
+    tmp_dir = f"{DOWNLOAD_DIR}/besu_temp"
+    subprocess.run(["rm", "-rf", tmp_dir], check=False)
+    subprocess.run(["mkdir", "-p", tmp_dir], check=True)
+    subprocess.run(["tar", "xzf", download_path, "-C", tmp_dir, "--strip-components=1"], check=True)
+    install_system_directory(tmp_dir, f"{INSTALL_DIR}/besu")
 
-    # Remove the tar file
+    # Remove the tar file and temporary extraction directory
     os.remove(download_path)
+    subprocess.run(["rm", "-rf", tmp_dir], check=False)
 
     # Generate Service File Content
     service_content = generate_besu_service(

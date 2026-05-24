@@ -2,7 +2,7 @@ import os
 import subprocess
 from typing import Tuple
 from deploy.service_generators import generate_erigon_service, generate_erigon_standalone_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_binary
 from client_requirements import validate_version_for_network
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
@@ -65,8 +65,8 @@ def download_and_install_erigon(eth_network: str, el_p2p_port: str, el_rpc_port:
     # Extract the binary using sudo
     # Erigon tarball typically contains a folder, so we strip one component and extract to /usr/local/bin
     subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}", "--strip-components=1"])
-    # Ensure it's executable
-    subprocess.run(["sudo", "chmod", "a+x", f"{INSTALL_DIR}/erigon"])
+    # Ensure binary is configured correctly
+    install_system_binary(f"{INSTALL_DIR}/erigon", os.path.join(INSTALL_DIR, "erigon"))
 
     # Remove the tar file
     os.remove(download_path)
@@ -116,6 +116,7 @@ def download_and_install_erigon_standalone(eth_network: str, el_p2p_port: str, e
     # Extract the binary using sudo
     subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}", "--strip-components=1"])
     subprocess.run(["sudo", "chmod", "a+x", f"{INSTALL_DIR}/erigon"])
+    install_system_binary(f"{INSTALL_DIR}/erigon", os.path.join(INSTALL_DIR, "erigon"))
 
     # Remove the tar file
     os.remove(download_path)

@@ -7,12 +7,13 @@ that the original deploy scripts produced.
 """
 import sys
 import os
+from unittest import result
 import pytest
 
 # Ensure the project root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from deploy.common import INSTALL_DIR
+from deploy.common import BASE_DATA_DIR, INSTALL_DIR
 from deploy.service_generators import (
     generate_mevboost_service,
     generate_besu_service,
@@ -56,6 +57,10 @@ FEE_RECIPIENT_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678"
 MEV_MIN_BID = "0.006"
 SYNC_URL = "https://beaconstate.ethstaker.cc"
 
+
+def check_constant_substitutions(result: str):
+    assert "BASE_DATA_DIR" not in result
+    assert "INSTALL_DIR" not in result
 
 # ═══════════════════════════════════════════════
 # MEV-Boost service tests
@@ -261,10 +266,10 @@ class TestNethermindService:
         assert f"--Network.MaxActivePeers {EL_MAX_PEER_COUNT}" in result
         assert f"--JsonRpc.Port {EL_RPC_PORT}" in result
         assert f"--JsonRpc.JwtSecretFile {JWTSECRET_PATH}" in result
-        assert "WorkingDirectory=/var/lib/nethermind" in result
-        assert "Environment=\"DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/lib/nethermind/bundle-extract\"" in result
-        assert "{BASE_DATA_DIR}" not in result
+        assert f"WorkingDirectory={BASE_DATA_DIR}/nethermind" in result
+        assert f"Environment=\"DOTNET_BUNDLE_EXTRACT_BASE_DIR={BASE_DATA_DIR}/nethermind/bundle-extract\"" in result
         assert "--Sync.AncientBodiesBarrier=15537394" in result
+        check_constant_substitutions(result)
 
     def test_sepolia_service(self):
         sync_params = '--Sync.AncientBodiesBarrier=1450408 --Sync.AncientReceiptsBarrier=1450408'
@@ -480,8 +485,9 @@ class TestTekuService:
         assert "Description=Teku Validator Client service for MAINNET" in result
         assert f"--validators-graffiti={GRAFFITI}" in result
         assert f"--beacon-node-api-endpoint=http://{CL_IP_ADDRESS}:{CL_REST_PORT}" in result
-        assert "--validator-keys=/var/lib/teku_validator/validator_keys:/var/lib/teku_validator/validator_keys" in result
+        assert f"--validator-keys={BASE_DATA_DIR}/teku_validator/validator_keys:{BASE_DATA_DIR}/teku_validator/validator_keys" in result
         assert "User=validator" in result
+        check_constant_substitutions(result)
 
     def test_vc_custom_bn_address(self):
         bn_addr = '--beacon-node-api-endpoint=http://192.168.1.123:5052'
@@ -511,10 +517,10 @@ class TestLodestarService:
         assert f"--port={CL_P2P_PORT}" in result
         assert "--builder" in result
         assert f"--suggestedFeeRecipient={FEE_RECIPIENT_ADDRESS}" in result
-        assert "WorkingDirectory=" not in result
-        assert f"Environment=\"TMPDIR={INSTALL_DIR}/lodestar/tmp\"" in result
-        assert f"{INSTALL_DIR}/lodestar/lodestar beacon" in result
-        assert "{BASE_DATA_DIR}" not in result
+        assert f"WorkingDirectory={INSTALL_DIR}" in result
+        assert f"Environment=\"TMPDIR={BASE_DATA_DIR}/lodestar/tmp\"" in result
+        assert f"{INSTALL_DIR}/lodestar beacon" in result
+        check_constant_substitutions(result)
 
     def test_bn_ephemery(self):
         custom_network = '--paramsFile=/opt/ethpillar/testnet/config.yaml --genesisStateFile=/opt/ethpillar/testnet/genesis.ssz --bootnodes=enr1 --network.connectToDiscv5Bootnodes --ignoreWeakSubjectivityCheck'
@@ -537,10 +543,11 @@ class TestLodestarService:
         assert "Description=Lodestar Validator Client service for MAINNET" in result
         assert f"--graffiti={GRAFFITI}" in result
         assert "TimeoutStopSec=300" in result  # Lodestar VC uses 300, not 900
-        assert "--dataDir=/var/lib/lodestar_validator" in result
-        assert f"Environment=\"TMPDIR={INSTALL_DIR}/lodestar/tmp\"" in result
-        assert f"{INSTALL_DIR}/lodestar/lodestar validator" in result
-        assert "{BASE_DATA_DIR}" not in result
+        assert f"--dataDir={BASE_DATA_DIR}/lodestar_validator" in result
+        assert f"WorkingDirectory={INSTALL_DIR}" in result
+        assert f"Environment=\"TMPDIR={BASE_DATA_DIR}/lodestar_validator/tmp\"" in result
+        assert f"{INSTALL_DIR}/lodestar validator" in result
+        check_constant_substitutions(result)
 
 
 # ═══════════════════════════════════════════════
@@ -589,8 +596,9 @@ class TestNimbusService:
         assert "Description=Nimbus Validator Client service for MAINNET" in result
         assert f"--graffiti={GRAFFITI}" in result
         assert "--doppelganger-detection=off" in result
-        assert "--data-dir=/var/lib/nimbus_validator" in result
+        assert f"--data-dir={BASE_DATA_DIR}/nimbus_validator" in result
         assert f"--beacon-node=http://{CL_IP_ADDRESS}:{CL_REST_PORT}" in result
+        check_constant_substitutions(result)
 
 
 # ═══════════════════════════════════════════════
@@ -645,9 +653,10 @@ class TestLighthouseService:
         assert "Description=Lighthouse Validator Client service for MAINNET" in result
         assert f"--graffiti={GRAFFITI}" in result
         assert "--builder-proposals" in result
-        assert "--datadir=/var/lib/lighthouse_validator" in result
+        assert f"--datadir={BASE_DATA_DIR}/lighthouse_validator" in result
         assert "--http" in result
         assert f"--beacon-nodes=http://{CL_IP_ADDRESS}:{CL_REST_PORT}" in result
+        check_constant_substitutions(result)
 
     def test_vc_custom_bn_address(self):
         bn_addr = '--beacon-nodes=http://192.168.1.123:5052'
@@ -713,8 +722,9 @@ class TestGrandineService:
             CL_REST_PORT, CL_P2P_PORT, CL_P2P_PORT_2, CL_MAX_PEER_COUNT,
             is_integrated_vc=True
         )
-        assert "--keystore-dir=/var/lib/grandine/validator_keys" in result
-        assert "--keystore-password-dir=/var/lib/grandine/validator_keys" in result
+        assert f"--keystore-dir={BASE_DATA_DIR}/grandine/validator_keys" in result
+        assert f"--keystore-password-dir={BASE_DATA_DIR}/grandine/validator_keys" in result
+        check_constant_substitutions(result)
 
 
 # ═══════════════════════════════════════════════
@@ -765,5 +775,6 @@ class TestPrysmService:
         assert "Description=Prysm Validator Client service for MAINNET" in result
         assert f"--graffiti={GRAFFITI}" in result
         assert "--enable-builder" in result
-        assert "--datadir=/var/lib/prysm_validator" in result
+        assert f"--datadir={BASE_DATA_DIR}/prysm_validator" in result
         assert f"--beacon-rest-api-provider=http://{CL_IP_ADDRESS}:{CL_REST_PORT}" in result
+        check_constant_substitutions(result)

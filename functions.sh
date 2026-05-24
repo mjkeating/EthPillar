@@ -256,7 +256,7 @@ getCurrentVersion(){
         VERSION=$("$LH_BIN" --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
       Lodestar)
-        LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar/lodestar")
+        LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar")
         VERSION=$("$LODESTAR_BIN" --version | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
       Teku)
@@ -327,7 +327,7 @@ getPubKeys(){
       ;;
       Lodestar)
          [[ -d /var/lib/lodestar_validator ]] && vc_path="/var/lib/lodestar_validator" || vc_path="/var/lib/lodestar/validators"
-         LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar/lodestar")
+         LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar")
          TEMP=$(sudo -u validator "$LODESTAR_BIN" validator list --dataDir "$vc_path" --force | grep -Eo '0x[a-fA-F0-9]{96}')
          convertLIST
       ;;

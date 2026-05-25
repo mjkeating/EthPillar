@@ -30,15 +30,17 @@ New users can skip this step — the installer below already points to this fork
 
 ---
 
-## ✨ v5.4.5 — Client Update & Download Improvements
+## ✨ v5.4.3 — Grandine Support
+
+**New Consensus Client: Grandine** (with integrated validator mode)
 
 ### Highlights
-- Major refactoring of client download and update logic
-- Improved handling of folder-based clients (Teku, Besu, etc.)
-- Better service file generation
-- Enhanced test coverage for updates
+- Full support for **Grandine** Beacon Node + integrated Validator Client
+- No separate `validator.service` required for Grandine
+- Improved client switching reliability (JWT secret & MEV-Boost preservation)
+- Enhanced systemd service handling and testing
 
-Thanks to **@b0a7** for the excellent work on PR #10!
+Thanks to **@b0a7** for yet another excellent contribution!
 
 ---
 

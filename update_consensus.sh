@@ -204,7 +204,6 @@ function updateClient(){
 		DEST_DIR=$(dirname "$(dirname "$EXEC_PATH")")
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm -rf "$DEST_DIR"
 		# install_system_directory will move the Teku directory and harden perms
 		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_directory; install_system_directory('${TEKU_DIR}', '${DEST_DIR}')"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus

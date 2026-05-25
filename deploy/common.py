@@ -9,6 +9,8 @@ import tarfile
 import tempfile
 from consolemenu import PromptUtils, Screen
 from typing import Optional, List
+import glob
+import traceback
 
 
 INSTALL_DIR = "/usr/local/bin"
@@ -69,10 +71,12 @@ def install_system_directory(src_dir: str, dest_dir: str, service_user: Optional
         The absolute destination directory.
     """
     try:
+        print(f">> Installing to {dest_dir} from {src_dir}")
         # Ensure parent exists and remove any old install
         parent = os.path.dirname(dest_dir)
         subprocess.run(["sudo", "mkdir", "-p", parent], check=True)
         subprocess.run(["sudo", "rm", "-rf", dest_dir], check=False)
+
         # Move into place
         subprocess.run(["sudo", "mv", src_dir, dest_dir], check=True)
 
@@ -99,8 +103,8 @@ def install_system_directory(src_dir: str, dest_dir: str, service_user: Optional
                 else:
                     subprocess.run(["sudo", "chmod", "750", full], check=True)
     except Exception:
-        # Best-effort: don't raise to avoid breaking updates
-        pass
+        print(">> Exception in install_system_directory:")
+        traceback.print_exc()
     return dest_dir
 
 def setup_client_user_and_dir(user: str, client_name: str) -> None:

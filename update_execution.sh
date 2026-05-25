@@ -151,11 +151,10 @@ function updateClient(){
 		unzip -o "$FILENAME" -d "$HOME"/nethermind || error "❌ Unable to unzip file"
 		rm -f "$FILENAME"
 		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/nethermind/nethermind")
-		BASE_DIR=$(dirname "$EXEC_PATH")
+		DEST_DIR=$(dirname "$EXEC_PATH")
 		sudo systemctl stop execution
-		sudo rm -rf "$BASE_DIR"
 		# install_system_directory will move nethermind and harden perms
-		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_directory; install_system_directory('$HOME/nethermind', '${BASE_DIR}')"
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_directory; install_system_directory('$HOME/nethermind', '${DEST_DIR}')"
 		sudo systemctl start execution		
 		;;
 	  Besu)
@@ -167,11 +166,10 @@ function updateClient(){
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
 		tar -xzvf "$FILENAME" -C "$HOME" || error "❌ Unable to untar file"
 		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/besu/bin/besu")
-		BASE_DIR=$(dirname "$(dirname "$EXEC_PATH")")
+		DEST_DIR=$(dirname "$(dirname "$EXEC_PATH")")
 		sudo systemctl stop execution
-		sudo rm -rf "$BASE_DIR"
 		# install_system_directory will move besu directory and harden perms
-		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_directory; install_system_directory('$HOME/besu-${TAG}', '${BASE_DIR}')"
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_directory; install_system_directory('$HOME/besu-${TAG}', '${DEST_DIR}')"
 		sudo systemctl start execution
 		rm "$FILENAME"
 		;;

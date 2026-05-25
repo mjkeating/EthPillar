@@ -30,17 +30,13 @@ New users can skip this step — the installer below already points to this fork
 
 ---
 
-## ✨ v5.4.3 — Grandine Support
+## ✨ v5.4.6 — Temporary Revert of PR #10
 
-**New Consensus Client: Grandine** (with integrated validator mode)
+**Important**: Due to a regression in Execution Client updates (Nethermind, Besu, etc.), we have temporarily reverted PR #10.
 
-### Highlights
-- Full support for **Grandine** Beacon Node + integrated Validator Client
-- No separate `validator.service` required for Grandine
-- Improved client switching reliability (JWT secret & MEV-Boost preservation)
-- Enhanced systemd service handling and testing
+**Affected users**: If you updated Execution Clients recently and they are not starting, please reinstall them via EthPillar → Execution Client → "Update to latest release".
 
-Thanks to **@b0a7** for yet another excellent contribution!
+We will re-introduce the improvements after fixing the update/downgrade path.
 
 ---
 

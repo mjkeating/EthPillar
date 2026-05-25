@@ -309,7 +309,13 @@ async def consume_points(
     if RICH_AVAILABLE:
         console = Console()
         width, height = compute_plot_dimensions()
-        with Live(renderer.render(state, width, height), console=console, refresh_per_second=refresh_per_second, screen=False) as live:
+        with Live(
+            renderer.render(state, width, height),
+            console=console,
+            refresh_per_second=refresh_per_second,
+            screen=False,
+            auto_refresh=False,
+        ) as live:
             while True:
                 item = await queue.get()
                 if item is None:
@@ -317,7 +323,7 @@ async def consume_points(
                 if item is not REDRAW_REQUESTED:
                     state.add(item)
                 width, height = compute_plot_dimensions()
-                live.update(renderer.render(state, width, height))
+                live.update(renderer.render(state, width, height), refresh=True)
     else:
         while True:
             item = await queue.get()

@@ -16,12 +16,13 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from models import REDRAW_REQUESTED, ProcessingPoint
 from parsers import ExecutionLogParser
-from plotting import PlotRenderer, PlotState, consume_points
+from plotting import PlotRenderer, PlotState, calculate_tier_percentages, consume_points
 from producers import LineProducer, choose_producer
 from system_info import build_machine_info, detect_client_info
 
 
 DEFAULT_MAX_POINTS = 320
+DEFAULT_JOURNAL_TAIL = 300
 
 
 class ParserState:
@@ -120,12 +121,12 @@ async def refresh_client_info(
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot execution client block processing times.")
-    parser.add_argument("--source", choices=("auto", "systemd", "journalctl", "stdin"), default="auto")
+    parser.add_argument("--source", choices=("auto", "systemd", "journalctl", "stdin"), default="journalctl")
     parser.add_argument("--unit", default="execution", help="systemd unit name without .service")
     parser.add_argument("--client", default="auto", help="Execution client name, or auto")
     parser.add_argument("--el-rpc-endpoint", default=os.environ.get("EL_RPC_ENDPOINT", "http://127.0.0.1:8545"))
     parser.add_argument("--max-points", type=int, default=DEFAULT_MAX_POINTS)
-    parser.add_argument("--tail", type=int, default=0, help="Historical journal lines to scan before following")
+    parser.add_argument("--tail", type=int, default=DEFAULT_JOURNAL_TAIL, help="Historical journal lines to scan before following")
     parser.add_argument("--refresh-per-second", type=int, default=8)
     parser.add_argument("--client-refresh-seconds", type=int, default=30)
     parser.add_argument("--self-test", action="store_true", help="Parse sample client logs and exit")

@@ -208,7 +208,7 @@ while true; do
       📊 "View Log Dashboard: Maximize window, see all. To exit, press CTRL+B D"
       🔍 "View Rolling Consolidated Logs: All logs in one screen"
       📜 "Export logs: Save logs to disk for further analysis or sharing"
-      ET "Plot Execution Block Processing Times"
+      ⏱️ "Plot Execution Block Processing Times"
       🚨 "Monitoring: Observe Ethereum Metrics. Explore Dashboards. Grafana. Alerts."
       - ""
       👋 "Back to main menu"
@@ -229,7 +229,7 @@ while true; do
 
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
-      ET)
+      ⏱️)
         runScript logging/plotExecutionTimes/plotElapsedTimes.sh
         ;;
       📊)

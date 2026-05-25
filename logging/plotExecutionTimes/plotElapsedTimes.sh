@@ -14,7 +14,6 @@ fi
 
 missing_packages=()
 python3 -c "import rich" >/dev/null 2>&1 || missing_packages+=("python3-rich")
-python3 -c "import systemd.journal" >/dev/null 2>&1 || missing_packages+=("python3-systemd")
 
 if [[ ${#missing_packages[@]} -gt 0 ]]; then
   echo "Installing execution time plotter dependencies: ${missing_packages[*]}"
@@ -22,4 +21,4 @@ if [[ ${#missing_packages[@]} -gt 0 ]]; then
   sudo apt-get install --no-install-recommends --no-install-suggests -y "${missing_packages[@]}"
 fi
 
-python3 "$PLOTTER" --source auto --unit execution "$@"
+python3 "$PLOTTER" --source journalctl --unit execution "$@"

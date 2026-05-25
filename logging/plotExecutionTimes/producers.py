@@ -137,8 +137,8 @@ def choose_producer(source: str, unit: str, tail: int) -> LineProducer:
     """Return an appropriate `LineProducer` instance for a given source.
 
     Args:
-        source: One of "stdin", "journalctl", "systemd", or "auto". "auto" will
-            prefer the native systemd reader when available.
+        source: One of "stdin", "journalctl", "systemd", or "auto". "auto" uses
+            the journalctl reader because it matches EthPillar's existing log flow.
         unit: The systemd unit (without .service) used for journal-based producers.
         tail: Number of historical lines to request from the source.
 
@@ -153,10 +153,5 @@ def choose_producer(source: str, unit: str, tail: int) -> LineProducer:
     if source == "systemd":
         return SystemdJournalProducer(unit, tail)
     if source == "auto":
-        try:
-            import systemd.journal  # noqa: F401
-
-            return SystemdJournalProducer(unit, tail)
-        except ImportError:
-            return JournalctlProducer(unit, tail)
+        return JournalctlProducer(unit, tail)
     raise ValueError(f"Unsupported source: {source}")

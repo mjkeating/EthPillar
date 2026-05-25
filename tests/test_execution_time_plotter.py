@@ -50,3 +50,9 @@ def test_nethermind_parser_combines_elapsed_and_following_gas_line():
 
 def test_tier_percentages():
     assert plotter.calculate_tier_percentages([100, 500, 1000, 200]) == (50.0, 25.0, 25.0)
+
+
+def test_auto_source_uses_journalctl_reader():
+    producer = plotter.choose_producer("auto", "execution", 0)
+
+    assert producer.__class__.__name__ == "JournalctlProducer"

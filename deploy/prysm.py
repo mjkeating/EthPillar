@@ -1,57 +1,24 @@
-import subprocess
 import os
+import requests
+import subprocess
+from tqdm import tqdm
 from deploy.service_generators import generate_prysm_bn_service, generate_prysm_vc_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture
-from deploy.common import install_system_binary
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, get_machine_architecture, setup_client_user_and_dir
 from client_requirements import validate_version_for_network
 
-def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
-    """Get Prysm release version, download URLs, and filenames.
-
-    Args:
-        version_tag: 'LATEST' or a specific version tag.
-        arch_amd64: True if the architecture is amd64/x86_64, False for arm64.
-
-    Returns:
-        A dictionary with keys 'version', 'download_urls', and 'filenames'.
-    """
-    from deploy.common import get_github_release
-    data = get_github_release("prysmaticlabs/prysm", version_tag)
-    tag = data["tag_name"]
-    arch = "amd64" if arch_amd64 else "arm64"
-    
-    bn_url = None
-    vc_url = None
-    for asset in data["assets"]:
-        if asset["name"] == f"beacon-chain-{tag}-linux-{arch}":
-            bn_url = asset["browser_download_url"]
-        elif asset["name"] == f"validator-{tag}-linux-{arch}":
-            vc_url = asset["browser_download_url"]
-            
-    if not bn_url or not vc_url:
-        for asset in data["assets"]:
-            name = asset["name"]
-            if "beacon-chain" in name and arch in name:
-                bn_url = asset["browser_download_url"]
-            elif "validator" in name and arch in name:
-                vc_url = asset["browser_download_url"]
-                
-    if not bn_url or not vc_url:
-        raise ValueError(f"Could not find Prysm assets for linux-{arch}")
-        
-    return {"version": tag, "download_urls": [bn_url, vc_url], "filenames": [f"beacon-chain-{tag}-linux-{arch}", f"validator-{tag}-linux-{arch}"]}
-
-
-
 def download_prysm(eth_network: str) -> str:
+    binary_arch = get_machine_architecture()
+
     # Create User and directories
     setup_client_user_and_dir("consensus", "prysm")
     setup_client_user_and_dir("validator", "prysm_validator")
 
-    # Resolve version and download URL
-    arch_amd64 = get_machine_architecture() == "amd64"
-    info = get_release_info("LATEST", arch_amd64)
-    pr_version = info["version"]
+    # Define the Github API endpoint to get the latest release
+    url = 'https://api.github.com/repos/prysmaticlabs/prysm/releases/latest'
+
+    # Send a GET request to the API endpoint
+    response = requests.get(url)
+    pr_version = response.json()['tag_name']
 
     # Validate version for network requirements
     is_valid, error_msg = validate_version_for_network('prysm', pr_version, eth_network)
@@ -59,22 +26,72 @@ def download_prysm(eth_network: str) -> str:
         print(error_msg)
         exit(1)
 
-    bn_download_url = info["download_urls"][0]
-    vc_download_url = info["download_urls"][1]
-    bn_filename = info["filenames"][0]
-    vc_filename = info["filenames"][1]
+    assets = response.json()['assets']
+    bn_download_url = None
+    vc_download_url = None
+    bn_filename = None
+    vc_filename = None
+    
+    for asset in assets:
+        if asset['name'] == f'beacon-chain-{pr_version}-linux-{binary_arch}':
+            bn_download_url = asset['browser_download_url']
+            bn_filename = asset['name']
+        elif asset['name'] == f'validator-{pr_version}-linux-{binary_arch}':
+            vc_download_url = asset['browser_download_url']
+            vc_filename = asset['name']
+
+    if bn_download_url is None or vc_download_url is None:
+        print("Error: Could not find the download URL for the latest release.")
+        exit(1)
 
     # Download the beacon node
+    print(f">> Downloading Prysm Beacon Node > URL: {bn_download_url}")
     bn_download_path = f"{DOWNLOAD_DIR}/{bn_filename}"
-    download_file(bn_download_url, bn_download_path, "Prysm Beacon Node")
+    
+    try:
+        response = requests.get(bn_download_url, stream=True)
+        response.raise_for_status()
+        total_size = int(response.headers.get('content-length', 0))
+        block_size = 1024
+        t = tqdm(total=total_size, unit='B', unit_scale=True)
+        with open(bn_download_path, "wb") as f:
+            for chunk in response.iter_content(block_size):
+                if chunk:
+                    t.update(len(chunk))
+                    f.write(chunk)
+        t.close()
+        print(f">> Successfully downloaded: {bn_filename}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error: Unable to download file. Try again later. {e}")
+        exit(1)
 
     # Download the validator client
+    print(f">> Downloading Prysm Validator Client > URL: {vc_download_url}")
     vc_download_path = f"{DOWNLOAD_DIR}/{vc_filename}"
-    download_file(vc_download_url, vc_download_path, "Prysm Validator Client")
+    
+    try:
+        response = requests.get(vc_download_url, stream=True)
+        response.raise_for_status()
+        total_size = int(response.headers.get('content-length', 0))
+        block_size = 1024
+        t = tqdm(total=total_size, unit='B', unit_scale=True)
+        with open(vc_download_path, "wb") as f:
+            for chunk in response.iter_content(block_size):
+                if chunk:
+                    t.update(len(chunk))
+                    f.write(chunk)
+        t.close()
+        print(f">> Successfully downloaded: {vc_filename}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error: Unable to download file. Try again later. {e}")
+        exit(1)
 
-    # Move/configure the binaries into INSTALL_DIR
-    install_system_binary(bn_download_path, os.path.join(INSTALL_DIR, "prysm-beacon-chain"))
-    install_system_binary(vc_download_path, os.path.join(INSTALL_DIR, "prysm-validator"))
+    # Move the binary to /usr/local/bin/ using sudo
+    subprocess.run(["sudo", "mv", bn_download_path, f"{INSTALL_DIR}/prysm-beacon-chain"])
+    subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/prysm-beacon-chain"])
+    
+    subprocess.run(["sudo", "mv", vc_download_path, f"{INSTALL_DIR}/prysm-validator"])
+    subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/prysm-validator"])
 
     return pr_version
 

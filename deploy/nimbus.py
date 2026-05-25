@@ -1,39 +1,23 @@
 import os
+import requests
 import subprocess
+from tqdm import tqdm
 from deploy.service_generators import generate_nimbus_bn_service, generate_nimbus_vc_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir
 from client_requirements import validate_version_for_network
 from typing import Tuple, Optional
 
-def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
-    """Get Nimbus release version, download URL, and filename.
+def download_nimbus(eth_network: str) -> str:
+    """Download and install Nimbus binaries.
 
     Args:
-        version_tag: 'LATEST' or a specific version tag.
-        arch_amd64: True if the architecture is amd64/x86_64, False for arm64.
+        eth_network: Network name.
 
     Returns:
-        A dictionary with keys 'version', 'download_urls', and 'filenames'.
+        Installed Nimbus version.
     """
-    from deploy.common import get_github_release
-    data = get_github_release("status-im/nimbus-eth2", version_tag)
-    tag = data["tag_name"]
-    arch = "amd64" if arch_amd64 else "arm64"
-    download_url = None
-    filename = None
-    for asset in data["assets"]:
-        name = asset["name"].lower()
-        if "_linux_" in name and arch in name and name.endswith(".tar.gz"):
-            download_url = asset["browser_download_url"]
-            filename = asset["name"]
-            break
-    if not download_url:
-        raise ValueError(f"Could not find Nimbus asset for linux-{arch}")
-    return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
+    binary_arch = get_machine_architecture() # Use amd64 for Nimbus
 
-
-
-def download_nimbus(eth_network: str) -> str:
     # Create User and directories
     setup_client_user_and_dir("consensus", "nimbus")
     setup_client_user_and_dir("validator", "nimbus_validator")
@@ -42,10 +26,12 @@ def download_nimbus(eth_network: str) -> str:
     print(f">> Installing Nimbus dependencies")
     subprocess.run(["sudo", "apt-get", "-y", "-qq", "install", "libnss3", "libsqlite3-0"])
 
-    # Resolve version and download URL
-    arch_amd64 = get_machine_architecture() == "amd64"
-    info = get_release_info("LATEST", arch_amd64)
-    nimbus_version = info["version"]
+    # Define the Github API endpoint to get the latest release
+    url = 'https://api.github.com/repos/status-im/nimbus-eth2/releases/latest'
+
+    # Send a GET request to the API endpoint
+    response = requests.get(url)
+    nimbus_version = response.json()['tag_name']
 
     # Validate version for network requirements
     is_valid, error_msg = validate_version_for_network('nimbus', nimbus_version, eth_network)
@@ -53,12 +39,43 @@ def download_nimbus(eth_network: str) -> str:
         print(error_msg)
         exit(1)
 
-    download_url = info["download_urls"][0]
-    filename = info["filenames"][0]
+    assets = response.json()['assets']
+    download_url = None
+    filename = None
+    # Nimbus asset: nimbus-eth2_linux-amd64_1.2.3_abcdef.tar.gz
+    for asset in assets:
+        if f'Linux_{binary_arch}' in asset['name'] and asset['name'].endswith('.tar.gz'):
+             download_url = asset['browser_download_url']
+             filename = asset['name']
+             break
+
+    if download_url is None:
+        print(f"Error: Could not find the download URL for the latest release (looked for Linux_{binary_arch}.tar.gz).")
+        exit(1)
 
     # Download the latest release binary
+    print(f">> Downloading Nimbus > URL: {download_url}")
     download_path = f"{DOWNLOAD_DIR}/{filename}"
-    download_file(download_url, download_path, "Nimbus")
+
+    try:
+        # Download the file
+        response = requests.get(download_url, stream=True)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        total_size = int(response.headers.get('content-length', 0))
+        block_size = 1024
+        t = tqdm(total=total_size, unit='B', unit_scale=True)
+
+        with open(download_path, "wb") as f:
+            for chunk in response.iter_content(block_size):
+                if chunk:
+                    t.update(len(chunk))
+                    f.write(chunk)
+        t.close()
+        print(f">> Successfully downloaded: {filename}")
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error: Unable to download file. Try again later. {e}")
+        exit(1)
 
     # Extract the binary to /usr/local/bin/ using sudo
     subprocess.run(["sudo", "mkdir", "-p", "/tmp/nimbus_extract"])

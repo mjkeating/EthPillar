@@ -37,7 +37,8 @@ These tests perform end-to-end installations of various client combinations and 
 
 ### On Windows (PowerShell)
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tests\integration\run_docker_tests.ps1
+cd tests
+.\run_docker_tests.ps1
 ```
 
 ### On Linux/macOS (Manual)

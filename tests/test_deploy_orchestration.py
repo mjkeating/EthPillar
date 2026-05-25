@@ -6,7 +6,6 @@ No inline logic is reimplemented here.
 """
 import sys
 import os
-import tempfile
 import pytest
 from unittest.mock import patch, MagicMock, mock_open, call
 
@@ -27,7 +26,6 @@ from deploy.common import (
     network_type,
     write_service_file,
     setup_node,
-    setup_client_user_and_dir,
 )
 
 
@@ -138,7 +136,7 @@ class TestWriteServiceFile:
     def test_writes_content_to_temp_file(self):
         content = "[Unit]\nDescription=Test\n"
         pid = os.getpid()
-        expected_temp = os.path.join(tempfile.gettempdir(), f"{pid}_test.service")
+        expected_temp = f"/tmp/{pid}_test.service"
 
         with patch('builtins.open', mock_open()) as mock_file, \
              patch('subprocess.run') as mock_run, \
@@ -150,7 +148,7 @@ class TestWriteServiceFile:
     def test_copies_temp_file_to_target_with_sudo(self):
         content = "[Unit]\nDescription=Test\n"
         pid = os.getpid()
-        expected_temp = os.path.join(tempfile.gettempdir(), f"{pid}_test.service")
+        expected_temp = f"/tmp/{pid}_test.service"
         target = '/etc/systemd/system/test.service'
 
         with patch('builtins.open', mock_open()), \
@@ -162,7 +160,7 @@ class TestWriteServiceFile:
     def test_removes_temp_file_after_copy(self):
         content = "[Unit]\nDescription=Test\n"
         pid = os.getpid()
-        expected_temp = os.path.join(tempfile.gettempdir(), f"{pid}_test.service")
+        expected_temp = f"/tmp/{pid}_test.service"
 
         with patch('builtins.open', mock_open()), \
              patch('subprocess.run'), \
@@ -261,66 +259,3 @@ class TestSetupNode:
         assert not any('openssl' in s for s in calls_as_str)
         # Should still run apt commands
         assert any('apt' in s and 'update' in s for s in calls_as_str)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# setup_client_user_and_dir
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestSetupClientUserAndDir:
-    @patch('subprocess.run')
-    @patch('builtins.open', mock_open(read_data="someuser:x:1000:1000::/home/someuser:/bin/bash\n"))
-    def test_when_user_exists_does_not_create_user(self, mock_run):
-        setup_client_user_and_dir("someuser", "someclient")
-
-        calls_as_str = [str(c) for c in mock_run.call_args_list]
-        # Ensure groupadd is still run to ensure group exists
-        assert any("groupadd" in s and "-f" in s and "someuser" in s for s in calls_as_str)
-        # Ensure useradd is NOT run since user exists
-        assert not any("useradd" in s for s in calls_as_str)
-        # Ensure mkdir and chown are run
-        assert any("mkdir" in s and "someclient" in s for s in calls_as_str)
-        assert any("chown" in s and "someuser:someuser" in s and "someclient" in s for s in calls_as_str)
-
-    @patch('subprocess.run')
-    @patch('builtins.open', mock_open(read_data="otheruser:x:1000:1000::/home/otheruser:/bin/bash\n"))
-    def test_when_user_does_not_exist_creates_user_with_group(self, mock_run):
-        # We search for "someuser", but passwd only contains "otheruser"
-        # Mock subprocess.run for "id -u" to also return non-zero returncode to simulate user not existing
-        mock_run.return_value = MagicMock(returncode=1)
-
-        setup_client_user_and_dir("someuser", "someclient")
-
-        calls_as_str = [str(c) for c in mock_run.call_args_list]
-        # Ensure groupadd is run
-        assert any("groupadd" in s and "-f" in s and "someuser" in s for s in calls_as_str)
-        # Ensure useradd with -g is run
-        assert any("useradd" in s and "-g" in s and "someuser" in s for s in calls_as_str)
-        # Ensure mkdir and chown are run
-        assert any("mkdir" in s and "someclient" in s for s in calls_as_str)
-        assert any("chown" in s and "someuser:someuser" in s and "someclient" in s for s in calls_as_str)
-
-    @patch('subprocess.run')
-    @patch('builtins.open', mock_open(read_data="otheruser:x:1000:1000::/home/otheruser:/bin/bash\n"))
-    def test_useradd_primary_group_fails_calls_fallback(self, mock_run):
-        # Mock first useradd (which is index 1 of run calls or similar) to fail, and fallback to succeed.
-        def run_side_effect(args, **kwargs):
-            if "useradd" in args and "-g" in args:
-                return MagicMock(returncode=1) # First useradd fails
-            return MagicMock(returncode=0) # Other commands succeed
-
-        mock_run.side_effect = run_side_effect
-
-        setup_client_user_and_dir("someuser", "someclient")
-
-        calls_as_str = [str(c) for c in mock_run.call_args_list]
-        # Ensure groupadd is run
-        assert any("groupadd" in s and "-f" in s and "someuser" in s for s in calls_as_str)
-        # Ensure first useradd with -g was attempted
-        assert any("useradd" in s and "-g" in s and "someuser" in s for s in calls_as_str)
-        # Ensure fallback useradd without -g was run
-        assert any("useradd" in s and "-g" not in s and "someuser" in s for s in calls_as_str)
-        # Ensure mkdir and chown are run
-        assert any("mkdir" in s and "someclient" in s for s in calls_as_str)
-        assert any("chown" in s and "someuser:someuser" in s and "someclient" in s for s in calls_as_str)
-

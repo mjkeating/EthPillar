@@ -9,8 +9,6 @@ This script is designed to run INSIDE a Docker container. It performs the follow
 import subprocess
 import os
 import pwd
-import grp
-import stat
 import sys
 import signal
 import shlex
@@ -37,9 +35,9 @@ def check_binary(binary_name: str) -> bool:
     """Checks if a binary or directory exists in the installation path."""
     subfolder_paths = {
         "besu": os.path.join(INSTALL_DIR, "besu", "bin", "besu"),
-        "nethermind": os.path.join(INSTALL_DIR, "nethermind", "nethermind"),
-        "teku": os.path.join(INSTALL_DIR, "teku"),
         "lodestar": os.path.join(INSTALL_DIR, "lodestar", "lodestar"),
+        "nethermind": os.path.join(INSTALL_DIR, "nethermind", "nethermind"),
+        "teku": os.path.join(INSTALL_DIR, "teku") 
     }
     if os.path.isfile(os.path.join(INSTALL_DIR, binary_name)) or os.path.isdir(os.path.join(INSTALL_DIR, binary_name)):
         return True
@@ -47,51 +45,6 @@ def check_binary(binary_name: str) -> bool:
         path = subfolder_paths[binary_name]
         return os.path.isfile(path) or os.path.isdir(path)
     return False
-
-
-def get_binary_path(binary_name: str) -> Optional[str]:
-    """Return full path to the binary if present, else None."""
-    subfolder_paths = {
-        "besu": os.path.join(INSTALL_DIR, "besu", "bin", "besu"),
-        "nethermind": os.path.join(INSTALL_DIR, "nethermind", "nethermind"),
-        "teku": os.path.join(INSTALL_DIR, "teku"),
-        "lodestar": os.path.join(INSTALL_DIR, "lodestar", "lodestar"),
-    }
-    candidates = [os.path.join(INSTALL_DIR, binary_name), os.path.join(INSTALL_DIR, binary_name.replace('-', '_'))]
-    if binary_name in subfolder_paths:
-        candidates.insert(0, subfolder_paths[binary_name])
-
-    for p in candidates:
-        if os.path.exists(p):
-            return p
-    return None
-
-
-def check_binary_permissions(binary_name: str) -> bool:
-    """Check that the binary exists and is owned by root:root with mode 755."""
-    path = get_binary_path(binary_name)
-    if not path:
-        print(f"  ❌ Permissions: {binary_name} not found to check perms")
-        return False
-    # Resolve symlink targets
-    real = os.path.realpath(path)
-    try:
-        st = os.stat(real)
-    except FileNotFoundError:
-        print(f"  ❌ Permissions: resolved target {real} not found")
-        return False
-    uid = st.st_uid
-    mode = stat.S_IMODE(st.st_mode)
-    owner = pwd.getpwuid(uid).pw_name if uid != 0 else 'root'
-    ok_owner = (owner == 'root')
-    ok_mode = (mode == 0o755)
-    if not ok_owner:
-        print(f"  ❌ Binary owner for {binary_name} is {owner}, expected root")
-    if not ok_mode:
-        print(f"  ❌ Binary mode for {binary_name} is {oct(mode)}, expected 0o755")
-    if ok_owner and ok_mode:
-        print(f"  ✅ Binary perms OK: {binary_name} -> {real} ({owner}, {oct(mode)})")
-    return ok_owner and ok_mode
 
 def check_service(service_name: str) -> bool:
     """Checks if a systemd service file exists."""
@@ -206,34 +159,6 @@ def run_install(args: Any, fee_address: str):
         return False
     return True
 
-def check_service_file_substitution(service_name: str) -> bool:
-    """Fail if a service file contains unreplaced template placeholders."""
-    service_path = f"/etc/systemd/system/{service_name}.service"
-    if not os.path.exists(service_path):
-        return True
-    with open(service_path, "r") as f:
-        content = f.read()
-    if "{BASE_DATA_DIR}" in content:
-        print(f"  ❌ Service {service_name} contains unreplaced {{BASE_DATA_DIR}} placeholder")
-        return False
-    return True
-
-
-def check_service_journal_errors(service_name: str) -> bool:
-    """Check journal for known fatal startup errors after a service start."""
-    result = subprocess.run(
-        ["journalctl", "-u", service_name, "--no-pager", "-n", "50"],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        return True
-    for pattern in ("caxa stub:", "Failed to create the lock directory"):
-        if pattern in result.stdout:
-            print(f"  ❌ Service {service_name} journal contains fatal error: {pattern}")
-            return False
-    return True
-
-
 def check_service_start(service_name: str) -> bool:
     """Validates the service file via systemd and verifies it can start.
     
@@ -286,9 +211,6 @@ def check_service_start(service_name: str) -> bool:
             return False
         print(f"  ✅ Service {service_name} is active")
 
-        if not check_service_journal_errors(service_name):
-            return False
-
         # Skip stopping the service - leave it running for the test
         # The container will be destroyed after the test anyway
         return True
@@ -326,50 +248,6 @@ def check_service_start(service_name: str) -> bool:
             print(f"  ❌ Failed to run service: {e}")
             return False
 
-def check_p2p_ports(expected_services: List[str]) -> bool:
-    """Check that expected client P2P ports are listening after services start.
-
-    Checks the standard EL (30303) and CL (9000) P2P ports over both TCP and UDP
-    using `ss -lntu`. Results are advisory — clients may still be binding ports
-    immediately after startup, so failures warn but do not fail the test.
-    """
-    if not systemd_available():
-        print("  [no-systemd] Skipping port checks (no live services in fallback mode)")
-        return True
-
-    port_checks = []
-    if "execution" in expected_services:
-        port_checks.append((30303, "Execution P2P"))
-    if "consensus" in expected_services:
-        port_checks.append((9000, "Consensus P2P"))
-
-    if not port_checks:
-        return True
-
-    # Give services a moment to bind their ports after startup
-    time.sleep(5)
-
-    print("\n🔌 Checking P2P listening ports...")
-    try:
-        result = subprocess.run(["ss", "-lntu"], capture_output=True, text=True, check=True)
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
-        print(f"  ⚠️  Could not run ss: {e}")
-        return True
-
-    lines = result.stdout.splitlines()
-    for port, label in port_checks:
-        for proto in ("tcp", "udp"):
-            listening = any(
-                line.lower().startswith(proto) and f":{port}" in line
-                for line in lines
-            )
-            status = "✅" if listening else "⚠️ "
-            state = "listening" if listening else "not yet listening (client may still be starting)"
-            print(f"  {status} Port {port}/{proto.upper()} ({label}): {state}")
-
-    return True  # Advisory — never fails the integration test
-
-
 def verify(args: Any):
     print(f"\n🔍 Verifying Artifacts...")
     expected_binaries, expected_users, expected_services = parse_expected_artifacts(args)
@@ -386,47 +264,7 @@ def verify(args: Any):
         present = check_service(s)
         print(f"{'✅' if present else '❌'} Service File: {s}")
         if not present: success = False
-        elif not check_service_file_substitution(s): success = False
         elif not check_service_start(s): success = False
-
-    # Check binary ownership/permissions (should be root:root 755)
-    print("\n🔐 Verifying binary ownership/permissions...")
-    for b in expected_binaries:
-        ok = check_binary_permissions(b)
-        if not ok: success = False
-
-    # Check that /var/lib contains directories owned by expected service users
-    print("\n📁 Verifying /var/lib ownership for service users...")
-    base_dir = "/var/lib"
-    for u in expected_users:
-        found = False
-        try:
-            for entry in os.listdir(base_dir):
-                path = os.path.join(base_dir, entry)
-                try:
-                    st = os.stat(path)
-                except FileNotFoundError:
-                    continue
-                try:
-                    owner = pwd.getpwuid(st.st_uid).pw_name
-                except KeyError:
-                    owner = str(st.st_uid)
-                if owner == u:
-                    found = True
-                    print(f"  ✅ /var/lib entry owned by {u}: {path}")
-                    break
-        except FileNotFoundError:
-            print(f"  ❌ {base_dir} not found in container")
-            found = False
-        if not found:
-            print(f"  ❌ No /var/lib/* directory owned by user {u} (expected) ")
-            success = False
-
-    # Advisory port checks — runs after services are started
-    is_validator_only = "Validator Client Only" in args.config
-    if not is_validator_only:
-        check_p2p_ports(expected_services)
-
     return success
 
 if __name__ == "__main__":
@@ -441,7 +279,6 @@ if __name__ == "__main__":
     parser.add_argument('--config', type=str, default='Solo Staking Node')
     parser.add_argument('--network', type=str, default='SEPOLIA')
     parser.add_argument('--vc_only_bn_address', type=str, default="http://192.168.1.123:5052")
-    parser.add_argument('--test-updates', action='store_true', default=False)
     args = parser.parse_args()
 
     with open(".env", "w") as f:
@@ -457,11 +294,6 @@ if __name__ == "__main__":
             sys.exit(1)
         if not verify(args):
             sys.exit(1)
-        if args.test_updates:
-            print("\n=========================================")
-            print(" Running Updates Integration Test...")
-            print("=========================================")
-            subprocess.run(["bash", "/ethpillar/tests/integration/test_updates.sh"], check=True)
         print(f"\n🐳 Integration Test PASSED for {args.combo or args.ec}.")
     finally:
         for f in [".env"] + [p for p in os.listdir(".") if p.endswith((".tar.gz", ".tar.xz", ".zip"))]:

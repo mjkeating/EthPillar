@@ -1,5 +1,4 @@
 import os
-import sys
 import re
 import platform
 import subprocess
@@ -8,100 +7,12 @@ import json
 import tarfile
 import tempfile
 from consolemenu import PromptUtils, Screen
-from typing import Optional, List
+from typing import Optional
 
 
 INSTALL_DIR = "/usr/local/bin"
 DOWNLOAD_DIR = "/tmp"
 BASE_DATA_DIR = "/var/lib"
-
-
-def install_system_binary(src_path: str, dest: str) -> str:
-    """Move or install a binary and enforce secure perms/ownership.
-
-    Args:
-        src_path: Path to the source binary (can be a temp file path or already in INSTALL_DIR).
-        dest: Either a destination filename (e.g. 'lodestar') which will be placed
-              under `INSTALL_DIR`, or a full destination path (e.g. '/usr/local/bin/lodestar').
-
-    Returns:
-        The absolute destination path.
-    """
-    # Accept either a bare filename or a full path for destination
-    if os.path.isabs(dest) or ("/" in dest):
-        dest_path = dest
-    else:
-        dest_path = os.path.join(INSTALL_DIR, dest)
-    try:
-        # Ensure destination directory exists
-        dest_dir = os.path.dirname(dest_path) or INSTALL_DIR
-        subprocess.run(["sudo", "mkdir", "-p", dest_dir], check=True)
-        # If src and dest are same, skip moving
-        if os.path.abspath(src_path) != os.path.abspath(dest_path):
-            subprocess.run(["sudo", "mv", src_path, dest_path], check=True)
-        # Ensure it's executable and has 755
-        subprocess.run(["sudo", "chmod", "+x", dest_path], check=False)
-        subprocess.run(["sudo", "chmod", "755", dest_path], check=True)
-        # Ensure owned by root:root
-        subprocess.run(["sudo", "chown", "root:root", dest_path], check=True)
-    except Exception:
-        # Best-effort helper: don't raise to avoid breaking installs that partially succeed
-        pass
-    return dest_path
-
-
-def install_system_directory(src_dir: str, dest_dir: str, service_user: Optional[str] = None, writable_subdirs: Optional[List[str]] = None) -> str:
-    """Move a directory into place under the system path and harden permissions.
-
-    This will move `src_dir` to `dest_dir`, set ownership of the tree to root:root,
-    set directory permissions to 755 and regular files to 644 while preserving
-    executable bits for files that are already executable. Optionally create
-    writable subdirectories and chown them to `service_user`.
-
-    Args:
-        src_dir: Source directory to move (local path).
-        dest_dir: Full destination directory path.
-        service_user: Optional username to own writable subdirs.
-        writable_subdirs: Optional list of subdirectory paths (relative to dest_dir)
-                          to create and chown to `service_user` (e.g. ['data', 'logs']).
-
-    Returns:
-        The absolute destination directory.
-    """
-    try:
-        # Ensure parent exists and remove any old install
-        parent = os.path.dirname(dest_dir)
-        subprocess.run(["sudo", "mkdir", "-p", parent], check=True)
-        subprocess.run(["sudo", "rm", "-rf", dest_dir], check=False)
-        # Move into place
-        subprocess.run(["sudo", "mv", src_dir, dest_dir], check=True)
-
-        # Set ownership to root:root and tighten perms
-        subprocess.run(["sudo", "chown", "-R", "root:root", dest_dir], check=True)
-        # Ensure directories are accessible
-        subprocess.run(["sudo", "find", dest_dir, "-type", "d", "-exec", "chmod", "755", "{}", ";"], check=True)
-        # Preserve files that are executable and ensure they remain executable.
-        # Then normalize all non-executable regular files to 644. This order
-        # prevents clearing execute bits and avoids a race where we would
-        # set everything to 644 and then be unable to detect previously
-        # executable files.
-        subprocess.run(["sudo", "find", dest_dir, "-type", "f", "-perm", "/111", "-exec", "chmod", "755", "{}", ";"], check=False)
-        subprocess.run(["sudo", "find", dest_dir, "-type", "f", "!", "-perm", "/111", "-exec", "chmod", "644", "{}", ";"], check=True)
-
-        # Create writable subdirs and assign to service_user if provided
-        if writable_subdirs:
-            for sub in writable_subdirs:
-                full = os.path.join(dest_dir, sub)
-                subprocess.run(["sudo", "mkdir", "-p", full], check=True)
-                if service_user:
-                    subprocess.run(["sudo", "chown", "-R", f"{service_user}:{service_user}", full], check=True)
-                    subprocess.run(["sudo", "chmod", "700", full], check=True)
-                else:
-                    subprocess.run(["sudo", "chmod", "750", full], check=True)
-    except Exception:
-        # Best-effort: don't raise to avoid breaking updates
-        pass
-    return dest_dir
 
 def setup_client_user_and_dir(user: str, client_name: str) -> None:
     """Create a system user and data directory with proper permissions.
@@ -112,92 +23,10 @@ def setup_client_user_and_dir(user: str, client_name: str) -> None:
     """
     data_dir = os.path.join(BASE_DATA_DIR, client_name)
 
-    # Check if the user already exists
-    user_exists = False
-    try:
-        with open("/etc/passwd", "r") as f:
-            for line in f:
-                if line.startswith(f"{user}:"):
-                    user_exists = True
-                    break
-    except Exception:
-        # Fallback if /etc/passwd is not directly readable
-        res = subprocess.run(["id", "-u", user], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        user_exists = (res.returncode == 0)
-
-    # 1. Ensure the group exists first to prevent useradd from failing if the group exists
-    subprocess.run(["sudo", "groupadd", "-f", user], stderr=subprocess.DEVNULL, check=False)
-
-    if not user_exists:
-        # 2. Try creating the user with the specified primary group
-        res = subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", "-g", user, user],
-                             stderr=subprocess.DEVNULL, check=False)
-        if res.returncode != 0:
-            # 3. Fallback to standard useradd if the primary group specification failed
-            subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", user], 
-                           stderr=subprocess.DEVNULL, check=False)
-
-    # 4. Create the data directory and set correct permissions
+    subprocess.run(["sudo", "useradd", "--no-create-home", "--shell", "/bin/false", user], 
+                   stderr=subprocess.DEVNULL, check=False)
     subprocess.run(["sudo", "mkdir", "-p", data_dir], check=True)
     subprocess.run(["sudo", "chown", "-R", f"{user}:{user}", data_dir], check=True)
-
-
-def download_file(url: str, dest_path: str, label: str = "file") -> None:
-    """Download a file with a progress bar and basic error handling.
-
-    Args:
-        url: The URL to download from.
-        dest_path: Absolute destination file path.
-        label: Descriptive label for the download.
-    """
-    from tqdm import tqdm
-    print(f">> Downloading {label} > URL: {url}")
-    try:
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
-        total_size = int(response.headers.get('content-length', 0))
-        block_size = 1024
-        t = tqdm(total=total_size, unit='B', unit_scale=True)
-
-        with open(dest_path, "wb") as f:
-            for chunk in response.iter_content(block_size):
-                if chunk:
-                    t.update(len(chunk))
-                    f.write(chunk)
-        t.close()
-        filename = os.path.basename(dest_path)
-        print(f">> Successfully downloaded: {filename}")
-    except requests.exceptions.RequestException as e:
-        print(f"Error: Unable to download file. Try again later. {e}")
-        exit(1)
-
-
-def ensure_java_available() -> bool:
-    """Ensure a Java runtime is available on the system.
-
-    Returns True if Java is available or was installed successfully,
-    False otherwise. This helper performs a best-effort install of a
-    headless OpenJDK package when run with sufficient privileges.
-    """
-    import shutil
-    # If java is already on PATH, we're done
-    if shutil.which("java"):
-        print(">> Java runtime already available on PATH")
-        return True
-
-    # Try installing a common headless JRE package
-    try:
-        print(">> Java not found on PATH; attempting to install OpenJDK headless")
-        res = subprocess.run(["sudo", "apt-get", "-y", "-qq", "install", "openjdk-21-jre-headless"], check=False)
-        if res.returncode == 0:
-            print(">> OpenJDK installed")
-            return True
-        else:
-            print(">> Failed to install OpenJDK via apt; return code:", res.returncode)
-            return False
-    except Exception as e:
-        print(">> Exception while attempting to install Java:", e)
-        return False
 
 
 def clear_screen() -> None:
@@ -507,76 +336,3 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
 
     if skip_prompts:
         exit(0)
-
-
-def get_github_release(repo: str, version_tag: str) -> dict:
-    """Helper function to fetch release info from GitHub API."""
-    import requests
-    if version_tag.upper() == "LATEST":
-        suffix = "latest"
-    else:
-        suffix = f"tags/{version_tag}"
-    url = f"https://api.github.com/repos/{repo}/releases/{suffix}"
-    res = requests.get(url)
-    res.raise_for_status()
-    return res.json()
-
-
-def get_client_release_info(client: str, version_tag: str = "LATEST") -> dict:
-    """Get the correct release version, download URL(s), and filename(s) for a given client.
-
-    Args:
-        client: The name of the client (case-insensitive).
-        version_tag: 'LATEST' or a specific tag name.
-
-    Returns:
-        A dictionary with keys 'version', 'download_urls', and 'filenames'.
-    """
-    client = client.lower()
-    
-    # Normalize client name to module name
-    if client in ["mevboost", "mev-boost"]:
-        module_name = "mevboost"
-    else:
-        module_name = client
-
-    import importlib
-    try:
-        module = importlib.import_module(f"deploy.{module_name}")
-    except ImportError:
-        raise ValueError(f"Unsupported client: {client}")
-
-    import platform
-    raw_arch = platform.machine().lower()
-    arch_amd64 = raw_arch in ['x86_64', 'amd64']
-
-    if hasattr(module, "get_release_info"):
-        return module.get_release_info(version_tag, arch_amd64)
-    else:
-        raise ValueError(f"Client module deploy.{module_name} does not implement get_release_info")
-
-
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser(description="EthPillar Common CLI Utilities")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    download_parser = subparsers.add_parser("download", help="Download a file with progress bar")
-    download_parser.add_argument("url", type=str, help="URL to download from")
-    download_parser.add_argument("dest", type=str, help="Destination file path")
-    download_parser.add_argument("label", type=str, nargs="?", default="file", help="Descriptive label")
-
-    info_parser = subparsers.add_parser("release_info", help="Get client release version and download URLs")
-    info_parser.add_argument("client", type=str, help="Client name")
-    info_parser.add_argument("version_tag", type=str, nargs="?", default="LATEST", help="Version tag or LATEST")
-
-    args = parser.parse_args()
-    if args.command == "download":
-        download_file(args.url, args.dest, args.label)
-    elif args.command == "release_info":
-        try:
-            info = get_client_release_info(args.client, args.version_tag)
-            print(json.dumps(info))
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            exit(1)

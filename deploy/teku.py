@@ -1,39 +1,33 @@
 import os
+import requests
 import subprocess
+from tqdm import tqdm
 from deploy.service_generators import generate_teku_bn_service, generate_teku_vc_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory, ensure_java_available
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir
 from client_requirements import validate_version_for_network
 from typing import Optional
 
-def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
-    """Get Teku release version, download URL, and filename.
+def download_teku(eth_network: str) -> str:
+    """Download and install Teku binary.
 
     Args:
-        version_tag: 'LATEST' or a specific version tag.
-        arch_amd64: True if the architecture is amd64/x86_64, False for arm64.
+        eth_network: Network name.
 
     Returns:
-        A dictionary with keys 'version', 'download_urls', and 'filenames'.
+        Installed Teku version.
     """
-    from deploy.common import get_github_release
-    data = get_github_release("ConsenSys/teku", version_tag)
-    tag = data["tag_name"]
-    version = tag.lstrip("v")
-    filename = f"teku-{version}.tar.gz"
-    download_url = f"https://artifacts.consensys.net/public/teku/raw/names/teku.tar.gz/versions/{version}/{filename}"
-    return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
-
-
-
-def download_teku(eth_network: str) -> str:
     # Create User and directories
     setup_client_user_and_dir("consensus", "teku")
     setup_client_user_and_dir("validator", "teku_validator")
 
-    # Resolve version and download URL
-    arch_amd64 = get_machine_architecture() == "amd64"
-    info = get_release_info("LATEST", arch_amd64)
-    teku_version = info["version"]
+    # Define the Github API endpoint to get the latest release
+    url = 'https://api.github.com/repos/Consensys/teku/releases/latest'
+
+    # Send a GET request to the API endpoint
+    response = requests.get(url)
+    response.raise_for_status()
+    data = response.json()
+    teku_version = data['tag_name']
 
     # Validate version for network requirements
     is_valid, error_msg = validate_version_for_network('teku', teku_version, eth_network)
@@ -41,24 +35,63 @@ def download_teku(eth_network: str) -> str:
         print(error_msg)
         exit(1)
 
-    download_url = info["download_urls"][0]
-    filename = info["filenames"][0]
+    # Consensys now hosts Teku binaries on their own artifacts server
+    v_num = teku_version.lstrip("v")
+    download_url = f"https://artifacts.consensys.net/public/teku/raw/names/teku.tar.gz/versions/{v_num}/teku-{v_num}.tar.gz"
+    filename = f"teku-{v_num}.tar.gz"
+
+    # Verify the artifacts URL exists, if not fallback to GitHub assets
+    try:
+        head_check = requests.head(download_url, allow_redirects=True)
+        if head_check.status_code != 200:
+            download_url = None
+    except requests.RequestException:
+        download_url = None
+
+    if download_url is None:
+        # Fallback to GitHub assets (for older versions or forks)
+        assets = data.get('assets', [])
+        for asset in assets:
+            asset_name = asset['name'].lower()
+            if "teku" in asset_name and asset_name.endswith(".tar.gz") and "source" not in asset_name:
+                download_url = asset['browser_download_url']
+                filename = asset['name']
+                break
+
+    if download_url is None:
+        print(f"Error: Could not find the download URL for Teku {teku_version} on Consensys Artifacts or GitHub.")
+        exit(1)
 
     # Download the latest release binary
+    print(f">> Downloading Teku > URL: {download_url}")
     download_path = f"{DOWNLOAD_DIR}/{filename}"
-    download_file(download_url, download_path, "Teku")
-    # Ensure Java is installed for Teku (best-effort)
-    ensure_java_available()
 
-    # Extract to a temporary directory then install and harden
-    tmp_dir = f"{DOWNLOAD_DIR}/teku_temp"
-    subprocess.run(["rm", "-rf", tmp_dir], check=False)
-    subprocess.run(["mkdir", "-p", tmp_dir], check=True)
-    subprocess.run(["tar", "xzf", download_path, "-C", tmp_dir, "--strip-components=1"], check=True)
-    install_system_directory(tmp_dir, f"{INSTALL_DIR}/teku")
-    # Remove the tar file and temp dir
+    try:
+        # Download the file
+        response = requests.get(download_url, stream=True)
+        response.raise_for_status()
+        total_size = int(response.headers.get('content-length', 0))
+        block_size = 1024
+        t = tqdm(total=total_size, unit='B', unit_scale=True)
+
+        with open(download_path, "wb") as f:
+            for chunk in response.iter_content(block_size):
+                if chunk:
+                    t.update(len(chunk))
+                    f.write(chunk)
+        t.close()
+        print(f">> Successfully downloaded: {filename}")
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error: Unable to download file. Try again later. {e}")
+        exit(1)
+
+    # Extract the binary to /usr/local/bin/teku using sudo
+    subprocess.run(["sudo", "mkdir", "-p", f"{INSTALL_DIR}/teku"])
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}/teku", "--strip-components=1"])
+
+    # Remove the tar file
     os.remove(download_path)
-    subprocess.run(["rm", "-rf", tmp_dir], check=False)
     return teku_version
 
 def install_teku_bn(eth_network: str, checkpoint_sync_url: str, jwtsecret_path: str,

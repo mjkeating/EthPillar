@@ -19,7 +19,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     systemd systemd-sysv \
     python3 python3-pip python3-venv \
-    sudo curl git bats whiptail bc jq iproute2 kmod nano wget unzip \
+    sudo curl git bats whiptail bc jq iproute2 kmod nano \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

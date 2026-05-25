@@ -21,35 +21,16 @@ docker build -t ethpillar-rebuild -f tests/integration/Dockerfile.test .
 # --tmpfs /run /run/lock:   systemd runtime dirs
 DOCKER_SYSTEMD_FLAGS="--privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock"
 
-# Combos and variations
-combos=(
-    "Caplin-Erigon"
-    "Lighthouse-Reth"
-    "Lodestar-Besu"
-    "Nimbus-Nethermind"
-    "Teku-Besu"
-)
-
-variations=(
-    "--network HOLESKY --mev --config 'Solo Staking Node' --test-updates"
-    "--network SEPOLIA --config 'Full Node Only' --test-updates"
-    "--network HOLESKY --mev --config 'Lido CSM Staking Node' --test-updates"
-    "--network HOLESKY --mev --config 'Lido CSM Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052 --test-updates"
-    "--network HOLESKY --mev --config 'Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052 --test-updates"
-    "--network HOLESKY --mev --config 'Failover Staking Node' --test-updates"
-)
-
-# Custom setup tests
-custom_tests=(
-    "Geth-Lighthouse-Custom-Setup-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lighthouse --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup' --test-updates"
-    "Geth-Teku-FullNodeOnly-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Teku --network SEPOLIA --config 'Full Node Only' --test-updates"
-    "Nethermind-Grandine-Custom-Setup-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Grandine --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup' --test-updates"
-    "Updates-Geth-Lodestar-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lodestar --network SEPOLIA --config 'Full Node Only' --test-updates"
-    "Updates-Reth-Lighthouse-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Lighthouse --network SEPOLIA --config 'Full Node Only' --test-updates"
-    "Updates-Erigon-Caplin-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Erigon --cc Caplin --network SEPOLIA --config 'Full Node Only' --test-updates"
-    "Updates-Besu-Teku-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Besu --cc Teku --network SEPOLIA --config 'Full Node Only' --test-updates"
-    "Updates-Nethermind-Nimbus-EPHEMERY|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Nimbus --network EPHEMERY --config 'Solo Staking Node' --test-updates"
-    "Prysm-Reth-Custom-Setup-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Prysm --vc Prysm --network SEPOLIA --mev --config 'Custom Setup' --test-updates"
+test_commands=(
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Lighthouse-Reth --network HOLESKY --mev --config 'Solo Staking Node'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Lodestar-Besu --network HOLESKY --mev --config 'Lido CSM Staking Node'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Nimbus-Nethermind --network EPHEMERY --mev --config 'Solo Staking Node'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Teku-Besu --network HOLESKY --mev --config 'Failover Staking Node'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lighthouse --network SEPOLIA --mev --config 'Custom Setup' --vc Lighthouse"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Lodestar-Besu --network HOLESKY --mev --config 'Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Grandine --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Prysm --vc Prysm --network SEPOLIA --mev --config 'Custom Setup'"
+    "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Caplin-Erigon --network SEPOLIA --config 'Full Node Only'"
 )
 
 # Use a temporary file to store results from parallel processes
@@ -57,44 +38,15 @@ results_db="$results_dir/results.tmp"
 touch "$results_db"
 
 pids=()
-MAX_CONCURRENT=1
+MAX_CONCURRENT=5
 
-# Helper function to track concurrency
-manage_concurrency() {
-    if [ ${#pids[@]} -ge $MAX_CONCURRENT ]; then
-        wait -n
-        new_pids=()
-        for pid in "${pids[@]}"; do
-            if kill -0 "$pid" 2>/dev/null; then
-                new_pids+=("$pid")
-            fi
-        done
-        pids=("${new_pids[@]}")
-    fi
-}
-
-# Run combos and variations matrix
-for combo in "${combos[@]}"; do
-    for var in "${variations[@]}"; do
-        # Skip caplin for Holesky as it's not supported
-        if [ "$combo" == "Caplin-Erigon" ] && [[ "$var" == *"HOLESKY"* ]]; then
-            echo "Skipping Holesky test for Caplin ($combo) as it's unsupported."
-            echo "SKIPPED|$combo|$var|-" >> "$results_db"
-            continue
-        fi
-
-        # Switch Nimbus/Nethermind to Ephemery
-        actual_var="$var"
-        if [ "$combo" == "Nimbus-Nethermind" ] && [[ "$var" == *"HOLESKY"* ]]; then
-            actual_var="${var/HOLESKY/EPHEMERY}"
-        fi
-
-        # Generate clean names for logs and container
-        log_name="${combo}_$(echo "$actual_var" | sed 's/[^a-zA-Z0-9-]/_/g' | tr -s '_')"
+for cmd in "${test_commands[@]}"; do
+        
+        log_name=$(echo "$cmd" | awk '{for(i=4;i<=NF;i++) printf $i"_"; print ""}' | tr -dc '[:alnum:]_-' | sed 's/_$//')
         log_file="$results_dir/${log_name}.log"
         container_name="ep-test-$(echo "$log_name" | tr -dc '[:alnum:]-' | head -c 60)"
 
-        echo "Starting background test for $combo [ $actual_var ]..."
+        echo "Starting background test for: $cmd"
         (
             # Start a persistent container with systemd as PID 1
             # shellcheck disable=SC2086
@@ -102,55 +54,31 @@ for combo in "${combos[@]}"; do
             sleep 3  # wait for systemd to initialize
             
             # Run the test via exec
-            # Use eval to properly handle quoted arguments (e.g., --config 'Solo Staking Node')
-            eval "docker exec \"$container_name\" python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo \"$combo\" $actual_var > \"$log_file\" 2>&1"
+            docker exec "$container_name" bash -c "$cmd" > "$log_file" 2>&1
             status=$?
             
             # Always clean up the container
             docker rm -f "$container_name" > /dev/null 2>&1
             
             if [ $status -eq 0 ]; then
-                echo "PASS|$combo|$actual_var|${log_name}.log" >> "$results_db"
+                echo "PASS|$(echo $cmd | awk '{print $4" "$5}')|$(echo $cmd | awk '{for(i=6;i<=NF;i++) printf $i" "}')|${log_name}.log" >> "$results_db"
             else
-                echo "FAIL|$combo|$actual_var|${log_name}.log" >> "$results_db"
+                echo "FAIL|$(echo $cmd | awk '{print $4" "$5}')|$(echo $cmd | awk '{for(i=6;i<=NF;i++) printf $i" "}')|${log_name}.log" >> "$results_db"
             fi
         ) &
         pids+=($!)
-        manage_concurrency
-    done
-done
-
-# Run custom tests
-for custom in "${custom_tests[@]}"; do
-    label="${custom%%|*}"
-    cmd="${custom#*|}"
-
-    log_name="$(echo "$label" | sed 's/[^a-zA-Z0-9-]/_/g' | tr -s '_')"
-    log_file="$results_dir/${log_name}.log"
-    container_name="ep-test-$(echo "$log_name" | tr -dc '[:alnum:]-' | head -c 60)"
-
-    echo "Starting background custom test for $label..."
-    (
-        # Start a persistent container with systemd as PID 1
-        # shellcheck disable=SC2086
-        docker run -d --name "$container_name" $DOCKER_SYSTEMD_FLAGS -v "$(pwd):/ethpillar" ethpillar-rebuild > /dev/null 2>&1
-        sleep 3  # wait for systemd to initialize
-
-        # Run the test via exec
-        docker exec "$container_name" bash -c "$cmd" > "$log_file" 2>&1
-        status=$?
-
-        # Always clean up the container
-        docker rm -f "$container_name" > /dev/null 2>&1
-
-        if [ $status -eq 0 ]; then
-            echo "PASS|$label|Custom|${log_name}.log" >> "$results_db"
-        else
-            echo "FAIL|$label|Custom|${log_name}.log" >> "$results_db"
+        
+        if [ ${#pids[@]} -ge $MAX_CONCURRENT ]; then
+            wait -n
+            # Filter pids to those still running
+            new_pids=()
+            for pid in "${pids[@]}"; do
+                if kill -0 "$pid" 2>/dev/null; then
+                    new_pids+=("$pid")
+                fi
+            done
+            pids=("${new_pids[@]}")
         fi
-    ) &
-    pids+=($!)
-    manage_concurrency
 done
 
 # Wait for any remaining parallel jobs to finish
@@ -182,7 +110,6 @@ cat <<EOF > "$results_dir/index.html"
         .status-pass { color: #28a745; font-weight: bold; }
         .status-fail { color: #dc3545; font-weight: bold; }
         .status-skipped { color: #ffc107; font-weight: bold; }
-        .status-skip { color: #ffc107; font-weight: bold; }
         a { color: #007bff; text-decoration: none; }
         a:hover { text-decoration: underline; }
         .footer { margin-top: 30px; font-size: 0.9em; color: #6c757d; text-align: center; }

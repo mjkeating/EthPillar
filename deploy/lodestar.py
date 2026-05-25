@@ -1,47 +1,33 @@
 import os
+import requests
 import subprocess
+from tqdm import tqdm
 from typing import Tuple, Optional
 from deploy.service_generators import generate_lodestar_bn_service, generate_lodestar_vc_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_binary
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir
 from client_requirements import validate_version_for_network
 
-def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
-    """Get Lodestar release version, download URL, and filename.
+def download_lodestar(eth_network: str) -> str:
+    """Download and install Lodestar binary.
 
     Args:
-        version_tag: 'LATEST' or a specific version tag.
-        arch_amd64: True if the architecture is amd64/x86_64, False for arm64.
+        eth_network: Network name.
 
     Returns:
-        A dictionary with keys 'version', 'download_urls', and 'filenames'.
+        Installed Lodestar version.
     """
-    from deploy.common import get_github_release
-    data = get_github_release("ChainSafe/lodestar", version_tag)
-    tag = data["tag_name"]
-    arch = "amd64" if arch_amd64 else "arm64"
-    download_url = None
-    filename = None
-    for asset in data["assets"]:
-        if asset["name"].lower().endswith(f"linux-{arch}.tar.gz"):
-            download_url = asset["browser_download_url"]
-            filename = asset["name"]
-            break
-    if not download_url:
-        filename = f"lodestar-{tag}-linux-{arch}.tar.gz"
-        download_url = f"https://github.com/ChainSafe/lodestar/releases/download/{tag}/{filename}"
-    return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
+    binary_arch = get_machine_architecture() # Use amd64 for Lodestar
 
-
-
-def download_lodestar(eth_network: str) -> str:
     # Create User and directories
     setup_client_user_and_dir("consensus", "lodestar")
     setup_client_user_and_dir("validator", "lodestar_validator")
 
-    # Resolve version and download URL
-    arch_amd64 = get_machine_architecture() == "amd64"
-    info = get_release_info("LATEST", arch_amd64)
-    lodestar_version = info["version"]
+    # Define the Github API endpoint to get the latest release
+    url = 'https://api.github.com/repos/ChainSafe/lodestar/releases/latest'
+
+    # Send a GET request to the API endpoint
+    response = requests.get(url)
+    lodestar_version = response.json()['tag_name']
 
     # Validate version for network requirements
     is_valid, error_msg = validate_version_for_network('lodestar', lodestar_version, eth_network)
@@ -49,21 +35,52 @@ def download_lodestar(eth_network: str) -> str:
         print(error_msg)
         exit(1)
 
-    download_url = info["download_urls"][0]
-    filename = info["filenames"][0]
+    assets = response.json()['assets']
+    download_url = None
+    filename = None
+    # Lodestar asset: lodestar-v1.24.0-linux-amd64.tar.gz
+    for asset in assets:
+        if asset['name'].endswith(f'linux-{binary_arch}.tar.gz'):
+            download_url = asset['browser_download_url']
+            filename = asset['name']
+            break
+
+    if download_url is None:
+        print(f"Error: Could not find the download URL for the latest release (looked for linux-{binary_arch}.tar.gz).")
+        exit(1)
 
     # Download the latest release binary
+    print(f">> Downloading Lodestar > URL: {download_url}")
     download_path = f"{DOWNLOAD_DIR}/{filename}"
-    download_file(download_url, download_path, "Lodestar")
 
-    # We want the binary to end up at /usr/local/bin/lodestar.  Each instance (lodestar beacon and validator) will reference the same 
-    # binary, and will each have their own tmp foler in /var/lib/lodestar and /var/lib/lodestar_validator respectively for caxa
+    try:
+        # Download the file
+        response = requests.get(download_url, stream=True)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        total_size = int(response.headers.get('content-length', 0))
+        block_size = 1024
+        t = tqdm(total=total_size, unit='B', unit_scale=True)
+
+        with open(download_path, "wb") as f:
+            for chunk in response.iter_content(block_size):
+                if chunk:
+                    t.update(len(chunk))
+                    f.write(chunk)
+        t.close()
+        print(f">> Successfully downloaded: {filename}")
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error: Unable to download file. Try again later. {e}")
+        exit(1)
+
+    # The archive usually unpacks a lodestar directory or bare files.
+    # We want the binary to end up at /usr/local/bin/lodestar/lodestar
+    subprocess.run(["sudo", "mkdir", "-p", f"{INSTALL_DIR}/lodestar"])
     subprocess.run(["sudo", "mkdir", "-p", "/tmp/lodestar_extract"])
     subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/tmp/lodestar_extract"])
-    result = subprocess.run(["sudo", "find", "/tmp/lodestar_extract", "-type", "f", "-name", "lodestar"], capture_output=True, text=True)
-    lodestar_bin = result.stdout.strip().split("\n")[0]
-    if lodestar_bin:
-        install_system_binary(lodestar_bin, f"{INSTALL_DIR}/lodestar")
+    # Move the lodestar binary correctly
+    os.system("if [ -f /tmp/lodestar_extract/lodestar ]; then sudo mv /tmp/lodestar_extract/lodestar /usr/local/bin/lodestar/lodestar; fi")
+    os.system("if [ -f /tmp/lodestar_extract/bin/lodestar ]; then sudo mv /tmp/lodestar_extract/bin/lodestar /usr/local/bin/lodestar/lodestar; fi")
 
     # Remove the tar file and temporary extraction directory
     os.remove(download_path)

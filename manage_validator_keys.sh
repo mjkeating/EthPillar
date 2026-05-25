@@ -328,7 +328,8 @@ function loadKeys(){
    case $VC in
       Lighthouse)
         [[ -d /var/lib/lighthouse_validator ]] && vc_path="/var/lib/lighthouse_validator" || vc_path="/var/lib/lighthouse/validators"
-        sudo lighthouse account validator import \
+        LH_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lighthouse")
+        sudo "$LH_BIN" account validator import \
           --datadir "$vc_path" \
           --directory="$KEYFOLDER" \
           --reuse-password
@@ -337,8 +338,8 @@ function loadKeys(){
       ;;
      Lodestar)
         [[ -d /var/lib/lodestar_validator ]] && vc_path="/var/lib/lodestar_validator" || vc_path="/var/lib/lodestar/validators"
-        cd /usr/local/bin/lodestar || true
-        sudo ./lodestar validator import \
+        LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar")
+        sudo "$LODESTAR_BIN" validator import \
           --dataDir="$vc_path" \
           --keystore="$KEYFOLDER"
         sudo chown -R validator:validator "$vc_path"
@@ -374,14 +375,16 @@ function loadKeys(){
             sudo chown -R "${__SERVICE_USER}":"${__SERVICE_USER}" "${__DATA_DIR}"
             sudo chmod -R 700 "${__DATA_DIR}"
         else
-            sudo /usr/local/bin/nimbus_beacon_node deposits import \
+            NIMBUS_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/nimbus_beacon_node")
+            sudo "$NIMBUS_BIN" deposits import \
                 --data-dir=/var/lib/nimbus_validator "$KEYFOLDER"
             sudo chown -R validator:validator /var/lib/nimbus_validator
             sudo chmod -R 700 /var/lib/nimbus_validator
         fi
       ;;
      Prysm)
-        sudo /usr/local/bin/prysm-validator accounts import \
+        PRYSM_VC=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/prysm-validator")
+        sudo "$PRYSM_VC" accounts import \
           --accept-terms-of-use \
           --wallet-dir=/var/lib/prysm_validator/validator_keys \
           --keys-dir="$KEYFOLDER"

@@ -1,11 +1,29 @@
 import os
-import requests
 import subprocess
-from tqdm import tqdm
 from deploy.service_generators import generate_grandine_bn_service
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, get_raw_architecture, setup_client_user_and_dir
+from deploy.common import install_system_binary, write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file
 from client_requirements import validate_version_for_network
-import requests
+
+def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
+    """Get Grandine release version, download URL, and filename.
+
+    Args:
+        version_tag: 'LATEST' or a specific version tag.
+        arch_amd64: True if the architecture is amd64/x86_64, False for arm64.
+
+    Returns:
+        A dictionary with keys 'version', 'download_urls', and 'filenames'.
+    """
+    from deploy.common import get_github_release
+    data = get_github_release("grandinetech/grandine", version_tag)
+    tag = data["tag_name"]
+    version = tag.lstrip("v")
+    arch = "x64" if arch_amd64 else "arm64"
+    filename = "grandine"
+    download_url = f"https://github.com/grandinetech/grandine/releases/download/{tag}/grandine-{version}-linux-{arch}"
+    return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
+
+
 
 # ==============================================================================
 # Grandine Client Support Note:
@@ -40,16 +58,10 @@ def download_grandine(eth_network: str) -> str:
     # Create User and directories
     setup_client_user_and_dir("consensus", "grandine")
 
-    # Define the Github API endpoint to get the latest release
-    url = 'https://api.github.com/repos/grandinetech/grandine/releases/latest'
-    
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        gr_version = response.json()['tag_name']
-    except requests.exceptions.RequestException as e:
-        print(f"Error: Unable to fetch latest version info. Try again later. {e}")
-        exit(1)
+    # Resolve version and download URL
+    arch_amd64 = get_machine_architecture() == "amd64"
+    info = get_release_info("LATEST", arch_amd64)
+    gr_version = info["version"]
 
     # Validate version for network requirements
     is_valid, error_msg = validate_version_for_network('grandine', gr_version, eth_network)
@@ -57,39 +69,16 @@ def download_grandine(eth_network: str) -> str:
         print(error_msg)
         exit(1)
 
-    # Clean version string for download URL (remove leading 'v' if present)
+    download_url = info["download_urls"][0]
     clean_version = gr_version.lstrip('v')
-    
-    # Grandine asset: grandine-2.0.4-linux-x64
-    filename = f"grandine-{clean_version}-linux-{binary_arch}"
-    download_url = f"https://github.com/grandinetech/grandine/releases/download/{gr_version}/{filename}"
+    dest_filename = f"grandine-{clean_version}-linux-{binary_arch}"
 
-    print(f">> Downloading Grandine > URL: {download_url}")
-    download_path = f"{DOWNLOAD_DIR}/{filename}"
+    download_path = f"{DOWNLOAD_DIR}/{dest_filename}"
+    download_file(download_url, download_path, "Grandine")
 
-    try:
-        response = requests.get(download_url, stream=True)
-        response.raise_for_status()
-        total_size = int(response.headers.get('content-length', 0))
-        block_size = 1024
-        t = tqdm(total=total_size, unit='B', unit_scale=True)
-
-        with open(download_path, "wb") as f:
-            for chunk in response.iter_content(block_size):
-                if chunk:
-                    t.update(len(chunk))
-                    f.write(chunk)
-        t.close()
-        print(f">> Successfully downloaded: {filename}")
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error: Unable to download file. Try again later. {e}")
-        exit(1)
-
-    subprocess.run(["sudo", "mv", download_path, f"{INSTALL_DIR}/{filename}"], check=True)
-    subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/{filename}"], check=True)
-    # Create a stable symlink so consensus.service can always reference /usr/local/bin/grandine
-    subprocess.run(["sudo", "ln", "-sf", f"{INSTALL_DIR}/{filename}", f"{INSTALL_DIR}/grandine"], check=True)
+    # Move into place and ensure secure perms/ownership, then create stable symlink
+    install_system_binary(download_path, os.path.join(INSTALL_DIR, dest_filename))
+    subprocess.run(["sudo", "ln", "-sf", f"{INSTALL_DIR}/{dest_filename}", f"{INSTALL_DIR}/grandine"], check=True)
 
     return gr_version
 

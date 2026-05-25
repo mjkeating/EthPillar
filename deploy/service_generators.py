@@ -192,7 +192,7 @@ def generate_nethermind_service(eth_network: str, el_p2p_port: str, el_rpc_port:
         description=f"Nethermind Execution Layer Client service for {eth_network.upper()}",
         user="execution",
         exec_start=_exec_start,
-        extra_env=['"DOTNET_BUNDLE_EXTRACT_BASE_DIR={BASE_DATA_DIR}/nethermind/bundle-extract"'],
+        extra_env=[f'"DOTNET_BUNDLE_EXTRACT_BASE_DIR={BASE_DATA_DIR}/nethermind/bundle-extract"'],
         working_dir=f"{BASE_DATA_DIR}/nethermind",
         timeout_stop_sec=900,
         limit_nofile=None
@@ -572,7 +572,7 @@ def generate_lodestar_bn_service(eth_network: str, sync_url: str, jwtsecret_path
         _network = f'--network={eth_network}'
 
     _args = [
-        f"{INSTALL_DIR}/lodestar/lodestar beacon",
+        f"{INSTALL_DIR}/lodestar beacon",
         _network,
         f"--dataDir={BASE_DATA_DIR}/lodestar",
         f"--checkpointSyncUrl={sync_url}",
@@ -595,8 +595,8 @@ def generate_lodestar_bn_service(eth_network: str, sync_url: str, jwtsecret_path
         description=f"Lodestar Consensus Client service for {eth_network.upper()}",
         user="consensus",
         exec_start=_exec_start,
-        extra_env=['"TMPDIR={BASE_DATA_DIR}/lodestar/tmp"'],
-        working_dir=f"{INSTALL_DIR}/lodestar",
+        extra_env=[f'"TMPDIR={BASE_DATA_DIR}/lodestar/tmp"'],
+        working_dir=f"{INSTALL_DIR}",
         timeout_stop_sec=900,
         limit_nofile=None
     )
@@ -624,7 +624,7 @@ def generate_lodestar_vc_service(eth_network: str, graffiti: str, beacon_node_ad
         _network = f'--network={eth_network}'
 
     _args = [
-        f"{INSTALL_DIR}/lodestar/lodestar validator",
+        f"{INSTALL_DIR}/lodestar validator",
         _network,
         f"--dataDir={BASE_DATA_DIR}/lodestar_validator",
         "--metrics=true",
@@ -643,8 +643,8 @@ def generate_lodestar_vc_service(eth_network: str, graffiti: str, beacon_node_ad
         description=f"Lodestar Validator Client service for {eth_network.upper()}",
         user="validator",
         exec_start=_exec_start,
-        extra_env=['"TMPDIR={BASE_DATA_DIR}/lodestar_validator/tmp"'],
-        working_dir=f"{INSTALL_DIR}/lodestar",
+        extra_env=[f'"TMPDIR={BASE_DATA_DIR}/lodestar_validator/tmp"'],
+        working_dir=f"{INSTALL_DIR}",
         timeout_stop_sec=300,
         limit_nofile=65536
     )

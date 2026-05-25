@@ -1,11 +1,28 @@
 import os
-import requests
 import subprocess
-from tqdm import tqdm
 from typing import Tuple, Optional
 from deploy.service_generators import generate_besu_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory, ensure_java_available
 from client_requirements import validate_version_for_network
+
+def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
+    """Get Besu release version, download URL, and filename.
+
+    Args:
+        version_tag: 'LATEST' or a specific version tag.
+        arch_amd64: True if the architecture is amd64/x86_64, False for arm64.
+
+    Returns:
+        A dictionary with keys 'version', 'download_urls', and 'filenames'.
+    """
+    from deploy.common import get_github_release
+    data = get_github_release("besu-eth/besu", version_tag)
+    tag = data["tag_name"]
+    filename = f"besu-{tag}.tar.gz"
+    download_url = f"https://github.com/besu-eth/besu/releases/download/{tag}/{filename}"
+    return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
+
+
 
 def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: str, 
                                 el_max_peer_count: str, jwtsecret_path: str,
@@ -19,14 +36,13 @@ def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: s
     # Create User and directories
     setup_client_user_and_dir("execution", "besu")
     print(f">> Installing dependencies")
-    subprocess.run(["sudo", "apt-get", '-qq', "install", "openjdk-21-jdk", "libjemalloc-dev", "-y"], check=True)
+    ensure_java_available()
+    subprocess.run(["sudo", "apt-get", '-qq', "install", "libjemalloc-dev", "-y"], check=True)
 
-    # Define the Github API endpoint to get the latest release
-    url = 'https://api.github.com/repos/hyperledger/besu/releases/latest'
-
-    # Send a GET request to the API endpoint
-    response = requests.get(url)
-    besu_version = response.json()['tag_name']
+    # Resolve version and download URL
+    arch_amd64 = get_machine_architecture() == "amd64"
+    info = get_release_info("LATEST", arch_amd64)
+    besu_version = info["version"]
 
     # Validate version for network requirements
     is_valid, error_msg = validate_version_for_network('besu', besu_version, eth_network)
@@ -34,48 +50,23 @@ def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: s
         print(error_msg)
         exit(1)
 
-    assets = response.json()['assets']
-    download_url = None
-    filename = f'besu-{besu_version}.tar.gz'
-    for asset in assets:
-        if asset['name'].endswith(filename):
-            download_url = asset['browser_download_url']
-            break
-
-    if download_url is None:
-        print("Error: Could not find the download URL for the latest release.")
-        exit(1)
+    download_url = info["download_urls"][0]
+    filename = info["filenames"][0]
 
     # Download the latest release binary
-    print(f">> Downloading Besu > URL: {download_url}")
     download_path = f"{DOWNLOAD_DIR}/{filename}"
+    download_file(download_url, download_path, "Besu")
 
-    try:
-        # Download the file
-        response = requests.get(download_url, stream=True)
-        response.raise_for_status()  # Raise an exception for HTTP errors
-        total_size = int(response.headers.get('content-length', 0))
-        block_size = 1024
-        t = tqdm(total=total_size, unit='B', unit_scale=True)
+    # Extract to a temporary dir and install atomically with hardening
+    tmp_dir = f"{DOWNLOAD_DIR}/besu_temp"
+    subprocess.run(["rm", "-rf", tmp_dir], check=False)
+    subprocess.run(["mkdir", "-p", tmp_dir], check=True)
+    subprocess.run(["tar", "xzf", download_path, "-C", tmp_dir, "--strip-components=1"], check=True)
+    install_system_directory(tmp_dir, f"{INSTALL_DIR}/besu")
 
-        with open(download_path, "wb") as f:
-            for chunk in response.iter_content(block_size):
-                if chunk:
-                    t.update(len(chunk))
-                    f.write(chunk)
-        t.close()
-        print(f">> Successfully downloaded: {filename}")
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error: Unable to download file. Try again later. {e}")
-        exit(1)
-
-    # Extract the binary to /usr/local/bin/besu using sudo
-    subprocess.run(["sudo", "mkdir", "-p", f"{INSTALL_DIR}/besu"])
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}/besu", "--strip-components=1"])
-
-    # Remove the tar file
+    # Remove the tar file and temporary extraction directory
     os.remove(download_path)
+    subprocess.run(["rm", "-rf", tmp_dir], check=False)
 
     # Generate Service File Content
     service_content = generate_besu_service(

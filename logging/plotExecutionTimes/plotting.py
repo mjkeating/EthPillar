@@ -311,6 +311,33 @@ async def consume_points(
         refresh_per_second: Refresh rate for Rich live rendering (when available).
     """
 
+    async def _collect_batch() -> tuple[list[ProcessingPoint], bool]:
+        """Wait for at least one queue item then drain immediately-available items.
+
+        Returns (batch, saw_none). If `saw_none` is True the caller should stop.
+        """
+
+        first_item = await queue.get()
+        if first_item is None:
+            return [], True
+
+        batch: list[ProcessingPoint] = []
+        if first_item is not REDRAW_REQUESTED:
+            batch.append(first_item)  # type: ignore[arg-type]
+
+        while True:
+            try:
+                queued = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return batch, False
+            if queued is None:
+                # Re-queue the sentinel so the outer loop can observe it.
+                await queue.put(None)
+                return batch, True
+            if queued is REDRAW_REQUESTED:
+                continue
+            batch.append(queued)  # type: ignore[arg-type]
+
     if RICH_AVAILABLE:
         console = Console()
         width, height = compute_plot_dimensions()
@@ -322,20 +349,26 @@ async def consume_points(
             auto_refresh=False,
         ) as live:
             while True:
-                item = await queue.get()
-                if item is None:
-                    break
-                if item is not REDRAW_REQUESTED:
-                    state.add(item)
+                batch, saw_none = await _collect_batch()
+                if not batch and saw_none:
+                    break  # producer finished (None sentinel); stop consumer without rendering
+                for p in batch:
+                    state.add(p)
+
                 width, height = compute_plot_dimensions()
                 live.update(renderer.render(state, width, height), refresh=True)
+                if saw_none:
+                    break  # producer finished during draining; rendered final batch, now stop
     else:
         while True:
-            item = await queue.get()
-            if item is None:
-                break
-            if item is not REDRAW_REQUESTED:
-                state.add(item)
+            batch, saw_none = await _collect_batch()
+            if not batch and saw_none:
+                break  # producer finished (None sentinel); stop consumer without rendering
+            for p in batch:
+                state.add(p)
+
             width, height = compute_plot_dimensions()
             os.system("cls" if platform.system() == "Windows" else "clear")
             print(renderer.render(state, width, height))
+            if saw_none:
+                break  # producer finished during draining; rendered final batch, now stop

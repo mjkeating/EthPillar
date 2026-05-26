@@ -1464,7 +1464,6 @@ while true; do
       💾 "NCDU: Find large files. Analyze disk usage."
       🔗 "Beaconcha.in Validator Dashboard: Create a link for my validators"
       🚪 "Beaconcha.in: Check validator entry/exit queue time"
-      💻 "EL: Switch execution clients"
       ⌚ "Timezone: Update machine's timezone"
       🌐 "Locales: Fix terminal formatting issues"
       📁 "Swapfile: Use disk space as extra RAM"
@@ -1516,11 +1515,6 @@ while true; do
         ;;
       🚪)
         checkValidatorQueue
-        ;;
-      💻)
-        [[ "${_arch}" == "arm64" ]] && echo "EL Switcher not available for arm64. Press ENTER to continue." && read && break
-        [[ "${NETWORK,,}" == "ephemery" ]] && echo "EL Switcher not available for EPHEMERY testnet. To switch, use System Admin > Reinstall node . Press ENTER to continue." && read && break
-        sudo /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/coincashew/client-switcher/master/install.sh)"
         ;;
       ⌚)
         sudo dpkg-reconfigure tzdata

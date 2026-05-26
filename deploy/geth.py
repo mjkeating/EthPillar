@@ -1,11 +1,42 @@
 import os
-import requests
 import subprocess
-from tqdm import tqdm
 from typing import Tuple, Optional
 from deploy.service_generators import generate_geth_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_binary
 from client_requirements import validate_version_for_network
+
+def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
+    """Get Geth release version, download URL, and filename.
+
+    Args:
+        version_tag: 'LATEST' or a specific version tag.
+        arch_amd64: True if the architecture is amd64/x86_64, False for arm64.
+
+    Returns:
+        A dictionary with keys 'version', 'download_urls', and 'filenames'.
+    """
+    import requests
+    import re
+    res = requests.get("https://geth.ethereum.org/downloads")
+    res.raise_for_status()
+    arch = "amd64" if arch_amd64 else "arm64"
+    
+    if version_tag.upper() == "LATEST":
+        suffix = ""
+    else:
+        suffix = f"-{version_tag.lstrip('v')}-"
+        
+    pattern = r"(https://gethstore\.blob\.core\.windows\.net/builds/geth-linux-" + arch + r"-" + suffix + r"([0-9.]+)-[a-f0-9]+\.tar\.gz)"
+    matches = re.findall(pattern, res.text)
+    if not matches:
+        raise ValueError(f"Could not find Geth download URL for linux-{arch} and version {version_tag}")
+    
+    download_url = matches[0][0]
+    version = "v" + matches[0][1]
+    filename = download_url.split("/")[-1]
+    return {"version": version, "download_urls": [download_url], "filenames": [filename]}
+
+
 
 def download_and_install_geth(eth_network: str, el_p2p_port: str, el_rpc_port: str, 
                                 el_max_peer_count: str, jwtsecret_path: str,
@@ -19,31 +50,10 @@ def download_and_install_geth(eth_network: str, el_p2p_port: str, el_rpc_port: s
     # Create User and directories
     setup_client_user_and_dir("execution", "geth")
 
-    # Define the downloads page URL
-    url = 'https://geth.ethereum.org/downloads'
-
-    # Send a GET request to the page
-    response = requests.get(url)
-    
-    # Check platform and arch
-    import platform
-    arch = platform.machine().lower()
-    if arch == 'x86_64' or arch == 'amd64':
-        target_arch = 'amd64'
-    else:
-        target_arch = 'arm64'
-        
-    import re
-    pattern_url = r"(https://gethstore\.blob\.core\.windows\.net/builds/geth-linux-" + target_arch + r"-([0-9.]+)-[a-f0-9]+\.tar\.gz)"
-    url_matches = re.findall(pattern_url, response.text)
-    
-    if not url_matches:
-        print("Error: Could not find the download URL for the latest release.")
-        exit(1)
-        
-    download_url = url_matches[0][0]
-    geth_version = "v" + url_matches[0][1]
-    filename = download_url.split('/')[-1]
+    # Resolve version and download URL
+    arch_amd64 = get_machine_architecture() == "amd64"
+    info = get_release_info("LATEST", arch_amd64)
+    geth_version = info["version"]
 
     # Validate version for network requirements
     is_valid, error_msg = validate_version_for_network('geth', geth_version, eth_network)
@@ -51,30 +61,13 @@ def download_and_install_geth(eth_network: str, el_p2p_port: str, el_rpc_port: s
         print(error_msg)
         exit(1)
 
+    download_url = info["download_urls"][0]
+    filename = info["filenames"][0]
+
 
     # Download the latest release binary
-    print(f">> Downloading Geth > URL: {download_url}")
     download_path = f"{DOWNLOAD_DIR}/{filename}"
-
-    try:
-        # Download the file
-        response = requests.get(download_url, stream=True)
-        response.raise_for_status()  # Raise an exception for HTTP errors
-        total_size = int(response.headers.get('content-length', 0))
-        block_size = 1024
-        t = tqdm(total=total_size, unit='B', unit_scale=True)
-
-        with open(download_path, "wb") as f:
-            for chunk in response.iter_content(block_size):
-                if chunk:
-                    t.update(len(chunk))
-                    f.write(chunk)
-        t.close()
-        print(f">> Successfully downloaded: {filename}")
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error: Unable to download file. Try again later. {e}")
-        exit(1)
+    download_file(download_url, download_path, "Geth")
 
     # Extract the binary to /usr/local/bin/geth using sudo
     
@@ -87,9 +80,7 @@ def download_and_install_geth(eth_network: str, el_p2p_port: str, el_rpc_port: s
     extracted_dirs = [d for d in os.listdir(temp_extract_dir) if d.startswith("geth-linux")]
     if extracted_dirs:
         geth_bin_path = f"{temp_extract_dir}/{extracted_dirs[0]}/geth"
-        subprocess.run(["sudo", "mv", geth_bin_path, f"{INSTALL_DIR}/geth"])
-        subprocess.run(["sudo", "chmod", "+x", f"{INSTALL_DIR}/geth"])
-        subprocess.run(["sudo", "chown", "execution:execution", f"{INSTALL_DIR}/geth"])
+        install_system_binary(geth_bin_path, f"{INSTALL_DIR}/geth")
     
     # Cleanup temp directory
     subprocess.run(["rm", "-rf", temp_extract_dir])

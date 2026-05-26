@@ -33,6 +33,20 @@ function error {
   exit 1
 }
 
+get_systemd_exec_path() {
+  local service_file="$1"
+  local default_path="$2"
+  if [[ -f "$service_file" ]]; then
+    local exec_start
+    exec_start=$(grep -E "^ExecStart=" "$service_file" | head -n 1)
+    if [[ -n "$exec_start" ]]; then
+      echo "$exec_start" | sed -e 's/^ExecStart=//' | awk '{print $1}'
+      return
+    fi
+  fi
+  echo "$default_path"
+}
+
 getNetworkConfig() {
     ip_current=$( hostname --all-ip-address | awk '{print $1}')
     interface_current=$(ip route | grep default | head -1 | sed 's/.*dev \([^ ]*\) .*/\1/')
@@ -233,35 +247,51 @@ getNetwork(){
     export NETWORK
 }
 
+# Ensure a Java runtime is available for JVM-based clients (Teku, Besu)
+updateJRE(){
+  # Delegate Java installation to the Python helper in deploy.common. This
+  # centralizes logic and allows the Python modules to call the same helper.
+  PYTHONPATH="${BASE_DIR}" python3 - <<'PY'
+from deploy.common import ensure_java_available
+ensure_java_available()
+PY
+}
+
 # Gets software version from binary
 getCurrentVersion(){
     VERSION="NotInstalled"
     case "$CLIENT" in
       Lighthouse)
-        VERSION=$(/usr/local/bin/lighthouse --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
+        LH_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lighthouse")
+        VERSION=$("$LH_BIN" --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
       Lodestar)
-        VERSION=$(/usr/local/bin/lodestar/lodestar --version | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
+        LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar")
+        VERSION=$("$LODESTAR_BIN" --version | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
       Teku)
-        VERSION=$(/usr/local/bin/teku/bin/teku --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
+        TEKU_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/teku/bin/teku")
+        VERSION=$("$TEKU_BIN" --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
       Nimbus)
-        test -f /usr/local/bin/nimbus_beacon_node && VERSION=$(nimbus_beacon_node --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+") || test -f /usr/local/bin/nimbus_validator_client && VERSION=$(nimbus_validator_client --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
+        NIMBUS_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/nimbus_beacon_node")
+        test -f "$NIMBUS_BIN" || NIMBUS_BIN=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/nimbus_validator_client")
+        VERSION=$("$NIMBUS_BIN" --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
       Grandine)
-        VERSION=$(/usr/local/bin/grandine --version | head -1 | grep -oE "v?[0-9]+\.[0-9]+\.[0-9]+")
+        GRANDINE_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/grandine")
+        VERSION=$("$GRANDINE_BIN" --version | head -1 | grep -oE "v?[0-9]+\.[0-9]+\.[0-9]+")
         if [[ $VERSION != v* ]]; then VERSION="v$VERSION"; fi
         ;;
       Prysm)
-        # Prysm Beacon Chain
-        if [[ -f /usr/local/bin/prysm-beacon-chain ]]; then
-            VERSION=$(/usr/local/bin/prysm-beacon-chain --version | head -1 | grep -oE "v[0-9]+\.[0-9]+\.[0-9]+")
-        # Prysm Validator (separate binary)
-        elif [[ -f /usr/local/bin/prysm-validator ]]; then
-            VERSION=$(/usr/local/bin/prysm-validator --version | head -1 | grep -oE "v[0-9]+\.[0-9]+\.[0-9]+")
+        PRYSM_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/prysm-beacon-chain")
+        if [[ -f "$PRYSM_BIN" ]]; then
+            VERSION=$("$PRYSM_BIN" --version | head -1 | grep -oE "v[0-9]+\.[0-9]+\.[0-9]+")
+        else
+            PRYSM_BIN=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/prysm-validator")
+            VERSION=$("$PRYSM_BIN" --version | head -1 | grep -oE "v[0-9]+\.[0-9]+\.[0-9]+")
         fi
-        ;;   
+        ;;
       *)
         echo "ERROR: Unable to determine client."
         exit 1
@@ -301,13 +331,14 @@ getPubKeys(){
    case $VC in
       Lighthouse)
          [[ -d /var/lib/lighthouse_validator ]] && vc_path="/var/lib/lighthouse_validator" || vc_path="/var/lib/lighthouse"
-         TEMP=$(sudo -u validator /usr/local/bin/lighthouse account validator list --datadir "$vc_path" | grep -Eo '0x[a-fA-F0-9]{96}')
+         LH_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lighthouse")
+         TEMP=$(sudo -u validator "$LH_BIN" account validator list --datadir "$vc_path" | grep -Eo '0x[a-fA-F0-9]{96}')
          convertLIST
       ;;
       Lodestar)
          [[ -d /var/lib/lodestar_validator ]] && vc_path="/var/lib/lodestar_validator" || vc_path="/var/lib/lodestar/validators"
-         cd /usr/local/bin/lodestar
-         TEMP=$(sudo -u validator /usr/local/bin/lodestar/lodestar validator list --dataDir "$vc_path" --force | grep -Eo '0x[a-fA-F0-9]{96}')
+         LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar")
+         TEMP=$(sudo -u validator "$LODESTAR_BIN" validator list --dataDir "$vc_path" --force | grep -Eo '0x[a-fA-F0-9]{96}')
          convertLIST
       ;;
       Teku)
@@ -343,7 +374,8 @@ getPubKeys(){
         esac
       ;;
       Prysm)
-         TEMP=$(/usr/local/bin/validator accounts list --wallet-dir=/var/lib/prysm/validators | grep -Eo '0x[a-fA-F0-9]{96}')
+         PRYSM_VC=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/prysm-validator")
+         TEMP=$(sudo -u validator "$PRYSM_VC" accounts list --wallet-dir=/var/lib/prysm/validators | grep -Eo '0x[a-fA-F0-9]{96}')
          convertLIST
       ;;
    esac

@@ -1,24 +1,46 @@
 import os
-import requests
 import subprocess
-from tqdm import tqdm
 from deploy.service_generators import generate_lighthouse_bn_service, generate_lighthouse_vc_service
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, get_raw_architecture, setup_client_user_and_dir
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file
 from client_requirements import validate_version_for_network
 
-def download_lighthouse(eth_network: str) -> str:
-    binary_arch = get_raw_architecture()
+def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
+    """Get Lighthouse release version, download URL, and filename.
 
+    Args:
+        version_tag: 'LATEST' or a specific version tag.
+        arch_amd64: True if the architecture is amd64/x86_64, False for arm64.
+
+    Returns:
+        A dictionary with keys 'version', 'download_urls', and 'filenames'.
+    """
+    from deploy.common import get_github_release
+    data = get_github_release("sigp/lighthouse", version_tag)
+    tag = data["tag_name"]
+    arch = "x86_64" if arch_amd64 else "aarch64"
+    download_url = None
+    filename = None
+    for asset in data["assets"]:
+        if asset["name"].lower().endswith(f"{arch}-unknown-linux-gnu.tar.gz"):
+            download_url = asset["browser_download_url"]
+            filename = asset["name"]
+            break
+    if not download_url:
+        filename = f"lighthouse-{tag}-{arch}-unknown-linux-gnu.tar.gz"
+        download_url = f"https://github.com/sigp/lighthouse/releases/download/{tag}/{filename}"
+    return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
+
+
+
+def download_lighthouse(eth_network: str) -> str:
     # Create User and directories
     setup_client_user_and_dir("consensus", "lighthouse")
     setup_client_user_and_dir("validator", "lighthouse_validator")
 
-    # Define the Github API endpoint to get the latest release
-    url = 'https://api.github.com/repos/sigp/lighthouse/releases/latest'
-
-    # Send a GET request to the API endpoint
-    response = requests.get(url)
-    lh_version = response.json()['tag_name']
+    # Resolve version and download URL
+    arch_amd64 = get_machine_architecture() == "amd64"
+    info = get_release_info("LATEST", arch_amd64)
+    lh_version = info["version"]
 
     # Validate version for network requirements
     is_valid, error_msg = validate_version_for_network('lighthouse', lh_version, eth_network)
@@ -26,43 +48,12 @@ def download_lighthouse(eth_network: str) -> str:
         print(error_msg)
         exit(1)
 
-    assets = response.json()['assets']
-    download_url = None
-    filename = None
-    # Lighthouse asset: lighthouse-v6.0.1-x86_64-unknown-linux-gnu.tar.gz
-    for asset in assets:
-        if asset['name'].endswith(f'{binary_arch}-unknown-linux-gnu.tar.gz'):
-            download_url = asset['browser_download_url']
-            filename = asset['name']
-            break
-
-    if download_url is None:
-        print("Error: Could not find the download URL for the latest release.")
-        exit(1)
+    download_url = info["download_urls"][0]
+    filename = info["filenames"][0]
 
     # Download the latest release binary
-    print(f">> Downloading Lighthouse > URL: {download_url}")
     download_path = f"{DOWNLOAD_DIR}/{filename}"
-
-    try:
-        # Download the file
-        response = requests.get(download_url, stream=True)
-        response.raise_for_status()  # Raise an exception for HTTP errors
-        total_size = int(response.headers.get('content-length', 0))
-        block_size = 1024
-        t = tqdm(total=total_size, unit='B', unit_scale=True)
-
-        with open(download_path, "wb") as f:
-            for chunk in response.iter_content(block_size):
-                if chunk:
-                    t.update(len(chunk))
-                    f.write(chunk)
-        t.close()
-        print(f">> Successfully downloaded: {filename}")
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error: Unable to download file. Try again later. {e}")
-        exit(1)
+    download_file(download_url, download_path, "Lighthouse")
 
     # Extract the binary to /usr/local/bin/ using sudo
     subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}"])

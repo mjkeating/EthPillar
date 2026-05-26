@@ -1,11 +1,36 @@
 import os
-import requests
 import subprocess
-from tqdm import tqdm
 from typing import Tuple, Optional
 from deploy.service_generators import generate_nethermind_service
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, install_system_directory
 from client_requirements import validate_version_for_network
+
+def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
+    """Get Nethermind release version, download URL, and filename.
+
+    Args:
+        version_tag: 'LATEST' or a specific version tag.
+        arch_amd64: True if the architecture is amd64/x86_64, False for arm64.
+
+    Returns:
+        A dictionary with keys 'version', 'download_urls', and 'filenames'.
+    """
+    from deploy.common import get_github_release
+    data = get_github_release("NethermindEth/nethermind", version_tag)
+    tag = data["tag_name"]
+    arch = "x64" if arch_amd64 else "arm64"
+    download_url = None
+    filename = None
+    for asset in data["assets"]:
+        if asset["name"].lower().endswith(f"-linux-{arch}.zip"):
+            download_url = asset["browser_download_url"]
+            filename = asset["name"]
+            break
+    if not download_url:
+        raise ValueError(f"Could not find Nethermind asset for linux-{arch}")
+    return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
+
+
 
 def download_and_install_nethermind(eth_network: str, el_p2p_port: str, el_rpc_port: str, 
                                      el_max_peer_count: str, jwtsecret_path: str,
@@ -16,23 +41,16 @@ def download_and_install_nethermind(eth_network: str, el_p2p_port: str, el_rpc_p
         nm_version: The version string of the installed Nethermind
         service_file_path: The path to the created service file
     """
-    # Nethermind uses linux-x64 for x86_64
-    import platform
-    machine = platform.machine()
-    binary_arch = "x64" if machine == "x86_64" else "arm64" if machine == "aarch64" else machine
-
     # Create User and directories
     setup_client_user_and_dir("execution", "nethermind")
     # Ensure home directory exists for .NET bundle extraction if WorkingDirectory isn't enough
     subprocess.run(["sudo", "mkdir", "-p", "/home/execution"])
     subprocess.run(["sudo", "chown", "execution:execution", "/home/execution"])
     
-    # Define the Github API endpoint to get the latest release
-    url = 'https://api.github.com/repos/NethermindEth/nethermind/releases/latest'
-
-    # Send a GET request to the API endpoint
-    response = requests.get(url)
-    nm_version = response.json()['tag_name']
+    # Resolve version and download URL
+    arch_amd64 = get_machine_architecture() == "amd64"
+    info = get_release_info("LATEST", arch_amd64)
+    nm_version = info["version"]
 
     # Validate version for network requirements
     is_valid, error_msg = validate_version_for_network('nethermind', nm_version, eth_network)
@@ -40,52 +58,24 @@ def download_and_install_nethermind(eth_network: str, el_p2p_port: str, el_rpc_p
         print(error_msg)
         exit(1)
 
-    # Search for the asset
-    assets = response.json()['assets']
-    download_url = None
-    filename = None
-    for asset in assets:
-        if asset['name'].endswith(f'linux-{binary_arch}.zip'):
-             download_url = asset['browser_download_url']
-             filename = asset['name']
-             break
-
-    if download_url is None:
-        print(f"Error: Could not find the download URL for the latest release (looked for linux-{binary_arch}.zip).")
-        exit(1)
+    download_url = info["download_urls"][0]
+    filename = info["filenames"][0]
 
     # Download the latest release binary
-    print(f">> Downloading Nethermind > URL: {download_url}")
     download_path = f"{DOWNLOAD_DIR}/{filename}"
+    download_file(download_url, download_path, "Nethermind")
 
-    try:
-        # Download the file
-        response = requests.get(download_url, stream=True)
-        response.raise_for_status()  # Raise an exception for HTTP errors
-        total_size = int(response.headers.get('content-length', 0))
-        block_size = 1024
-        t = tqdm(total=total_size, unit='B', unit_scale=True)
+    # Extract to a temporary directory and install atomically
+    subprocess.run(["sudo", "apt-get", "-y", "-qq", "install", "unzip"], check=False)
+    tmp_dir = f"{DOWNLOAD_DIR}/nethermind_temp"
+    subprocess.run(["rm", "-rf", tmp_dir], check=False)
+    subprocess.run(["mkdir", "-p", tmp_dir], check=True)
+    subprocess.run(["unzip", "-o", download_path, "-d", tmp_dir], check=True)
+    install_system_directory(tmp_dir, f"{INSTALL_DIR}/nethermind")
 
-        with open(download_path, "wb") as f:
-            for chunk in response.iter_content(block_size):
-                if chunk:
-                    t.update(len(chunk))
-                    f.write(chunk)
-        t.close()
-        print(f">> Successfully downloaded: {filename}")
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error: Unable to download file. Try again later. {e}")
-        exit(1)
-
-    # Extract the binary using unzip
-    # First install unzip
-    subprocess.run(["sudo", "apt-get", "-y", "-qq", "install", "unzip"])
-    subprocess.run(["sudo", "mkdir", "-p", f"{INSTALL_DIR}/nethermind"])
-    subprocess.run(["sudo", "unzip", "-o", download_path, "-d", f"{INSTALL_DIR}/nethermind"])
-
-    # Remove the zip file
+    # Remove the zip file and temporary extraction directory
     os.remove(download_path)
+    subprocess.run(["rm", "-rf", tmp_dir], check=False)
 
     # Generate Service File Content
     service_content = generate_nethermind_service(

@@ -95,6 +95,10 @@ ec_name = None
 cc_name = None
 vc_name = None
 
+if args.combo:
+    from deploy.orchestrator import PREDEFINED_COMBOS
+    ec_name, cc_name = PREDEFINED_COMBOS.get(args.combo, (None, None))
+
 if args.switch_client == "execution":
     if not args.ec:
         ec_menu = get_ec_menu()
@@ -114,9 +118,12 @@ elif args.switch_client == "consensus":
 elif flags['validator_only']:
     # VC Only Path
     if not args.vc:
-        vc_menu = get_vc_menu()
-        index = SelectionMenu.get_selection(vc_menu, title='Validator Client Selection', subtitle='Select your Validator Client:', show_exit_option=False)
-        vc_name = vc_menu[index]
+        if skip_prompts:
+            vc_name = cc_name or args.cc or "Lighthouse"
+        else:
+            vc_menu = get_vc_menu()
+            index = SelectionMenu.get_selection(vc_menu, title='Validator Client Selection', subtitle='Select your Validator Client:', show_exit_option=False)
+            vc_name = vc_menu[index]
     else:
         vc_name = args.vc or args.cc # Fallback to --cc if --vc not passed
 elif role == "Custom Setup":
@@ -139,19 +146,23 @@ elif role == "Custom Setup":
     # VC
     # VC
     if not args.vc and not args.with_validator:
-        val_prompt = SelectionMenu.get_selection(["Yes", "No"], title='Custom Setup', subtitle='Step 3: Do you want a Validator Client?', show_exit_option=False)
-        if val_prompt == 0:
-            flags['validator'] = True
-            vc_opts = get_vc_options_for_cc(cc_name)
-            if len(vc_opts) == 4: # No "Same as CC"
-                index = SelectionMenu.get_selection(vc_opts, title='Validator Client', subtitle='Select your Validator Client:', show_exit_option=False)
-                vc_name = vc_opts[index]
-            else:
-                index = SelectionMenu.get_selection(vc_opts, title='Validator Client', subtitle='Use same client as CC?', show_exit_option=False)
-                vc_name = resolve_vc_name(cc_name, vc_opts[index])
-        else:
+        if skip_prompts:
             flags['validator'] = False
             vc_name = None
+        else:
+            val_prompt = SelectionMenu.get_selection(["Yes", "No"], title='Custom Setup', subtitle='Step 3: Do you want a Validator Client?', show_exit_option=False)
+            if val_prompt == 0:
+                flags['validator'] = True
+                vc_opts = get_vc_options_for_cc(cc_name)
+                if len(vc_opts) == 4: # No "Same as CC"
+                    index = SelectionMenu.get_selection(vc_opts, title='Validator Client', subtitle='Select your Validator Client:', show_exit_option=False)
+                    vc_name = vc_opts[index]
+                else:
+                    index = SelectionMenu.get_selection(vc_opts, title='Validator Client', subtitle='Use same client as CC?', show_exit_option=False)
+                    vc_name = resolve_vc_name(cc_name, vc_opts[index])
+            else:
+                flags['validator'] = False
+                vc_name = None
     else:
         flags['validator'] = True
         vc_name = args.vc if args.vc else cc_name

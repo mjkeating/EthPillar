@@ -47,8 +47,8 @@ def install_system_binary(src_path: str, dest: str) -> str:
         # Ensure owned by root:root
         subprocess.run(["sudo", "chown", "root:root", dest_path], check=True)
     except Exception:
-        # Best-effort helper: don't raise to avoid breaking installs that partially succeed
-        pass
+        print(">> Exception in install_system_binary:")
+        traceback.print_exc()
     return dest_path
 
 

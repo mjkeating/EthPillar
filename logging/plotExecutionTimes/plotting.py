@@ -212,7 +212,7 @@ class PlotRenderer:
             f"X-Axis: Gas Used | Range: 0 to {x_max:.2f} MGas",
             f"Y-Axis: Elapsed Time | Range: 0 to {self.y_max_ms:.0f} ms",
             f"Tiers: < 300ms: {green:.1f}% | 300ms - 750ms: {yellow:.1f}% | > 750ms: {red:.1f}%",
-            "'#' = Clamped at Max",
+            "'#' = Clamped at Max Time",
         ]
         summary_line = f"Plot updated with {len(points)} points - Latest: {latest_mgas:.2f} MGas, {latest_ms:.1f}ms"
 
@@ -237,7 +237,7 @@ class PlotRenderer:
                 elif line.startswith("'#'"):
                     text.append("'")
                     text.append("#", style="red")
-                    text.append("' = Clamped at Max\n")
+                    text.append("' = Clamped at Max Time\n")
                 else:
                     text.append(line + "\n")
             text.append(summary_line + "\n")

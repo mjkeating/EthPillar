@@ -289,7 +289,7 @@ def compute_plot_dimensions() -> tuple[int, int]:
 
     terminal = shutil.get_terminal_size(fallback=(100, 34))
     width = int(os.environ.get("PLOT_WIDTH", max(24, terminal.columns - 6)))
-    height = int(os.environ.get("PLOT_HEIGHT", max(10, terminal.lines - 15)))
+    height = int(os.environ.get("PLOT_HEIGHT", max(10, terminal.lines - 14)))
     return max(24, min(width, max(24, terminal.columns - 6))), max(10, height)
 
 

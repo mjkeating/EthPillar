@@ -207,6 +207,7 @@ class PlotRenderer:
         green, yellow, red = calculate_tier_percentages(point.elapsed_time_ms for point in points)
         latest_mgas = points[-1].gas_used_mgas if points else 0.0
         latest_ms = points[-1].elapsed_time_ms if points else 0.0
+
         footer = [
             f"X-Axis: Gas Used | Range: 0 to {x_max:.2f} MGas",
             f"Y-Axis: Elapsed Time | Range: 0 to {self.y_max_ms:.0f} ms",
@@ -233,16 +234,22 @@ class PlotRenderer:
                     text.append(" | ")
                     text.append(f"> 750ms: {red:.1f}%", style="red")
                     text.append("\n")
+                elif line.startswith("'#'"):
+                    text.append("'")
+                    text.append("#", style="red")
+                    text.append("' = Clamped at Max\n")
                 else:
                     text.append(line + "\n")
             text.append(summary_line + "\n")
             return text
 
+        # --- Plain Text Fallback ---
         lines = ["-" * (width + 2)]
         for row in grid:
             lines.append("|" + "".join(char for char, _style in row) + "|")
         lines.append("-" * (width + 2))
-        lines.extend(footer)
+        # draw the # in the footer in red using ANSI codes        
+        lines.extend(line.replace("#", "\033[91m#\033[0m") for line in footer)
         lines.append(summary_line)
         return "\n".join(lines)
 

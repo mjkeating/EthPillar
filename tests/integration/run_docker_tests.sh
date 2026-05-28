@@ -111,11 +111,25 @@ run_test() {
 
     echo "Starting background test for $label..."
     (
+        set +e
         local test_start=$(date +%s)
+        
+        # Clean up any stale container with the same name before starting
+        docker rm -f "$container_name" > /dev/null 2>&1
         
         # Start a persistent container with systemd as PID 1
         # shellcheck disable=SC2086
         docker run -d --name "$container_name" $DOCKER_SYSTEMD_FLAGS -v "$(pwd):/ethpillar" ethpillar-rebuild > /dev/null 2>&1
+        local run_status=$?
+        
+        if [ $run_status -ne 0 ]; then
+            local test_end=$(date +%s)
+            local duration=$((test_end - test_start))
+            echo "FAIL|$label|$display_var|${log_name}.log|${duration}s" >> "$results_db"
+            echo "❌ Failed to start container for $label (Exit Code: $run_status)" | tee -a "$log_file"
+            exit 0
+        fi
+        
         sleep 3  # wait for systemd to initialize
         
         # Run the test via exec
@@ -135,6 +149,7 @@ run_test() {
             echo "FAIL|$label|$display_var|${log_name}.log|${duration}s" >> "$results_db"
             echo "❌ Failed test $label in ${duration}s"
         fi
+        exit 0
     ) &
     pids+=($!)
     manage_concurrency

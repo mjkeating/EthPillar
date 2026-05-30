@@ -90,9 +90,12 @@ if os.environ.get('ENABLE_EP_CACHE') == '1':
                                 self.headers = {'content-length': str(size)}
                                 self.raw = open(filepath, "rb")
                             def iter_content(self, chunk_size=1024):
+                                # Read in large blocks (1MB) from local cache so the
+                                # download progress bar flashes through instantly
                                 self.raw.seek(0)
+                                block_size = 1024 * 1024
                                 while True:
-                                    chunk = self.raw.read(chunk_size)
+                                    chunk = self.raw.read(block_size)
                                     if not chunk:
                                         break
                                     yield chunk

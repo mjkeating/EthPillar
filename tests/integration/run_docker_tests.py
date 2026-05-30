@@ -149,49 +149,55 @@ async def run_test(task: TestTask, results_dir: str, semaphore: asyncio.Semaphor
 
 async def ui_loop(tasks: list[TestTask]):
     console = Console()
-    with Live(refresh_per_second=4, console=console) as live:
+    with Live(refresh_per_second=2, console=console, screen=False) as live:
         while True:
             running_tasks = [t for t in tasks if t.status == "RUNNING"]
             completed_tasks = [t for t in tasks if t.status in ("PASS", "FAIL")]
             pending_tasks = [t for t in tasks if t.status == "PENDING"]
-            
-            # Table for completed tests
-            table = Table(title="Completed Tests", expand=True)
-            table.add_column("Test", style="cyan")
-            table.add_column("Variation", style="magenta")
-            table.add_column("Status", justify="center")
-            table.add_column("Duration", justify="right")
-            
-            for t in completed_tasks:
-                status_str = "[green]PASS[/green]" if t.status == "PASS" else "[red]FAIL[/red]"
-                table.add_row(t.label, t.display_var, status_str, f"{t.duration}s")
-                
+
             renderables = []
+
+            # --- Completed Tests (always present) ---
+            table = Table(title="Completed Tests", expand=True, show_lines=False)
+            table.add_column("Test", style="cyan", no_wrap=True)
+            table.add_column("Variation", style="magenta", no_wrap=True)
+            table.add_column("Status", justify="center", no_wrap=True)
+            table.add_column("Duration", justify="right", no_wrap=True)
+
             if completed_tasks:
-                renderables.append(table)
-                
-            # Panels for running tests
+                for t in completed_tasks:
+                    status_str = "[green]PASS[/green]" if t.status == "PASS" else "[red]FAIL[/red]"
+                    table.add_row(t.label, t.display_var, status_str, f"{t.duration}s")
+            else:
+                table.add_row("—", "—", "[dim]—[/dim]", "—")
+
+            renderables.append(table)
+
+            # --- Running Tests panel(s) ---
             for t in running_tasks:
-                log_text = tail_file(t.log_file, 20)
+                log_text = tail_file(t.log_file, 40)
                 dur = int(time.time() - t.start_time)
                 panel = Panel(
-                    Text.from_ansi(log_text), 
-                    title=f"[yellow]RUNNING: {t.label} ({dur}s)[/yellow]", 
-                    border_style="yellow", 
-                    height=24
+                    Text.from_ansi(log_text),
+                    title=f"[yellow]RUNNING: {t.label} ({dur}s)[/yellow]",
+                    border_style="yellow",
+                    height=30
                 )
                 renderables.append(panel)
-                
-            # Pending summary
+
+            if not running_tasks and not pending_tasks:
+                renderables.append(Text("All tests complete.", style="green bold"))
+
+            # --- Pending tests footer (always present) ---
             if pending_tasks:
-                renderables.append(Text(f"\nPending tasks in queue: {len(pending_tasks)}", style="blue"))
-            
-            group = Group(*renderables)
-            live.update(group)
-            
+                names = ", ".join(t.label for t in pending_tasks)
+                renderables.append(Text(f"\nPending ({len(pending_tasks)}): {names}", style="blue"))
+
+            live.update(Group(*renderables))
+
             if not running_tasks and not pending_tasks:
                 break
-            await asyncio.sleep(0.25)
+            await asyncio.sleep(0.5)
 
 def generate_html_report(tasks, results_dir, total_duration, timestamp):
     html_path = os.path.join(results_dir, "index.html")
@@ -263,8 +269,11 @@ def generate_html_report(tasks, results_dir, total_duration, timestamp):
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--parallel", type=int, default=1, help="Max concurrent tests")
+    parser.add_argument("--parallel", type=int, default=1, help="Max concurrent tests (must be 1)")
     args = parser.parse_args()
+    if args.parallel != 1:
+        print("Concurrency > 1 is not yet supported with the Rich UI. Defaulting to 1.")
+        args.parallel = 1
     
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     results_dir = os.path.join(os.getcwd(), "tests", "integration", "results", f"run_{timestamp}")
@@ -277,6 +286,8 @@ async def main():
         subprocess.run("find tests/integration/cache -name 'tmp*' -type f -delete 2>/dev/null", shell=True)
         print("Cleaning up stale cache files older than 7 days...")
         subprocess.run("find tests/integration/cache -type f -mtime +7 -delete 2>/dev/null", shell=True)
+        # Remove empty extracted cache directories (poison pills from failed prior runs)
+        subprocess.run("find tests/integration/cache -name 'extracted_*' -type d -empty -delete 2>/dev/null", shell=True)
         subprocess.run("find tests/integration/cache -type d -empty -delete 2>/dev/null", shell=True)
         
     print("Rebuilding Docker image...")

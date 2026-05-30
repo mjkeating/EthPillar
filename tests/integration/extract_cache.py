@@ -24,9 +24,13 @@ def intercept_subprocess_run(*args, **kwargs):
     if not isinstance(cmd, list):
         return original_run(*args, **kwargs)
 
-    # We only care about tar and unzip commands started with sudo
-    is_tar = len(cmd) >= 4 and cmd[0] == "sudo" and cmd[1] == "tar" and "x" in cmd[2]
-    is_unzip = len(cmd) >= 3 and cmd[0] == "sudo" and cmd[1] == "unzip"
+    is_sudo_tar = len(cmd) >= 4 and cmd[0] == "sudo" and cmd[1] == "tar" and "x" in cmd[2]
+    is_plain_tar = len(cmd) >= 3 and cmd[0] == "tar" and "x" in cmd[1]
+    is_tar = is_sudo_tar or is_plain_tar
+
+    is_sudo_unzip = len(cmd) >= 3 and cmd[0] == "sudo" and cmd[1] == "unzip"
+    is_plain_unzip = len(cmd) >= 2 and cmd[0] == "unzip"
+    is_unzip = is_sudo_unzip or is_plain_unzip
     
     if not (is_tar or is_unzip):
         return original_run(*args, **kwargs)

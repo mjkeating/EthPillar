@@ -58,6 +58,11 @@ def intercept_subprocess_run(*args, **kwargs):
     if not archive_path or not dest_dir or not os.path.exists(archive_path):
         return original_run(*args, **kwargs)
 
+    # Blacklist system directories where many binaries share the same folder
+    # because cp -a will try to cache the entire directory
+    if dest_dir in ["/usr/local/bin", "/usr/bin", "/bin", "/usr/local/bin/", "/usr/bin/", "/bin/"]:
+        return original_run(*args, **kwargs)
+
     # Make sure cache dir exists
     os.makedirs(CACHE_DIR, exist_ok=True)
     

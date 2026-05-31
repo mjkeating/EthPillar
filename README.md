@@ -8,7 +8,7 @@
 [![GitHub Repo stars](https://img.shields.io/github/stars/mjkeating/EthPillar?logo=github&color=yellow)](https://github.com/mjkeating/EthPillar/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/mjkeating/EthPillar?logo=github&color=blue)](https://github.com/mjkeating/EthPillar/network/members)
 [![GitHub last commit](https://img.shields.io/github/last-commit/mjkeating/EthPillar?logo=git)](https://github.com/mjkeating/EthPillar/commits/main)
-[![Discord](https://img.shields.io/badge/discord-join%20chat-5B5EA6)](https://discord.gg/VdQQ7Bc3hn)
+[![Discord](https://img.shields.io/badge/discord-join%20chat-5B5EA6)](https://discord.gg/Kjrnkv8dgs)
 
 ---
 

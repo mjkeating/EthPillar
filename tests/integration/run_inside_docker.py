@@ -543,6 +543,14 @@ if __name__ == "__main__":
         f.write("CSM_GRAFFITI=dummy\nCSM_MEV_MIN_BID=0.1\n")
         f.write("CSM_FEE_RECIPIENT_ADDRESS_HOLESKY=0xCSM123\n")
         f.write("CSM_FEE_RECIPIENT_ADDRESS_MAINNET=0xCSM456\n")
+    # functions.sh sources ./env (no dot); keep both in sync for test scripts
+    with open("env", "w") as f:
+        f.write(f"MEVBOOST={'true' if args.mev else 'false'}\n")
+        f.write("EL_P2P_PORT=30303\nCL_P2P_PORT=9000\n")
+        f.write(f"INSTALL_CONFIG={args.config}\n")
+        f.write("CSM_GRAFFITI=dummy\nCSM_MEV_MIN_BID=0.1\n")
+        f.write("CSM_FEE_RECIPIENT_ADDRESS_HOLESKY=0xCSM123\n")
+        f.write("CSM_FEE_RECIPIENT_ADDRESS_MAINNET=0xCSM456\n")
             
     try:
         if not run_install(args, "0x1234567890123456789012345678901234567890"):
@@ -561,7 +569,7 @@ if __name__ == "__main__":
             subprocess.run(["bash", "/ethpillar/tests/integration/test_switching.sh"], check=True)
         print(f"\n🐳 Integration Test PASSED for {args.combo or args.ec}.")
     finally:
-        for f in [".env"] + [p for p in os.listdir(".") if p.endswith((".tar.gz", ".tar.xz", ".zip"))]:
+        for f in [".env", "env"] + [p for p in os.listdir(".") if p.endswith((".tar.gz", ".tar.xz", ".zip"))]:
             try:
                 if os.path.exists(f): os.remove(f)
             except: pass

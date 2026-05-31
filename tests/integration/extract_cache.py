@@ -90,19 +90,20 @@ def intercept_subprocess_run(*args, **kwargs):
         copy_cmd = ["sudo", "cp", "-a", f"{cache_path}/.", f"{dest_dir}/"]
         cp_result = original_run(copy_cmd, capture_output=kwargs.get('capture_output', False),
                                  text=kwargs.get('text', False), check=kwargs.get('check', False))
-        if cp_result.returncode != 0:
-            print(f"[EXTRACT CACHE] Copy from cache failed (rc={cp_result.returncode}), falling back to extraction")
 
-        # Fix ownership/permissions on the destination after copy, since cached files
-        # may belong to the host user. This prevents systemd 203 errors from bad perms.
-        subprocess.run(["sudo", "chown", "-R", "root:root", dest_dir], check=False)
-        subprocess.run(["sudo", "chmod", "-R", "u+w,go-w", dest_dir], check=False)
-        subprocess.run(["sudo", "find", dest_dir, "-type", "f", "-perm", "/111", "-exec", "chmod", "755", "{}", ";"], check=False)
-        subprocess.run(["sudo", "find", dest_dir, "-type", "d", "-exec", "chmod", "755", "{}", ";"], check=False)
-
-        # Return a mock CompletedProcess matching the original command
-        return subprocess.CompletedProcess(args=cmd, returncode=cp_result.returncode,
-                                         stdout=cp_result.stdout, stderr=cp_result.stderr)
+        # Verify the destination actually got populated (safety net against poison pills)
+        if cp_result.returncode == 0 and os.path.isdir(dest_dir) and len(os.listdir(dest_dir)) > 0:
+            # Fix ownership/permissions on the destination after copy, since cached files
+            # may belong to the host user. This prevents systemd 203 errors from bad perms.
+            subprocess.run(["sudo", "chown", "-R", "root:root", dest_dir], check=False)
+            subprocess.run(["sudo", "chmod", "-R", "u+w,go-w", dest_dir], check=False)
+            subprocess.run(["sudo", "find", dest_dir, "-type", "f", "-perm", "/111", "-exec", "chmod", "755", "{}", ";"], check=False)
+            subprocess.run(["sudo", "find", dest_dir, "-type", "d", "-exec", "chmod", "755", "{}", ";"], check=False)
+            # Return a mock CompletedProcess matching the original command
+            return subprocess.CompletedProcess(args=cmd, returncode=cp_result.returncode,
+                                             stdout=cp_result.stdout, stderr=cp_result.stderr)
+        else:
+            print(f"[EXTRACT CACHE] Cache copy produced empty destination, falling back to extraction")
 
     # If cache_path exists but is empty, it's a poison pill from a failed prior run — remove it
     if os.path.exists(cache_path):

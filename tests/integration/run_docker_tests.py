@@ -149,31 +149,41 @@ async def run_test(task: TestTask, results_dir: str, semaphore: asyncio.Semaphor
 
 async def ui_loop(tasks: list[TestTask]):
     console = Console()
-    with Live(refresh_per_second=2, console=console, screen=False) as live:
-        while True:
-            running_tasks = [t for t in tasks if t.status == "RUNNING"]
-            completed_tasks = [t for t in tasks if t.status in ("PASS", "FAIL")]
-            pending_tasks = [t for t in tasks if t.status == "PENDING"]
+    with Live(refresh_per_second=2, console=console, screen=True) as live:
+        # Build the completed table ONCE with all rows pre-populated.
+        # screen=True uses the alternate terminal buffer — no flicker.
+        status_lookup = {}
+        dur_lookup = {}
+        var_lookup = {}
+        for t in tasks:
+            var_lookup[t.label] = t.display_var
+            status_lookup[t.label] = "[dim]PENDING[/dim]"
+            dur_lookup[t.label] = "—"
 
-            renderables = []
-
-            # --- Completed Tests (always present) ---
+        def build_table():
             table = Table(title="Completed Tests", expand=True, show_lines=False)
             table.add_column("Test", style="cyan", no_wrap=True)
             table.add_column("Variation", style="magenta", no_wrap=True)
             table.add_column("Status", justify="center", no_wrap=True)
             table.add_column("Duration", justify="right", no_wrap=True)
+            for t in tasks:
+                table.add_row(t.label, var_lookup[t.label], status_lookup[t.label], dur_lookup[t.label])
+            return table
 
-            if completed_tasks:
-                for t in completed_tasks:
-                    status_str = "[green]PASS[/green]" if t.status == "PASS" else "[red]FAIL[/red]"
-                    table.add_row(t.label, t.display_var, status_str, f"{t.duration}s")
-            else:
-                table.add_row("—", "—", "[dim]—[/dim]", "—")
+        while True:
+            running_tasks = [t for t in tasks if t.status == "RUNNING"]
+            pending_tasks = [t for t in tasks if t.status == "PENDING"]
 
-            renderables.append(table)
+            for t in tasks:
+                if t.status == "PASS":
+                    status_lookup[t.label] = "[green]PASS[/green]"
+                    dur_lookup[t.label] = f"{t.duration}s"
+                elif t.status == "FAIL":
+                    status_lookup[t.label] = "[red]FAIL[/red]"
+                    dur_lookup[t.label] = f"{t.duration}s"
 
-            # --- Running Tests panel(s) ---
+            renderables = [build_table()]
+
             for t in running_tasks:
                 log_text = tail_file(t.log_file, 40)
                 dur = int(time.time() - t.start_time)
@@ -188,10 +198,9 @@ async def ui_loop(tasks: list[TestTask]):
             if not running_tasks and not pending_tasks:
                 renderables.append(Text("All tests complete.", style="green bold"))
 
-            # --- Pending tests footer (always present) ---
             if pending_tasks:
-                names = ", ".join(t.label for t in pending_tasks)
-                renderables.append(Text(f"\nPending ({len(pending_tasks)}): {names}", style="blue"))
+                names = ", ".join(t.log_name for t in pending_tasks)
+                renderables.append(Text(f"Pending ({len(pending_tasks)}): {names}", style="blue"))
 
             live.update(Group(*renderables))
 
@@ -283,12 +292,9 @@ async def main():
     cache_dir = os.path.join(os.getcwd(), "tests", "integration", "cache")
     if os.path.exists(cache_dir):
         print("Cleaning up orphaned cache temp files...")
-        subprocess.run("find tests/integration/cache -name 'tmp*' -type f -delete 2>/dev/null", shell=True)
-        print("Cleaning up stale cache files older than 7 days...")
-        subprocess.run("find tests/integration/cache -type f -mtime +7 -delete 2>/dev/null", shell=True)
+        subprocess.run("find tests/integration/cache -name 'tmp*' -type f -delete 2>/dev/null; sudo find tests/integration/cache -name 'tmp*' -type f -delete 2>/dev/null", shell=True)
         # Remove empty extracted cache directories (poison pills from failed prior runs)
-        subprocess.run("find tests/integration/cache -name 'extracted_*' -type d -empty -delete 2>/dev/null", shell=True)
-        subprocess.run("find tests/integration/cache -type d -empty -delete 2>/dev/null", shell=True)
+        subprocess.run("find tests/integration/cache -name 'extracted_*' -type d -empty -delete 2>/dev/null; sudo find tests/integration/cache -name 'extracted_*' -type d -empty -delete 2>/dev/null", shell=True)
         
     print("Rebuilding Docker image...")
     res = subprocess.run("docker build -t ethpillar-rebuild -f tests/integration/Dockerfile.test .", shell=True)

@@ -90,15 +90,10 @@ if os.environ.get('ENABLE_EP_CACHE') == '1':
                                 self.headers = {'content-length': str(size)}
                                 self.raw = open(filepath, "rb")
                             def iter_content(self, chunk_size=1024):
-                                # Read in large blocks (1MB) from local cache so the
-                                # download progress bar flashes through instantly
+                                # Yield entire file at once since we're reading from
+                                # local cache — no need to simulate network I/O
                                 self.raw.seek(0)
-                                block_size = 1024 * 1024
-                                while True:
-                                    chunk = self.raw.read(block_size)
-                                    if not chunk:
-                                        break
-                                    yield chunk
+                                yield self.raw.read()
                             def raise_for_status(self): pass
                         size = os.path.getsize(cache_file)
                         return MockStreamResponse(cache_file, size)

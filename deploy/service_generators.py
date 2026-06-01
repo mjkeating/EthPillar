@@ -730,7 +730,6 @@ def generate_nimbus_vc_service(eth_network: str, graffiti: str, beacon_node_addr
     Returns:
         Service file content as a string
     """
-    _network = "--network=/opt/ethpillar/testnet/config.yaml" if eth_network == "ephemery" else f"--network={eth_network}"
     _args = [
         f"{INSTALL_DIR}/nimbus_validator_client",
         f"--data-dir={BASE_DATA_DIR}/nimbus_validator",
@@ -740,7 +739,6 @@ def generate_nimbus_vc_service(eth_network: str, graffiti: str, beacon_node_addr
         "--doppelganger-detection=off",
         f"--graffiti={graffiti}",
         beacon_node_address,
-        _network
     ]
     if fee_parameters:
         _args.append(fee_parameters.strip())

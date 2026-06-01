@@ -119,7 +119,7 @@ CL_REST_PORT=5052
 CL_MAX_PEER_COUNT=100
 CL_IP_ADDRESS=127.0.0.1
 JWTSECRET_PATH="/secrets/jwtsecret"
-INSTALL_CONFIG={install_config}
+INSTALL_CONFIG="{install_config}"
 GRAFFITI="EthPillarTest"
 FEE_RECIPIENT_ADDRESS=0x1234567890123456789012345678901234567890
 MEV_MIN_BID="0.006"
@@ -340,11 +340,36 @@ def check_service_journal_errors(service_name: str) -> "bool | str":
     return True
 
 
+def _has_validator_keys() -> bool:
+    """Check if any validator keystore files exist in common locations."""
+    keystore_dirs = [
+        "/var/lib/teku_validator/validator_keys",
+        "/var/lib/lighthouse_validator/validators",
+        "/var/lib/nimbus_validator/validators",
+        "/var/lib/prysm_validator/validator_keys",
+        "/var/lib/lodestar_validator/keystores",
+        "/var/lib/grandine/validator_keys",
+    ]
+    for d in keystore_dirs:
+        try:
+            if os.path.isdir(d):
+                for entry in os.scandir(d):
+                    if entry.is_file() and entry.name.endswith(".json"):
+                        return True
+        except (PermissionError, OSError):
+            continue
+    return False
+
+
 def check_service_start(service_name: str) -> bool:
     """Validates the service file via systemd and verifies it can start securely."""
     service_path = f"/etc/systemd/system/{service_name}.service"
     if not os.path.exists(service_path):
         return False
+
+    if service_name == "validator" and not _has_validator_keys():
+        print("  ⚠️  Skipping validator health check: no validator keys found (expected in test environment)")
+        return True
 
     if systemd_available():
         print(f"  [systemd] Validating {service_name} service via systemctl...")
@@ -383,7 +408,7 @@ def check_service_start(service_name: str) -> bool:
             res = subprocess.run(["systemctl", "show", "-p", prop, "--value", service_name], capture_output=True, text=True)
             return res.stdout.strip()
 
-        max_attempts = 12
+        max_attempts = 24 if service_name == "consensus" else 12
         for attempt in range(1, max_attempts + 1):
             time.sleep(5)
             

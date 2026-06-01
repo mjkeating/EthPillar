@@ -154,9 +154,9 @@ async def ui_loop(tasks: list[TestTask]):
         dur_lookup = {}
         var_lookup = {}
         for t in tasks:
-            var_lookup[t.label] = t.display_var
-            status_lookup[t.label] = "[dim]PENDING[/dim]"
-            dur_lookup[t.label] = "—"
+            var_lookup[t.log_name] = t.display_var
+            status_lookup[t.log_name] = "[dim]PENDING[/dim]"
+            dur_lookup[t.log_name] = "—"
 
         def build_table():
             table = Table(title="Completed Tests", expand=True, show_lines=False)
@@ -165,7 +165,7 @@ async def ui_loop(tasks: list[TestTask]):
             table.add_column("Status", justify="center", no_wrap=True)
             table.add_column("Duration", justify="right", no_wrap=True)
             for t in tasks:
-                table.add_row(t.label, var_lookup[t.label], status_lookup[t.label], dur_lookup[t.label])
+                table.add_row(t.label, var_lookup[t.log_name], status_lookup[t.log_name], dur_lookup[t.log_name])
             return table
 
         while True:
@@ -174,18 +174,18 @@ async def ui_loop(tasks: list[TestTask]):
 
             for t in tasks:
                 if t.status == "PASS":
-                    status_lookup[t.label] = "[green]PASS[/green]"
-                    dur_lookup[t.label] = f"{t.duration}s"
+                    status_lookup[t.log_name] = "[green]PASS[/green]"
+                    dur_lookup[t.log_name] = f"{t.duration}s"
                 elif t.status == "FAIL":
-                    status_lookup[t.label] = "[red]FAIL[/red]"
-                    dur_lookup[t.label] = f"{t.duration}s"
+                    status_lookup[t.log_name] = "[red]FAIL[/red]"
+                    dur_lookup[t.log_name] = f"{t.duration}s"
 
             renderables = [build_table()]
 
             for t in running_tasks:
                 table_height = len(tasks) + 5
-                available = max(6, console.size.height - table_height - 4)
-                panel_height = min(14, available)
+                available = max(6, console.size.height - table_height - 2)
+                panel_height = max(6, available // len(running_tasks))
                 log_text = tail_file(t.log_file, max(5, panel_height - 4))
                 dur = int(time.time() - t.start_time)
                 panel = Panel(
@@ -198,11 +198,6 @@ async def ui_loop(tasks: list[TestTask]):
 
             if not running_tasks and not pending_tasks:
                 renderables.append(Text("All tests complete.", style="green bold"))
-
-            if pending_tasks:
-                next_names = ", ".join(t.log_name for t in pending_tasks[:3])
-                suffix = "..." if len(pending_tasks) > 3 else ""
-                renderables.append(Text(f"Pending ({len(pending_tasks)}): {next_names}{suffix}", style="blue"))
 
             live.update(Group(*renderables))
 

@@ -210,7 +210,19 @@ async def ui_loop(tasks: list[TestTask]):
                 break
             await asyncio.sleep(0.5)
 
-def generate_html_report(tasks, results_dir, total_duration, timestamp):
+def get_git_commit():
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short=8", "HEAD"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return "unknown"
+
+def generate_html_report(tasks, results_dir, total_duration, timestamp, commit):
     html_path = os.path.join(results_dir, "index.html")
     passed = len([t for t in tasks if t.status == "PASS"])
     failed = len([t for t in tasks if t.status == "FAIL"])
@@ -242,6 +254,7 @@ def generate_html_report(tasks, results_dir, total_duration, timestamp):
         <h1>Integration Test Report</h1>
         <div class="summary">
             Run Time: {timestamp} <br>
+            Commit: <code>{commit}</code> <br>
             Total Duration: {total_duration}s <br>
             Total Tests: {len(tasks)} <br>
             Passed: {passed} <br>
@@ -316,7 +329,7 @@ async def main():
     
     total_duration = int(time.time() - start_time)
     
-    html_path = generate_html_report(tasks, results_dir, total_duration, timestamp)
+    html_path = generate_html_report(tasks, results_dir, total_duration, timestamp, get_git_commit())
     print(f"\n✅ Report generated: {html_path}")
     print(f"⏱️ Total runtime: {total_duration}s")
     

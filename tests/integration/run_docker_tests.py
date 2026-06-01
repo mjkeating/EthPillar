@@ -13,8 +13,7 @@ try:
     from rich.text import Text
     from rich.table import Table
 except ImportError:
-    print("The 'rich' library is required. Install it using: pip install rich")
-    sys.exit(1)
+    Live = Console = Group = Panel = Text = Table = None
 
 # Matrices
 combos = [
@@ -26,7 +25,7 @@ combos = [
 ]
 
 variations = [
-    "--network HOLESKY --mev --config 'Solo Staking Node'",
+    "--network HOODI --mev --config 'Solo Staking Node'",
     "--network SEPOLIA --config 'Full Node Only'",
 ]
 
@@ -34,13 +33,13 @@ custom_tests = [
     ("Geth-Lighthouse-Custom-Setup-SEPOLIA", "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lighthouse --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup'"),
     ("Nethermind-Grandine-Custom-Setup-SEPOLIA", "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Grandine --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup'"),
     ("Prysm-Reth-Custom-Setup-SEPOLIA", "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Prysm --vc Prysm --network SEPOLIA --mev --config 'Custom Setup'"),
-    ("Teku-Besu-VC-Only-HOLESKY", "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Teku-Besu --network HOLESKY --config 'Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052"),
+    ("Teku-Besu-VC-Only-HOODI", "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Teku-Besu --network HOODI --config 'Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052"),
 ]
 
 upgrade_tests = [
     ("Upgrade-Reth-Lighthouse", "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Lighthouse --network SEPOLIA --config 'Full Node Only' --test-updates"),
     ("Upgrade-Besu-Teku", "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Besu --cc Teku --network SEPOLIA --config 'Full Node Only' --test-updates"),
-    ("Upgrade-Nethermind-Nimbus", "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Nimbus --network EPHEMERY --config 'Full Node Only' --test-updates"),
+    ("Upgrade-Nethermind-Nimbus", "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Nimbus --network SEPOLIA --config 'Full Node Only' --test-updates"),
     ("Upgrade-Erigon-Caplin", "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Erigon --cc Caplin --network SEPOLIA --config 'Full Node Only' --test-updates"),
     ("Upgrade-Geth-Lodestar", "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lodestar --network SEPOLIA --config 'Full Node Only' --test-updates"),
 ]
@@ -75,11 +74,7 @@ def generate_tests():
     import re
     for combo in combos:
         for var in variations:
-            if combo == "Caplin-Erigon" and "HOLESKY" in var:
-                continue
             actual_var = var
-            if combo == "Nimbus-Nethermind" and "HOLESKY" in var:
-                actual_var = var.replace("HOLESKY", "EPHEMERY")
                 
             match = re.search(r'--network\s+(\S+)', actual_var)
             local_network = match.group(1) if match else ""
@@ -117,39 +112,42 @@ async def run_test(task: TestTask, results_dir: str, semaphore: asyncio.Semaphor
             
         task.start_time = time.time()
         
-        # Cleanup any orphaned container
-        subprocess.run(f"docker rm -f {task.container_name}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        flags = "--privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock"
-        cwd = os.getcwd()
-        run_cmd = f"docker run -d --name {task.container_name} {flags} -v {cwd}:/ethpillar ethpillar-rebuild"
-        
-        proc = await asyncio.create_subprocess_shell(run_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-        await proc.wait()
-        
-        if proc.returncode != 0:
-            task.status = "FAIL"
-            task.duration = int(time.time() - task.start_time)
-            with open(task.log_file, "a") as f:
-                f.write(f"\nFailed to start container. Exit code {proc.returncode}\n")
-            return
+        try:
+            # Cleanup any orphaned container
+            subprocess.run(f"docker rm -f {task.container_name}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
-        await asyncio.sleep(3) # Wait for systemd to initialize
-        
-        # Exec the actual test
-        exec_cmd = f"docker exec {task.container_name} {task.cmd} >> {task.log_file} 2>&1"
-        proc = await asyncio.create_subprocess_shell(exec_cmd)
-        await proc.wait()
-        
-        task.status = "PASS" if proc.returncode == 0 else "FAIL"
-        task.duration = int(time.time() - task.start_time)
-        
-        # Cleanup
-        subprocess.run(f"docker rm -f {task.container_name}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            flags = "--privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock"
+            cwd = os.getcwd()
+            run_cmd = f"docker run -d --name {task.container_name} {flags} -v {cwd}:/ethpillar ethpillar-rebuild"
+            
+            proc = await asyncio.create_subprocess_shell(run_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+            await proc.wait()
+            
+            if proc.returncode != 0:
+                task.status = "FAIL"
+                task.duration = int(time.time() - task.start_time)
+                with open(task.log_file, "a") as f:
+                    f.write(f"\nFailed to start container. Exit code {proc.returncode}\n")
+                return
+                
+            await asyncio.sleep(3) # Wait for systemd to initialize
+            
+            # Exec the actual test
+            exec_cmd = f"docker exec {task.container_name} {task.cmd} >> {task.log_file} 2>&1"
+            proc = await asyncio.create_subprocess_shell(exec_cmd)
+            await proc.wait()
+            
+            task.status = "PASS" if proc.returncode == 0 else "FAIL"
+            task.duration = int(time.time() - task.start_time)
+        finally:
+            subprocess.run(f"docker rm -f {task.container_name}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 async def ui_loop(tasks: list[TestTask]):
+    if Console is None:
+        print("The 'rich' library is required. Install it using: pip install rich")
+        sys.exit(1)
     console = Console()
-    with Live(refresh_per_second=2, console=console, screen=True) as live:
+    with Live(refresh_per_second=2, console=console, screen=True, transient=False) as live:
         # Build the completed table ONCE with all rows pre-populated.
         # screen=True uses the alternate terminal buffer — no flicker.
         status_lookup = {}
@@ -185,13 +183,16 @@ async def ui_loop(tasks: list[TestTask]):
             renderables = [build_table()]
 
             for t in running_tasks:
-                log_text = tail_file(t.log_file, 40)
+                table_height = len(tasks) + 5
+                available = max(6, console.size.height - table_height - 4)
+                panel_height = min(14, available)
+                log_text = tail_file(t.log_file, max(5, panel_height - 4))
                 dur = int(time.time() - t.start_time)
                 panel = Panel(
                     Text.from_ansi(log_text),
                     title=f"[yellow]RUNNING: {t.label} ({dur}s)[/yellow]",
                     border_style="yellow",
-                    height=30
+                    height=panel_height
                 )
                 renderables.append(panel)
 
@@ -199,8 +200,9 @@ async def ui_loop(tasks: list[TestTask]):
                 renderables.append(Text("All tests complete.", style="green bold"))
 
             if pending_tasks:
-                names = ", ".join(t.log_name for t in pending_tasks)
-                renderables.append(Text(f"Pending ({len(pending_tasks)}): {names}", style="blue"))
+                next_names = ", ".join(t.log_name for t in pending_tasks[:3])
+                suffix = "..." if len(pending_tasks) > 3 else ""
+                renderables.append(Text(f"Pending ({len(pending_tasks)}): {next_names}{suffix}", style="blue"))
 
             live.update(Group(*renderables))
 

@@ -113,6 +113,13 @@ def resolve_vc_name(cc_name: str, vc_choice: str) -> str:
         return cc_name
     return vc_choice
 
+def _int_param(params: Dict[str, str], key: str, default: int = 0) -> int:
+    """Read an integer parameter, treating unset or blank env values as default."""
+    value = params.get(key, default)
+    if value is None or value == "":
+        return default
+    return int(value)
+
 def is_valid_combination(ec: str, cc: str) -> bool:
     if ec == 'Erigon' and cc == 'Caplin':
         return True
@@ -131,14 +138,14 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
     bn_address = params.get('bn_address', '')
     jwtsecret_path = params.get('jwtsecret_path', '')
     sync_url = params.get('sync_url', '')
-    el_p2p_port = int(params.get('el_p2p_port', 0))
-    el_p2p_port_2 = int(params.get('el_p2p_port_2', 0))
-    el_rpc_port = int(params.get('el_rpc_port', 0))
-    el_max_peers = int(params.get('el_max_peers', 0))
-    cl_p2p_port = int(params.get('cl_p2p_port', 0))
-    cl_p2p_port_2 = int(params.get('cl_p2p_port_2', 0))
-    cl_rest_port = int(params.get('cl_rest_port', 0))
-    cl_max_peers = int(params.get('cl_max_peers', 0))
+    el_p2p_port = _int_param(params, 'el_p2p_port')
+    el_p2p_port_2 = _int_param(params, 'el_p2p_port_2')
+    el_rpc_port = _int_param(params, 'el_rpc_port')
+    el_max_peers = _int_param(params, 'el_max_peers')
+    cl_p2p_port = _int_param(params, 'cl_p2p_port')
+    cl_p2p_port_2 = _int_param(params, 'cl_p2p_port_2')
+    cl_rest_port = _int_param(params, 'cl_rest_port')
+    cl_max_peers = _int_param(params, 'cl_max_peers')
     mev_min_bid = params.get('mev_min_bid', '')
     skip_prompts = params.get('skip_prompts', 'false').lower() == 'true'
 

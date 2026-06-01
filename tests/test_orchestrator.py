@@ -18,7 +18,8 @@ from deploy.orchestrator import (
     get_combo_menu, get_vc_menu, get_ec_menu, get_cc_menu,
     get_vc_options_for_cc, resolve_vc_name,
     run_install, is_valid_combination,
-    PREDEFINED_COMBOS, EXECUTION_CLIENTS, CONSENSUS_CLIENTS
+    PREDEFINED_COMBOS, EXECUTION_CLIENTS, CONSENSUS_CLIENTS,
+    _int_param
 )
 
 # Mock parameters for run_install — keys must match what orchestrator.run_install() reads
@@ -79,6 +80,16 @@ class TestCsmOverrides:
         fee, graf, mev = apply_csm_overrides("Lido CSM Staking Node", network, env, "0xdefault", "default")
         assert fee == expected_fee
         assert graf == "LidoCSM"
+
+class TestParamParsing:
+    @pytest.mark.parametrize("value,expected", [
+        (None, 0),
+        ("", 0),
+        ("30304", 30304),
+        (9001, 9001),
+    ])
+    def test_int_param_defaults_only_for_unset_values(self, value, expected):
+        assert _int_param({"port": value}, "port") == expected
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Menu & Selection Logic

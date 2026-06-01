@@ -107,6 +107,61 @@ def check_service(service_name: str) -> bool:
     """Checks if a systemd service file exists."""
     return os.path.isfile(f"/etc/systemd/system/{service_name}.service")
 
+TEST_ENV_CONTENT = """MEVBOOST={mevboost}
+EL_P2P_PORT=30303
+EL_P2P_PORT_2=30304
+EL_RPC_PORT=8545
+EL_MAX_PEER_COUNT=50
+EL_IP_ADDRESS=127.0.0.1
+CL_P2P_PORT=9000
+CL_P2P_PORT_2=9001
+CL_REST_PORT=5052
+CL_MAX_PEER_COUNT=100
+CL_IP_ADDRESS=127.0.0.1
+JWTSECRET_PATH="/secrets/jwtsecret"
+INSTALL_CONFIG={install_config}
+GRAFFITI="EthPillarTest"
+FEE_RECIPIENT_ADDRESS=0x1234567890123456789012345678901234567890
+MEV_MIN_BID="0.006"
+CSM_GRAFFITI=EthPillarCSM
+CSM_MEV_MIN_BID=0.1
+CSM_FEE_RECIPIENT_ADDRESS_MAINNET=0x1111111111111111111111111111111111111111
+CSM_FEE_RECIPIENT_ADDRESS_HOODI=0x2222222222222222222222222222222222222222
+CSM_FEE_RECIPIENT_ADDRESS_HOLESKY=0x3333333333333333333333333333333333333333
+"""
+
+def snapshot_workspace_env(paths: List[str]) -> Dict[str, Optional[bytes]]:
+    """Capture env files so integration tests do not dirty the host checkout."""
+    snapshots: Dict[str, Optional[bytes]] = {}
+    for path in paths:
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                snapshots[path] = f.read()
+        else:
+            snapshots[path] = None
+    return snapshots
+
+def restore_workspace_env(snapshots: Dict[str, Optional[bytes]]) -> None:
+    for path, content in snapshots.items():
+        try:
+            if content is None:
+                if os.path.exists(path):
+                    os.remove(path)
+            else:
+                with open(path, "wb") as f:
+                    f.write(content)
+        except Exception as exc:
+            print(f"Warning: could not restore {path}: {exc}")
+
+def write_test_env(args: Any) -> None:
+    content = TEST_ENV_CONTENT.format(
+        mevboost="true" if args.mev else "false",
+        install_config=args.config,
+    )
+    for path in (".env", "env"):
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+
 def systemd_available() -> bool:
     """Returns True if systemd is running as PID 1 (real systemd, not container stub)."""
     try:
@@ -233,13 +288,7 @@ def check_service_file_substitution(service_name: str) -> bool:
 CHECKPOINT_SYNC_FAILURE = "checkpoint_sync_failure"
 
 def check_service_journal_errors(service_name: str) -> "bool | str":
-    """Check journal for known fatal startup errors after a service start.
-    
-    Returns:
-        True if no fatal errors found.
-        False if a hard config/binary error is found.
-        CHECKPOINT_SYNC_FAILURE sentinel string if only a checkpoint sync network error is found.
-    """
+    """Check journal for fatal service errors and narrowly scoped checkpoint transport failures."""
     result = subprocess.run(
         ["journalctl", "-u", service_name, "--no-pager", "-n", "100"],
         capture_output=True, text=True
@@ -247,23 +296,47 @@ def check_service_journal_errors(service_name: str) -> "bool | str":
     if result.returncode != 0:
         return True
     journal = result.stdout
-    # Hard binary/config errors — always fail
-    for pattern in ("caxa stub:", "Failed to create the lock directory"):
+
+    fatal_patterns = (
+        "caxa stub:",
+        "Failed to create the lock directory",
+        "Failed at step EXEC",
+        "status=203/EXEC",
+        "Permission denied",
+        "No such file or directory",
+        "unknown flag",
+        "Unknown network",
+        "unsupported network",
+        "Invalid value",
+        "invalid value",
+        "not executable",
+    )
+    for pattern in fatal_patterns:
         if pattern in journal:
-            print(f"  ❌ Service {service_name} journal contains fatal error: {pattern}")
+            print(f"  FAIL: Service {service_name} journal contains fatal error: {pattern}")
             return False
-    # External network errors — these are advisory (checkpoint sync server unreachable)
+
     checkpoint_patterns = (
         "Error loading checkpoint state",
-        "Failed to start beacon node",
         "checkpoint-sync",
-        "HttpClient",  # Lighthouse network error format
-        "connect: connection refused",
+        "checkpoint sync",
+        "checkpointSyncUrl",
+        "checkpoint-sync-url",
     )
-    for pattern in checkpoint_patterns:
-        if pattern in journal:
-            print(f"  ⚠️  Service {service_name} journal indicates checkpoint sync network issue: {pattern!r}")
-            return CHECKPOINT_SYNC_FAILURE
+    network_error_patterns = (
+        "HttpClient",
+        "connect: connection refused",
+        "Connection refused",
+        "Connection timed out",
+        "timed out",
+        "502 Bad Gateway",
+        "503 Service Unavailable",
+        "Temporary failure in name resolution",
+    )
+    if any(pattern in journal for pattern in checkpoint_patterns) and any(pattern in journal for pattern in network_error_patterns):
+        print(f"  WARN: Service {service_name} journal indicates checkpoint sync transport failure")
+        return CHECKPOINT_SYNC_FAILURE
+
     return True
 
 
@@ -536,21 +609,8 @@ if __name__ == "__main__":
         success = check_service_start(args.service)
         sys.exit(0 if success else 1)
 
-    with open(".env", "w") as f:
-        f.write(f"MEVBOOST={'true' if args.mev else 'false'}\n")
-        f.write("EL_P2P_PORT=30303\nCL_P2P_PORT=9000\n")
-        f.write(f"INSTALL_CONFIG={args.config}\n")
-        f.write("CSM_GRAFFITI=dummy\nCSM_MEV_MIN_BID=0.1\n")
-        f.write("CSM_FEE_RECIPIENT_ADDRESS_HOLESKY=0xCSM123\n")
-        f.write("CSM_FEE_RECIPIENT_ADDRESS_MAINNET=0xCSM456\n")
-    # functions.sh sources ./env (no dot); keep both in sync for test scripts
-    with open("env", "w") as f:
-        f.write(f"MEVBOOST={'true' if args.mev else 'false'}\n")
-        f.write("EL_P2P_PORT=30303\nCL_P2P_PORT=9000\n")
-        f.write(f"INSTALL_CONFIG={args.config}\n")
-        f.write("CSM_GRAFFITI=dummy\nCSM_MEV_MIN_BID=0.1\n")
-        f.write("CSM_FEE_RECIPIENT_ADDRESS_HOLESKY=0xCSM123\n")
-        f.write("CSM_FEE_RECIPIENT_ADDRESS_MAINNET=0xCSM456\n")
+    env_snapshots = snapshot_workspace_env([".env", "env"])
+    write_test_env(args)
             
     try:
         if not run_install(args, "0x1234567890123456789012345678901234567890"):
@@ -569,7 +629,8 @@ if __name__ == "__main__":
             subprocess.run(["bash", "/ethpillar/tests/integration/test_switching.sh"], check=True)
         print(f"\n🐳 Integration Test PASSED for {args.combo or args.ec}.")
     finally:
-        for f in [".env", "env"] + [p for p in os.listdir(".") if p.endswith((".tar.gz", ".tar.xz", ".zip"))]:
+        restore_workspace_env(env_snapshots)
+        for f in [p for p in os.listdir(".") if p.endswith((".tar.gz", ".tar.xz", ".zip"))]:
             try:
                 if os.path.exists(f): os.remove(f)
             except: pass

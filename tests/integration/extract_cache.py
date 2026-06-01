@@ -93,12 +93,9 @@ def intercept_subprocess_run(*args, **kwargs):
 
         # Verify the destination actually got populated (safety net against poison pills)
         if cp_result.returncode == 0 and os.path.isdir(dest_dir) and len(os.listdir(dest_dir)) > 0:
-            # Fix ownership/permissions on the destination after copy, since cached files
-            # may belong to the host user. This prevents systemd 203 errors from bad perms.
-            subprocess.run(["sudo", "chown", "-R", "root:root", dest_dir], check=False)
-            subprocess.run(["sudo", "chmod", "-R", "u+w,go-w", dest_dir], check=False)
-            subprocess.run(["sudo", "find", dest_dir, "-type", "f", "-perm", "/111", "-exec", "chmod", "755", "{}", ";"], check=False)
-            subprocess.run(["sudo", "find", dest_dir, "-type", "d", "-exec", "chmod", "755", "{}", ";"], check=False)
+            # Do not repair ownership or modes here. The cache must behave like
+            # extraction only; production install helpers are responsible for
+            # hardening final permissions, and the integration checks verify that.
             # Return a mock CompletedProcess matching the original command
             return subprocess.CompletedProcess(args=cmd, returncode=cp_result.returncode,
                                              stdout=cp_result.stdout, stderr=cp_result.stderr)

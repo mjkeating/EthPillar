@@ -179,6 +179,9 @@ async def ui_loop(tasks: list[TestTask]):
                 elif t.status == "FAIL":
                     status_lookup[t.log_name] = "[red]FAIL[/red]"
                     dur_lookup[t.log_name] = f"{t.duration}s"
+                elif t.status == "RUNNING":
+                    status_lookup[t.log_name] = "[yellow]RUNNING[/yellow]"
+                    dur_lookup[t.log_name] = f"{int(time.time() - t.start_time)}s"
 
             renderables = [build_table()]
 

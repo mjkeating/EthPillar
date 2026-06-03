@@ -165,6 +165,9 @@ def systemd_available() -> bool:
         return result.stdout.strip() in ("running", "degraded", "maintenance", "starting")
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
+    
+def is_validator_only(config: str) -> bool:
+    return "Validator Client Only" in config
 
 def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]]:
     """Determines expected artifacts based on CLI arguments."""
@@ -173,7 +176,7 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
     users = []
 
     config = args.config
-    is_validator_only = "Validator Client Only" in config
+    vc_only = is_validator_only(config)
     is_node_only = "Full Node Only" in config
     mev_enabled = args.mev
     is_staking = any(p in config for p in ["Solo Staking", "Lido CSM Staking"])
@@ -186,7 +189,7 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
     vc = args.vc.lower() if args.vc else ""
 
     # EC artifacts
-    if not is_validator_only:
+    if not vc_only:
         if "besu" in combo or "besu" in ec:
             binaries.append("besu"); users.append("execution"); services.append("execution")
         if "reth" in combo or "reth" in ec:
@@ -199,7 +202,7 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
             binaries.append("geth"); users.append("execution"); services.append("execution")
             
     # CC/BN artifacts
-    if not is_validator_only:
+    if not vc_only:
         if "lighthouse" in combo or "lighthouse" in cc:
             binaries.append("lighthouse"); users.append("consensus"); services.append("consensus")
         if "teku" in combo or "teku" in cc:
@@ -217,7 +220,7 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
             binaries.append("prysm-beacon-chain"); users.append("consensus"); services.append("consensus")
             
     # MEV Boost
-    if mev_enabled and not is_validator_only:
+    if mev_enabled and not vc_only:
         binaries.append("mev-boost"); users.append("mevboost"); services.append("mevboost")
 
     # VC artifacts
@@ -235,7 +238,7 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
         if "nimbus" in target_vc:
             binaries.append("nimbus_validator_client"); users.append("validator"); services.append("validator")
         if "teku" in target_vc:
-            if is_staking or is_validator_only:
+            if is_staking or vc_only:
                 services.append("validator"); users.append("validator")
         if "prysm" in target_vc:
             binaries.append("prysm-validator"); users.append("validator"); services.append("validator")
@@ -608,7 +611,10 @@ def verify(args: Any):
             success = False
 
     # Advisory port checks — runs after services are started
-    if not is_validator_only:
+    # Recompute local flags used by parse_expected_artifacts
+    combo = args.combo.lower() if args.combo else ""
+    cc = args.cc.lower() if args.cc else ""
+    if not is_validator_only(args.config):
         check_p2p_ports(expected_services, has_caplin=("caplin" in combo or "caplin" in cc))
 
     return success

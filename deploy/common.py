@@ -266,8 +266,15 @@ def ensure_java_available(min_version: int = 21) -> bool:
     if not _install_java(min_version):
         return False
 
-    _activate_java(min_version)
+    # The package normally makes the new JDK the default automatically (apt's
+    # update-alternatives "auto" mode picks the newest). Only force the
+    # selection if an older java is still the default (e.g. a manual pin),
+    # which also avoids a spurious "link group java is broken" warning.
     new = get_java_major_version()
+    if new is None or new < min_version:
+        _activate_java(min_version)
+        new = get_java_major_version()
+
     if new is not None and new >= min_version:
         print(f">> Java {new} is now active")
         return True

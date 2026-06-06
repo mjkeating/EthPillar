@@ -535,7 +535,6 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
 
         if not exec_start: return False
         try:
-            import shlex, signal, time
             cmd = shlex.split(exec_start)
             process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                        cwd=working_dir, preexec_fn=os.setsid)

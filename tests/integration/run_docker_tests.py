@@ -312,15 +312,7 @@ async def main():
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     results_dir = os.path.join(os.getcwd(), "tests", "integration", "results", f"run_{timestamp}")
     os.makedirs(results_dir, exist_ok=True)
-    
-    # Cache cleanup
-    cache_dir = os.path.join(os.getcwd(), "tests", "integration", "cache")
-    if os.path.exists(cache_dir):
-        print("Cleaning up orphaned cache temp files...")
-        subprocess.run("find tests/integration/cache -name 'tmp*' -type f -delete 2>/dev/null; sudo find tests/integration/cache -name 'tmp*' -type f -delete 2>/dev/null", shell=True)
-        # Remove empty extracted cache directories (poison pills from failed prior runs)
-        subprocess.run("find tests/integration/cache -name 'extracted_*' -type d -empty -delete 2>/dev/null; sudo find tests/integration/cache -name 'extracted_*' -type d -empty -delete 2>/dev/null", shell=True)
-        
+
     print("Rebuilding Docker image...")
     res = subprocess.run("docker build -t ethpillar-rebuild -f tests/integration/Dockerfile.test .", shell=True)
     if res.returncode != 0:

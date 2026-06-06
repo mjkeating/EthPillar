@@ -254,16 +254,20 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
         if "prysm" in target_vc:
             binaries.append("prysm-validator"); users.append("validator"); services.append("validator")
 
-    return list(set(binaries)), list(set(users)), _sort_services(list(set(services)))
+    has_caplin = "caplin" in combo or "caplin" in cc
+    caplin_mev = has_caplin and mev_enabled and not vc_only
+    return list(set(binaries)), list(set(users)), _sort_services(list(set(services)), caplin_mev=caplin_mev)
 
 
-SERVICE_HEALTH_ORDER = ("execution", "mevboost", "consensus", "validator")
+DEFAULT_SERVICE_HEALTH_ORDER = ("execution", "mevboost", "consensus", "validator")
+CAPLIN_MEV_SERVICE_HEALTH_ORDER = ("mevboost", "execution", "consensus", "validator")
 
 
-def _sort_services(services: List[str]) -> List[str]:
-    """Run execution before consensus so EL failures short-circuit CC health polls."""
-    order = {name: idx for idx, name in enumerate(SERVICE_HEALTH_ORDER)}
-    return sorted(services, key=lambda name: order.get(name, len(SERVICE_HEALTH_ORDER)))
+def _sort_services(services: List[str], caplin_mev: bool = False) -> List[str]:
+    """Order service health checks. Caplin+MEV needs mevboost before execution."""
+    order_list = CAPLIN_MEV_SERVICE_HEALTH_ORDER if caplin_mev else DEFAULT_SERVICE_HEALTH_ORDER
+    order = {name: idx for idx, name in enumerate(order_list)}
+    return sorted(services, key=lambda name: order.get(name, len(order_list)))
 
 def integration_subprocess_env() -> Dict[str, str]:
     """Environment for integration subprocesses that should use download/extract caches."""
@@ -332,7 +336,7 @@ def check_service_file_substitution(service_name: str) -> bool:
 # Sentinel for "service crashed, but only because of external network issue (checkpoint sync)"
 CHECKPOINT_SYNC_FAILURE = "checkpoint_sync_failure"
 
-def check_service_journal_errors(service_name: str) -> "bool | str":
+def check_service_journal_errors(service_name: str, *, emit_checkpoint_warn: bool = True) -> "bool | str":
     """Check journal for fatal service errors and narrowly scoped checkpoint transport failures."""
     result = subprocess.run(
         ["journalctl", "-u", service_name, "--no-pager", "-n", "100"],
@@ -347,6 +351,7 @@ def check_service_journal_errors(service_name: str) -> "bool | str":
         "Failed to create the lock directory",
         "Failed at step EXEC",
         "status=203/EXEC",
+        "status=2/INVALIDARGUMENT",
         "UnsupportedClassVersionError",
         "LinkageError occurred while loading main class",
         "Permission denied",
@@ -357,6 +362,7 @@ def check_service_journal_errors(service_name: str) -> "bool | str":
         "Invalid value",
         "invalid value",
         "not executable",
+        "cannot connect to builder client",
     )
     for pattern in fatal_patterns:
         if pattern in journal:
@@ -381,7 +387,8 @@ def check_service_journal_errors(service_name: str) -> "bool | str":
         "Temporary failure in name resolution",
     )
     if any(pattern in journal for pattern in checkpoint_patterns) and any(pattern in journal for pattern in network_error_patterns):
-        print(f"  WARN: Service {service_name} journal indicates checkpoint sync transport failure")
+        if emit_checkpoint_warn:
+            print(f"  WARN: Service {service_name} journal indicates checkpoint sync transport failure")
         return CHECKPOINT_SYNC_FAILURE
 
     return True
@@ -491,6 +498,9 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
             res = subprocess.run(["systemctl", "show", "-p", prop, "--value", service_name], capture_output=True, text=True)
             return res.stdout.strip()
 
+        caplin_execution = has_caplin and service_name == "execution" and bool(required_ports)
+        checkpoint_warned = False
+
         for attempt in range(1, max_attempts + 1):
             time.sleep(POLL_INTERVAL_SEC)
 
@@ -509,12 +519,18 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
             is_bad_state = (
                 active_state not in ("active", "activating")
                 or sub_state in ("dead", "failed", "auto-restart")
-                or (n_restarts and n_restarts != "0")
                 or main_pid == "0"
             )
             if is_bad_state:
-                journal_result = check_service_journal_errors(service_name)
+                journal_result = check_service_journal_errors(
+                    service_name,
+                    emit_checkpoint_warn=not checkpoint_warned,
+                )
                 if journal_result == CHECKPOINT_SYNC_FAILURE:
+                    checkpoint_warned = True
+                    if caplin_execution:
+                        # Caplin must bind EL+CL ports; keep polling (mevboost may still be starting).
+                        continue
                     print(f"  ⚠️  Service {service_name} is crash-looping due to checkpoint sync (external network issue)", flush=True)
                     print(f"      This is advisory — the service binary and config are valid.", flush=True)
                     print(f"      State: active={active_state}, sub={sub_state}, restarts={n_restarts}", flush=True)
@@ -542,9 +558,17 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
                             f"bound to port(s) {ports_text} after {attempt * POLL_INTERVAL_SEC}s)",
                             flush=True,
                         )
-                        journal_ok = check_service_journal_errors(service_name)
+                        journal_ok = check_service_journal_errors(
+                            service_name,
+                            emit_checkpoint_warn=not checkpoint_warned,
+                        )
                         return journal_ok is not False
-                    journal_result = check_service_journal_errors(service_name)
+                    journal_result = check_service_journal_errors(
+                        service_name,
+                        emit_checkpoint_warn=not checkpoint_warned,
+                    )
+                    if journal_result == CHECKPOINT_SYNC_FAILURE:
+                        checkpoint_warned = True
                     if journal_result is False:
                         print(
                             f"  ❌ Service {service_name} journal shows fatal error "

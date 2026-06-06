@@ -47,39 +47,39 @@ $variations = @(
 $customTests = @(
     [PSCustomObject]@{
         Label     = "Geth-Lighthouse-Custom-Setup-SEPOLIA"
-        DockerCmd = "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lighthouse --vc Lighthouse --network SEPOLIA --mev --config `"Custom Setup`" --test-updates"
+        DockerCmd = "bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Geth --cc Lighthouse --vc Lighthouse --network SEPOLIA --mev --config `"Custom Setup`" --test-updates"
     },
     [PSCustomObject]@{
         Label     = "Geth-Teku-FullNodeOnly-SEPOLIA"
-        DockerCmd = "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Teku --network SEPOLIA --config `"Full Node Only`" --test-updates"
+        DockerCmd = "bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Geth --cc Teku --network SEPOLIA --config `"Full Node Only`" --test-updates"
     },
     [PSCustomObject]@{
         Label     = "Nethermind-Grandine-Custom-Setup-SEPOLIA"
-        DockerCmd = "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Grandine --vc Lighthouse --network SEPOLIA --mev --config `"Custom Setup`" --test-updates"
+        DockerCmd = "bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Nethermind --cc Grandine --vc Lighthouse --network SEPOLIA --mev --config `"Custom Setup`" --test-updates"
     },
     [PSCustomObject]@{
         Label     = "Updates-Geth-Lodestar-SEPOLIA"
-        DockerCmd = "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lodestar --network SEPOLIA --config `"Full Node Only`" --test-updates"
+        DockerCmd = "bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Geth --cc Lodestar --network SEPOLIA --config `"Full Node Only`" --test-updates"
     },
     [PSCustomObject]@{
         Label     = "Updates-Reth-Lighthouse-SEPOLIA"
-        DockerCmd = "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Lighthouse --network SEPOLIA --config `"Full Node Only`" --test-updates"
+        DockerCmd = "bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Reth --cc Lighthouse --network SEPOLIA --config `"Full Node Only`" --test-updates"
     },
     [PSCustomObject]@{
         Label     = "Updates-Erigon-Caplin-SEPOLIA"
-        DockerCmd = "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Erigon --cc Caplin --network SEPOLIA --config `"Full Node Only`" --test-updates"
+        DockerCmd = "bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Erigon --cc Caplin --network SEPOLIA --config `"Full Node Only`" --test-updates"
     },
     [PSCustomObject]@{
         Label     = "Updates-Besu-Teku-SEPOLIA"
-        DockerCmd = "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Besu --cc Teku --network SEPOLIA --config `"Full Node Only`" --test-updates"
+        DockerCmd = "bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Besu --cc Teku --network SEPOLIA --config `"Full Node Only`" --test-updates"
     },
     [PSCustomObject]@{
         Label     = "Updates-Nethermind-Nimbus-EPHEMERY"
-        DockerCmd = "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Nimbus --network EPHEMERY --config `"Solo Staking Node`" --test-updates"
+        DockerCmd = "bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Nethermind --cc Nimbus --network EPHEMERY --config `"Solo Staking Node`" --test-updates"
     },
     [PSCustomObject]@{
         Label     = "Prysm-Reth-Custom-Setup-SEPOLIA"
-        DockerCmd = "python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Prysm --vc Prysm --network SEPOLIA --mev --config `"Custom Setup`" --test-updates"
+        DockerCmd = "bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Reth --cc Prysm --vc Prysm --network SEPOLIA --mev --config `"Custom Setup`" --test-updates"
     }
 )
 
@@ -131,7 +131,7 @@ foreach ($combo in $combos) {
                 Start-Sleep -Seconds 3
                 
                 # Run the test via exec using deploy/deploy-node.py
-                $execCmd = "docker exec $containerName python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo $ComboName $VariationArgs"
+                $execCmd = "docker exec $containerName bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --combo $ComboName $VariationArgs"
                 Invoke-Expression "$execCmd > `"$logFile`" 2>&1"
                 $exitCode = $LASTEXITCODE
             } finally {
@@ -179,10 +179,8 @@ foreach ($customTest in $customTests) {
             & docker run -d --name $containerName @DockerFlags -v "$($WorkingDir):/ethpillar" ethpillar-rebuild | Out-Null
             Start-Sleep -Seconds 3
             
-            # Run the test via exec (DockerCmd already includes 'python3 ... run_inside_docker.py ...')
-            # Strip the 'docker run --rm ... ethpillar-rebuild' prefix and run just the python part
-            $pythonCmd = $DockerCmd -replace '^.*ethpillar-rebuild\s+', ''
-            $execCmd = "docker exec $containerName $pythonCmd"
+            # Run the test via exec (DockerCmd uses run_test.sh for production bootstrap)
+            $execCmd = "docker exec $containerName $DockerCmd"
             Invoke-Expression "$execCmd > `"$logFile`" 2>&1"
             $exitCode = $LASTEXITCODE
         } finally {

@@ -28,7 +28,7 @@ The `Dockerfile.test` uses `ubuntu:24.04` and sets systemd as the `CMD`. The tes
    - `--cgroupns=host` — shares the host cgroup namespace
    - `--tmpfs /run --tmpfs /run/lock` — systemd runtime directories
 2. Waits 3 seconds for systemd to initialize.
-3. Runs the test via `docker exec <container> python3 ...`.
+3. Runs the test via `docker exec <container> bash /ethpillar/tests/integration/run_test.sh ...`, which sources `functions.sh` to install Python deps the same way production does, then runs the test runner.
 4. Cleans up the container with `docker rm -f` in a `finally` block.
 
 ## Project Structure
@@ -36,7 +36,8 @@ The `Dockerfile.test` uses `ubuntu:24.04` and sets systemd as the `CMD`. The tes
 - `Dockerfile.test`: Ubuntu 24.04 with systemd as PID 1.
 - `run_docker_tests.ps1`: (Windows) Main script to run all test combinations in parallel batches.
 - `run_docker_tests.sh`: (Linux/WSL) Main script to run all test combinations in parallel batches.
-- `run_inside_docker.py`: Executes inside each container to run the deployment and verify artifacts via `systemctl`.
+- `run_test.sh`: Production bootstrap wrapper — sources `functions.sh` (venv + `ensure_python_deps`) then execs the test runner.
+- `run_inside_docker.py`: Executes inside each container to run the deployment and verify artifacts via `systemctl`. Does not install Python deps itself.
 - `sitecustomize.py`: Provides GitHub API caching to avoid rate limits.
 - `cache/`: Persistent cache for GitHub API responses and release binaries.
 
@@ -70,7 +71,8 @@ docker run -d --name ep-manual \
 # Open a shell inside
 docker exec -it ep-manual bash
 
-# Inside: run a deployment, then check systemd
+# Inside: bootstrap deps like production, then run a deployment
+source /ethpillar/functions.sh
 python3 /ethpillar/deploy/deploy-node.py --skip_prompts true \
   --network SEPOLIA --install_config "Custom Setup" \
   --ec Nethermind --cc Grandine --vc Lighthouse

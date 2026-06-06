@@ -48,7 +48,7 @@ To run a specific test scenario with full systemd validation:
 docker run -d --name ep-test --privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock -v "${PWD}:/ethpillar" ethpillar-test
 
 # Execute the test script inside the container
-docker exec ep-test python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo Lighthouse-Reth --config "Solo Staking Node" --network SEPOLIA
+docker exec ep-test bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --combo Lighthouse-Reth --config "Solo Staking Node" --network SEPOLIA
 
 # Clean up
 docker rm -f ep-test
@@ -60,6 +60,7 @@ docker rm -f ep-test
 - `tests/test_service_generators.py`: Golden-string tests for systemd units.
 - `tests/test_install_node.bats`: Validation logic for the install wrapper.
 - `tests/test_ethpillar_installnode.bats`: TUI routing and role selection logic.
+- `tests/integration/run_test.sh`: Bootstraps Python deps via production `functions.sh`, then runs the test runner.
 - `tests/integration/run_inside_docker.py`: The core engine for containerized installation testing.
 
 

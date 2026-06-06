@@ -41,15 +41,15 @@ variations=(
 
 # Custom setup tests
 custom_tests=(
-    "Geth-Lighthouse-Custom-Setup-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lighthouse --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup' --test-updates"
-    "Geth-Teku-FullNodeOnly-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Teku --network SEPOLIA --config 'Full Node Only' --test-updates"
-    "Nethermind-Grandine-Custom-Setup-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Grandine --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup' --test-updates"
-    "Updates-Geth-Lodestar-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Geth --cc Lodestar --network SEPOLIA --config 'Full Node Only' --test-updates"
-    "Updates-Reth-Lighthouse-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Lighthouse --network SEPOLIA --config 'Full Node Only' --test-updates"
-    "Updates-Erigon-Caplin-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Erigon --cc Caplin --network SEPOLIA --config 'Full Node Only' --test-updates"
-    "Updates-Besu-Teku-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Besu --cc Teku --network SEPOLIA --config 'Full Node Only' --test-updates"
-    "Updates-Nethermind-Nimbus-EPHEMERY|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Nethermind --cc Nimbus --network EPHEMERY --config 'Solo Staking Node' --test-updates"
-    "Prysm-Reth-Custom-Setup-SEPOLIA|python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --ec Reth --cc Prysm --vc Prysm --network SEPOLIA --mev --config 'Custom Setup' --test-updates"
+    "Geth-Lighthouse-Custom-Setup-SEPOLIA|bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Geth --cc Lighthouse --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup' --test-updates"
+    "Geth-Teku-FullNodeOnly-SEPOLIA|bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Geth --cc Teku --network SEPOLIA --config 'Full Node Only' --test-updates"
+    "Nethermind-Grandine-Custom-Setup-SEPOLIA|bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Nethermind --cc Grandine --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup' --test-updates"
+    "Updates-Geth-Lodestar-SEPOLIA|bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Geth --cc Lodestar --network SEPOLIA --config 'Full Node Only' --test-updates"
+    "Updates-Reth-Lighthouse-SEPOLIA|bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Reth --cc Lighthouse --network SEPOLIA --config 'Full Node Only' --test-updates"
+    "Updates-Erigon-Caplin-SEPOLIA|bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Erigon --cc Caplin --network SEPOLIA --config 'Full Node Only' --test-updates"
+    "Updates-Besu-Teku-SEPOLIA|bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Besu --cc Teku --network SEPOLIA --config 'Full Node Only' --test-updates"
+    "Updates-Nethermind-Nimbus-EPHEMERY|bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Nethermind --cc Nimbus --network EPHEMERY --config 'Solo Staking Node' --test-updates"
+    "Prysm-Reth-Custom-Setup-SEPOLIA|bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --ec Reth --cc Prysm --vc Prysm --network SEPOLIA --mev --config 'Custom Setup' --test-updates"
 )
 
 # Use a temporary file to store results from parallel processes
@@ -101,12 +101,9 @@ for combo in "${combos[@]}"; do
             docker run -d --name "$container_name" $DOCKER_SYSTEMD_FLAGS -v "$(pwd):/ethpillar" ethpillar-rebuild > /dev/null 2>&1
             sleep 3  # wait for systemd to initialize
             
-            # Ensure EthPillar's Python dependencies are available in the vanilla image
-            docker exec "$container_name" bash -c 'cd /ethpillar && source functions.sh' >/dev/null 2>&1 || true
-            
-            # Run the test via exec
+            # Run the test via exec (bootstrap Python deps through production code)
             # Use eval to properly handle quoted arguments (e.g., --config 'Solo Staking Node')
-            eval "docker exec \"$container_name\" python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo \"$combo\" $actual_var > \"$log_file\" 2>&1"
+            eval "docker exec \"$container_name\" bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --combo \"$combo\" $actual_var > \"$log_file\" 2>&1"
             status=$?
             
             # Always clean up the container
@@ -139,10 +136,7 @@ for custom in "${custom_tests[@]}"; do
         docker run -d --name "$container_name" $DOCKER_SYSTEMD_FLAGS -v "$(pwd):/ethpillar" ethpillar-rebuild > /dev/null 2>&1
         sleep 3  # wait for systemd to initialize
 
-        # Ensure EthPillar's Python dependencies are available in the vanilla image
-        docker exec "$container_name" bash -c 'cd /ethpillar && source functions.sh' >/dev/null 2>&1 || true
-
-        # Run the test via exec
+        # Run the test via exec (cmd already uses run_test.sh for production bootstrap)
         docker exec "$container_name" bash -c "$cmd" > "$log_file" 2>&1
         status=$?
 

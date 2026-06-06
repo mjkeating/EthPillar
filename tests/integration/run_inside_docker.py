@@ -185,36 +185,34 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
 
     return list(set(binaries)), list(set(users)), list(set(services))
 
+def require_production_python_deps() -> None:
+    """Fail fast if production bootstrap did not install EthPillar Python deps."""
+    required = (
+        ("requests", "requests"),
+        ("tqdm", "tqdm"),
+        ("console-menu", "consolemenu"),
+        ("python-dotenv", "dotenv"),
+    )
+    missing = [pkg for pkg, module in required if _missing_module(module)]
+    if missing:
+        print(f"❌ EthPillar Python dependencies are not installed: {', '.join(missing)}")
+        print("   Integration tests must bootstrap via production code:")
+        print("   bash /ethpillar/tests/integration/run_test.sh ...")
+        sys.exit(1)
+
+
+def _missing_module(module: str) -> bool:
+    try:
+        __import__(module)
+        return False
+    except ImportError:
+        return True
+
+
 def run_install(args: Any, fee_address: str):
     print(f"\n🚀 Running: deploy/deploy-node.py for {args.combo or args.ec}...")
 
-    # In vanilla images EthPillar Python deps might not be present yet. Install them.
-    req_file = "/ethpillar/requirements.txt"
-    venv_python = "/ethpillar/.venv/bin/python3"
-    if os.path.isfile(req_file):
-        try:
-            venv_dir = "/ethpillar/.venv"
-            if not os.path.isfile(venv_python):
-                subprocess.run(
-                    [sys.executable, "-m", "venv", venv_dir],
-                    check=True,
-                    timeout=120,
-                )
-            deps_result = subprocess.run(
-                [f"{venv_dir}/bin/pip", "install", "-r", req_file],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            if deps_result.returncode == 0:
-                print("  ✅ Python deps installed from /ethpillar/requirements.txt")
-            else:
-                print(f"  ⚠️  pip install output: {deps_result.stderr}")
-        except Exception as e:
-            print(f"  ⚠️  Could not auto-install Python deps: {e}")
-
-    python_exe = venv_python if os.path.isfile(venv_python) else sys.executable
-    cmd = [python_exe, args.script_name, "--skip_prompts", "true", "--network", args.network, "--install_config", args.config, "--fee_address", fee_address]
+    cmd = [sys.executable, args.script_name, "--skip_prompts", "true", "--network", args.network, "--install_config", args.config, "--fee_address", fee_address]
     if args.combo: cmd.extend(["--combo", args.combo])
     if args.ec: cmd.extend(["--ec", args.ec])
     if args.cc: cmd.extend(["--cc", args.cc])
@@ -470,6 +468,7 @@ if __name__ == "__main__":
     parser.add_argument('--vc_only_bn_address', type=str, default="http://192.168.1.123:5052")
     parser.add_argument('--test-updates', action='store_true', default=False)
     args = parser.parse_args()
+    require_production_python_deps()
 
     with open(".env", "w") as f:
         f.write(f"MEVBOOST={'true' if args.mev else 'false'}\n")

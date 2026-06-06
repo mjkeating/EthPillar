@@ -254,7 +254,16 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
         if "prysm" in target_vc:
             binaries.append("prysm-validator"); users.append("validator"); services.append("validator")
 
-    return list(set(binaries)), list(set(users)), list(set(services))
+    return list(set(binaries)), list(set(users)), _sort_services(list(set(services)))
+
+
+SERVICE_HEALTH_ORDER = ("execution", "mevboost", "consensus", "validator")
+
+
+def _sort_services(services: List[str]) -> List[str]:
+    """Run execution before consensus so EL failures short-circuit CC health polls."""
+    order = {name: idx for idx, name in enumerate(SERVICE_HEALTH_ORDER)}
+    return sorted(services, key=lambda name: order.get(name, len(SERVICE_HEALTH_ORDER)))
 
 def integration_subprocess_env() -> Dict[str, str]:
     """Environment for integration subprocesses that should use download/extract caches."""
@@ -338,6 +347,8 @@ def check_service_journal_errors(service_name: str) -> "bool | str":
         "Failed to create the lock directory",
         "Failed at step EXEC",
         "status=203/EXEC",
+        "UnsupportedClassVersionError",
+        "LinkageError occurred while loading main class",
         "Permission denied",
         "No such file or directory",
         "unknown flag",
@@ -533,6 +544,15 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
                         )
                         journal_ok = check_service_journal_errors(service_name)
                         return journal_ok is not False
+                    journal_result = check_service_journal_errors(service_name)
+                    if journal_result is False:
+                        print(
+                            f"  ❌ Service {service_name} journal shows fatal error "
+                            f"while waiting for port(s) to bind",
+                            flush=True,
+                        )
+                        subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "20"])
+                        return False
                 except Exception:
                     pass  # ignore ss errors
             else:
@@ -596,12 +616,22 @@ def verify(args: Any):
         present = check_user(u)
         print(f"{'✅' if present else '❌'} User  : {u}")
         if not present: success = False
+    service_health_failed = False
     for s in expected_services:
         present = check_service(s)
         print(f"{'✅' if present else '❌'} Service File: {s}")
-        if not present: success = False
-        elif not check_service_file_substitution(s): success = False
-        elif not check_service_start(s, has_caplin=has_caplin and s == "execution"): success = False
+        if not present:
+            success = False
+            service_health_failed = True
+        elif not check_service_file_substitution(s):
+            success = False
+            service_health_failed = True
+        elif service_health_failed:
+            print(f"  ⏭️  Skipping {s} health check (prior service health check failed)", flush=True)
+            success = False
+        elif not check_service_start(s, has_caplin=has_caplin and s == "execution"):
+            success = False
+            service_health_failed = True
 
     # Check binary ownership/permissions (should be root:root 755)
     print("\n🔐 Verifying binary ownership/permissions...")

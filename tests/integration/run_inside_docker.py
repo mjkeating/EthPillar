@@ -187,6 +187,24 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
 
 def run_install(args: Any, fee_address: str):
     print(f"\n🚀 Running: deploy/deploy-node.py for {args.combo or args.ec}...")
+
+    # In vanilla images EthPillar Python deps might not be present yet. Install them.
+    req_file = "/ethpillar/requirements.txt"
+    if os.path.isfile(req_file):
+        try:
+            deps_result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--user", "-r", req_file],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if deps_result.returncode == 0:
+                print("  ✅ Python deps installed from /ethpillar/requirements.txt")
+            else:
+                print(f"  ⚠️  pip install output: {deps_result.stderr}")
+        except Exception as e:
+            print(f"  ⚠️  Could not auto-install Python deps: {e}")
+
     cmd = [sys.executable, args.script_name, "--skip_prompts", "true", "--network", args.network, "--install_config", args.config, "--fee_address", fee_address]
     if args.combo: cmd.extend(["--combo", args.combo])
     if args.ec: cmd.extend(["--ec", args.ec])

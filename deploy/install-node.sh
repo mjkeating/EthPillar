@@ -152,10 +152,14 @@ linux_install_python() {
     exit_on_error $?
     ohai "Installing python tools"
     sudo apt-get install --no-install-recommends --no-install-suggests -y $python-pip $python-tk $python-venv
-    ohai "Creating venv"
-    $python -m venv ~/.local --system-site-packages
-    ohai "Installing pip requirements"
-    ~/.local/bin/pip install requests console-menu python-dotenv tqdm
+    ohai "Installing EthPillar Python runtime dependencies"
+    req_file="${ETHPILLAR_DIR}/requirements.txt"
+    if [[ -f "$req_file" ]]; then
+        python3 -m pip install --user -r "$req_file"
+    else
+        # Fallback for older checkouts that may not have requirements.txt yet
+        python3 -m pip install --user requests console-menu python-dotenv tqdm
+    fi
     exit_on_error $?
 }
 

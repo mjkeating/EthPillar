@@ -7,6 +7,11 @@
 
 # Made for home and solo stakers 🏠🥩
 
+# Determine repo root if BASE_DIR is not already set by the caller
+if [[ -z "${BASE_DIR:-}" ]]; then
+    BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+
 set -u
 
 # enable command completion
@@ -245,6 +250,43 @@ getNetwork(){
       fi
     esac
     export NETWORK
+}
+
+# Ensure Python runtime dependencies are available.
+# Installs from requirements.txt if any required packages are missing.
+ensure_python_deps() {
+    local req_file="${BASE_DIR}/requirements.txt"
+    if [[ ! -f "$req_file" ]]; then
+        return 0
+    fi
+
+    # Ensure pip is available
+    if ! python3 -m pip --version &>/dev/null; then
+        ohai "Installing python3-pip"
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq python3-pip
+    fi
+
+    # Check if any packages are missing
+    local missing=()
+    local pkg import_name
+    while IFS= read -r pkg || [[ -n "$pkg" ]]; do
+        [[ "$pkg" =~ ^#.*$ ]] && continue
+        [[ -z "$pkg" ]] && continue
+        import_name="$pkg"
+        case "$pkg" in
+            console-menu) import_name="consolemenu" ;;
+            python-dotenv) import_name="dotenv" ;;
+        esac
+        if ! PYTHONPATH="${BASE_DIR}" python3 -c "import ${import_name}" 2>/dev/null; then
+            missing+=("$pkg")
+        fi
+    done < "$req_file"
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        ohai "Installing missing Python packages: ${missing[*]}"
+        python3 -m pip install --user -r "$req_file"
+    fi
 }
 
 # Ensure a Java runtime is available for JVM-based clients (Teku, Besu)
@@ -1343,3 +1385,6 @@ function export_logs() {
 
     whiptail --title "Export Complete" --msgbox "Logs have been exported to $HOME/$output_file" 10 60
 }
+
+# Auto-install Python dependencies on first load
+ensure_python_deps

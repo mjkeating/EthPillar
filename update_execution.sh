@@ -158,7 +158,11 @@ function updateClient(){
 		sudo systemctl start execution		
 		;;
 	  Besu)
-		updateJRE
+		# Ensure JDK 25 is available BEFORE touching the running client; abort
+		# the update otherwise so we don't replace a working Besu with one that
+		# cannot start (UnsupportedClassVersionError).
+		# NOTE: keep this version in sync with ensure_java_available(25) in deploy/besu.py.
+		updateJRE 25 || error "❌ JDK 25 is required by Besu but could not be installed. Aborting update; Besu was left untouched."
 		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')
 		FILENAME=$(echo "$RELEASE_DATA" | jq -r '.filenames[0]')
 		info "✅ Downloading URL: $BINARIES_URL"

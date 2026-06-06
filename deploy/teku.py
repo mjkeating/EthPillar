@@ -47,8 +47,11 @@ def download_teku(eth_network: str) -> str:
     # Download the latest release binary
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Teku")
-    # Ensure Java is installed for Teku (best-effort)
-    ensure_java_available()
+    # Ensure a suitable Java runtime is available before replacing the binary;
+    # abort otherwise so a working Teku is never swapped for one that cannot run.
+    if not ensure_java_available():
+        print("❌ A Java runtime could not be installed. Aborting Teku install.")
+        exit(1)
 
     # Extract to a temporary directory then install and harden
     tmp_dir = f"{DOWNLOAD_DIR}/teku_temp"

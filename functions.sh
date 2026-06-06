@@ -312,9 +312,15 @@ ensure_python_deps() {
 updateJRE(){
   # Delegate Java installation to the Python helper in deploy.common. This
   # centralizes logic and allows the Python modules to call the same helper.
-  PYTHONPATH="${BASE_DIR}" python3 - <<'PY'
+  # First argument is the minimum required Java major version (defaults to 21);
+  # the helper upgrades the runtime when the installed one is too old.
+  # Returns non-zero if a suitable Java could not be made available, so callers
+  # can abort before replacing a working client binary.
+  local min_version="${1:-21}"
+  PYTHONPATH="${BASE_DIR}" python3 - "$min_version" <<'PY'
+import sys
 from deploy.common import ensure_java_available
-ensure_java_available()
+sys.exit(0 if ensure_java_available(int(sys.argv[1])) else 1)
 PY
 }
 

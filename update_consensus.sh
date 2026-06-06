@@ -186,7 +186,9 @@ function updateClient(){
 		test -f /etc/systemd/system/validator.service && sudo service validator start
 	    ;;
 	  Teku)
-		updateJRE
+		# Ensure Java is available BEFORE touching the running client; abort the
+		# update otherwise so we don't replace a working Teku with a broken one.
+		updateJRE || error "❌ A Java runtime is required by Teku but could not be installed. Aborting update; Teku was left untouched."
 		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')
 		FILENAME=$(echo "$RELEASE_DATA" | jq -r '.filenames[0]')
 		info "✅ Downloading URL: $BINARIES_URL"

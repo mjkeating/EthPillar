@@ -26,15 +26,22 @@ setup() {
         cat <<EOF > "$MOCK_BIN_DIR/$name"
 #!/bin/bash
 echo "$name \$*" >> "$COMMAND_LOG"
-# If python3 is called to create a venv, we must create the fake pip
+# If python3 is called to create a venv, create fake venv binaries
 if [ "$name" == "python3" ] && [[ "\$*" == *"-m venv"* ]]; then
-    mkdir -p "$HOME/.local/bin"
-    cat <<PIPOV > "$HOME/.local/bin/pip"
+    venv_path="\${@: -1}"
+    mkdir -p "\$venv_path/bin"
+    cat <<PIPOV > "\$venv_path/bin/pip"
 #!/bin/bash
 echo "pip \\\$*" >> "$COMMAND_LOG"
 exit 0
 PIPOV
-    chmod +x "$HOME/.local/bin/pip"
+    chmod +x "\$venv_path/bin/pip"
+    cat <<PYOV > "\$venv_path/bin/python3"
+#!/bin/bash
+echo "python3 \\\$*" >> "$COMMAND_LOG"
+exit 0
+PYOV
+    chmod +x "\$venv_path/bin/python3"
 fi
 if [ -n "$stdout" ]; then echo "$stdout"; fi
 exit 0

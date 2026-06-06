@@ -29,15 +29,13 @@ After switching, use **System Administration → Update EthPillar** inside the T
 New users can skip this step — the installer below already points to this fork.
 
 ---
-
-## ✨ v5.4.7 — Execution Client Fix + Real-time Plotting
+## ✨ v5.4.8 — Python Dependencies & Java Support Improvements
 
 ### Highlights
-- Fixed critical regression with **Execution Client** updates and downgrades (Nethermind, Besu, etc.)
-- Added **real-time execution time plotting** in Logging & Monitoring section
-- Improved reliability of folder-based client handling
+- **Fixed Python dependency issues** — EthPillar now automatically manages its own virtual environment (`.venv`) and installs required packages
+- **Improved Java support for Besu & Teku** — Added proper JDK version detection and safety checks before upgrading
 
-Thanks to **@b0a7** for PR #14 (fix) and PR #11 (charting)!
+Thanks to **@b0a7** and **@rggjan** for these improvements!
 
 ---
 

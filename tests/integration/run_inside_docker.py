@@ -265,8 +265,33 @@ def integration_subprocess_env() -> Dict[str, str]:
     return env
 
 
+def require_production_python_deps() -> None:
+    """Fail fast if production bootstrap did not install EthPillar Python deps."""
+    required = (
+        ("requests", "requests"),
+        ("tqdm", "tqdm"),
+        ("console-menu", "consolemenu"),
+        ("python-dotenv", "dotenv"),
+    )
+    missing = [pkg for pkg, module in required if _missing_module(module)]
+    if missing:
+        print(f"❌ EthPillar Python dependencies are not installed: {', '.join(missing)}")
+        print("   Integration tests must bootstrap via production code:")
+        print("   bash /ethpillar/tests/integration/run_test.sh ...")
+        sys.exit(1)
+
+
+def _missing_module(module: str) -> bool:
+    try:
+        __import__(module)
+        return False
+    except ImportError:
+        return True
+
+
 def run_install(args: Any, fee_address: str):
     print(f"\n🚀 Running: deploy/deploy-node.py for {args.combo or args.ec}...")
+
     cmd = [sys.executable, args.script_name, "--skip_prompts", "true", "--network", args.network, "--install_config", args.config, "--fee_address", fee_address]
     if args.combo: cmd.extend(["--combo", args.combo])
     if args.ec: cmd.extend(["--ec", args.ec])
@@ -634,6 +659,7 @@ if __name__ == "__main__":
     parser.add_argument('--test-switching', action='store_true', default=False)
     parser.add_argument('--service', type=str, default="", help='Service name for verify-service-health')
     args = parser.parse_args()
+    require_production_python_deps()
 
     if args.script_name == "verify-service-health":
         if not args.service:

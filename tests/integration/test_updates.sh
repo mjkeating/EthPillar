@@ -22,7 +22,7 @@ function check_binary() {
 function check_service_health() {
     local service="$1"
     echo "  [Integration] Delegating health check for $service to run_inside_docker.py..."
-    python3 /ethpillar/tests/integration/run_inside_docker.py verify-service-health --service "$service"
+    bash /ethpillar/tests/integration/run_test.sh verify-service-health --service "$service"
 }
 
 echo "========================================="

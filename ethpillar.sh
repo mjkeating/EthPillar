@@ -11,7 +11,7 @@
 # 🙌 Ask questions on Discord:
 #    * https://discord.gg/dEpAVWgFNB
 
-EP_VERSION="5.4.7"
+EP_VERSION="5.4.8"
 
 # Default text editor
 export EDITOR="nano"
@@ -740,6 +740,9 @@ while true; do
             git pull --ff-only
             git reset --hard
             git clean -xdf
+
+            # Re-install any new or updated Python dependencies
+            ensure_python_deps
             
             # Restore .env.overrides if it was backed up
             [[ -f /tmp/env.overrides.backup ]] && mv /tmp/env.overrides.backup .env.overrides

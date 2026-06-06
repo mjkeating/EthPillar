@@ -52,6 +52,7 @@ bash tests/integration/run_docker_tests.sh
 - `tests/test_service_generators.py`: Golden-string tests for systemd units.
 - `tests/test_install_node.bats`: Validation logic for the install wrapper.
 - `tests/test_ethpillar_installnode.bats`: TUI routing and role selection logic.
+- `tests/integration/run_test.sh`: Bootstraps Python deps via production `functions.sh`, then runs the test runner.
 - `tests/integration/run_inside_docker.py`: The core engine for containerized installation testing.
 
 

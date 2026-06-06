@@ -41,13 +41,13 @@ echo "Testing execution client switch..."
 bash /ethpillar/switch_client.sh execution --auto --target-client "$NEW_EL"
 
 echo "Verifying new execution client health ($NEW_EL)..."
-python3 /ethpillar/tests/integration/run_inside_docker.py verify-service-health --service execution
+bash /ethpillar/tests/integration/run_test.sh verify-service-health --service execution
 
 echo "Testing consensus client switch..."
 bash /ethpillar/switch_client.sh consensus --auto --target-client "$NEW_CL"
 
 echo "Verifying new consensus client health ($NEW_CL)..."
-python3 /ethpillar/tests/integration/run_inside_docker.py verify-service-health --service consensus
+bash /ethpillar/tests/integration/run_test.sh verify-service-health --service consensus
 
 echo "========================================="
 echo " Verifying post-switch artifacts"

@@ -94,7 +94,17 @@ requirements_check() {
 
 linux_install_pre() {
     sudo apt-get update
-    sudo apt-get install --no-install-recommends --no-install-suggests -y curl git ccze bc tmux jq nano btop whiptail ufw
+    sudo apt-get install --no-install-recommends --no-install-suggests -y curl git ccze bc tmux jq nano btop whiptail ufw python3-venv python3-pip
+    exit_on_error $?
+}
+
+linux_install_python_deps() {
+    local _repo="$HOME/git/ethpillar"
+    ohai "Installing Python runtime dependencies"
+    export BASE_DIR="${_repo}"
+    cd "${_repo}" || exit_on_error $?
+    # shellcheck source=functions.sh
+    source "${_repo}/functions.sh"
     exit_on_error $?
 }
 
@@ -135,6 +145,7 @@ if [[ "$OS" == "Linux" ]]; then
     wait_for_user
     linux_install_pre
     linux_install_installer
+    linux_install_python_deps
 
     echo ""
     echo ""

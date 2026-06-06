@@ -35,7 +35,9 @@ RUN find /lib/systemd/system/sysinit.target.wants/ -name "*.service" ! -name "sy
 
 ENV TERM=xterm
 
-RUN pip3 install --break-system-packages requests tqdm python-dotenv console-menu pytest pyyaml
+# Test harness only — EthPillar runtime deps are NOT pre-installed here.
+# Integration tests install them via `source functions.sh` (same as production).
+RUN pip3 install --break-system-packages pytest pyyaml
 
 WORKDIR /ethpillar
 

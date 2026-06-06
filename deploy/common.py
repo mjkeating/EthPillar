@@ -176,32 +176,111 @@ def download_file(url: str, dest_path: str, label: str = "file") -> None:
         exit(1)
 
 
-def ensure_java_available() -> bool:
-    """Ensure a Java runtime is available on the system.
+def get_java_major_version() -> Optional[int]:
+    """Return the major version of the ``java`` on PATH, or None if unavailable.
 
-    Returns True if Java is available or was installed successfully,
-    False otherwise. This helper performs a best-effort install of a
-    headless OpenJDK package when run with sufficient privileges.
+    Handles both the modern version scheme (``"25.0.1"`` -> 25) and the legacy
+    one (``"1.8.0_392"`` -> 8).
     """
     import shutil
-    # If java is already on PATH, we're done
-    if shutil.which("java"):
-        print(">> Java runtime already available on PATH")
+    if not shutil.which("java"):
+        return None
+    try:
+        res = subprocess.run(["java", "-version"], capture_output=True, text=True, check=False)
+        # The version string is printed on stderr by convention.
+        out = (res.stderr or "") + (res.stdout or "")
+        m = re.search(r'version "(\d+)(?:\.(\d+))?', out)
+        if not m:
+            return None
+        major = int(m.group(1))
+        if major == 1 and m.group(2):  # legacy 1.x scheme: 1.8 -> 8
+            major = int(m.group(2))
+        return major
+    except Exception:
+        return None
+
+
+def _install_java(version: int) -> bool:
+    """Install the Ubuntu upstream OpenJDK ``version`` package.
+
+    Returns False (with a clear error) on failure, e.g. when the Ubuntu release
+    is too old to provide that JDK. We intentionally do NOT fall back to a
+    third-party JDK source; the user should upgrade Ubuntu instead.
+    """
+    pkg = f"openjdk-{version}-jre-headless"
+    print(f">> Attempting apt install of {pkg}")
+    subprocess.run(["sudo", "apt-get", "update", "-qq"], check=False)
+    res = subprocess.run(["sudo", "apt-get", "-y", "install", pkg], check=False)
+    if res.returncode == 0:
+        print(f">> Installed {pkg}")
+        return True
+    print(f"""
+>> ❌ ERROR: could not install '{pkg}' from the Ubuntu repositories.
+>>    Besu requires JDK {version}. If the package was not found, your Ubuntu
+>>    release is likely too old to provide it; upgrade Ubuntu (e.g. run
+>>    'sudo do-release-upgrade'), then re-run the update.
+""")
+    return False
+
+
+def _activate_java(version: int) -> None:
+    """Make the installed JDK ``version`` the default ``java`` on PATH.
+
+    The distro package registers an update-alternatives entry, but the active
+    selection is not always switched to the newly installed JDK, so set it
+    explicitly. JVM clients like Besu invoke ``java`` from PATH.
+    """
+    # Ubuntu's package installs to /usr/lib/jvm/java-<version>-openjdk-<arch>/.
+    candidates = glob.glob(f"/usr/lib/jvm/java-{version}-*/bin/java")
+    if not candidates:
+        return
+    java_bin = sorted(candidates)[0]
+    subprocess.run(["sudo", "update-alternatives", "--install",
+                    "/usr/bin/java", "java", java_bin, "2500"], check=False)
+    subprocess.run(["sudo", "update-alternatives", "--set", "java", java_bin], check=False)
+    print(f">> Set default java -> {java_bin}")
+
+
+def ensure_java_available(min_version: int = 21) -> bool:
+    """Ensure a Java runtime of at least ``min_version`` is the default on PATH.
+
+    JVM-based clients ship binaries compiled for a specific Java release (e.g.
+    Besu 26.6.0 requires JDK 25). It is not enough for *some* java to be
+    present: it must be recent enough, otherwise the client fails to start with
+    ``UnsupportedClassVersionError``. This helper checks the active java major
+    version and installs/activates a newer JDK when needed.
+
+    Returns True if a suitable Java is available (already or after install),
+    False otherwise. Best-effort: installing requires sudo privileges.
+    """
+    current = get_java_major_version()
+    if current is not None and current >= min_version:
+        print(f">> Java {current} already available on PATH (>= {min_version})")
         return True
 
-    # Try installing a common headless JRE package
-    try:
-        print(">> Java not found on PATH; attempting to install OpenJDK headless")
-        res = subprocess.run(["sudo", "apt-get", "-y", "-qq", "install", "openjdk-21-jre-headless"], check=False)
-        if res.returncode == 0:
-            print(">> OpenJDK installed")
-            return True
-        else:
-            print(">> Failed to install OpenJDK via apt; return code:", res.returncode)
-            return False
-    except Exception as e:
-        print(">> Exception while attempting to install Java:", e)
+    if current is None:
+        print(f">> Java not found on PATH; installing OpenJDK {min_version}")
+    else:
+        print(f">> Java {current} is older than the required {min_version}; upgrading")
+
+    if not _install_java(min_version):
         return False
+
+    # The package normally makes the new JDK the default automatically (apt's
+    # update-alternatives "auto" mode picks the newest). Only force the
+    # selection if an older java is still the default (e.g. a manual pin),
+    # which also avoids a spurious "link group java is broken" warning.
+    new = get_java_major_version()
+    if new is None or new < min_version:
+        _activate_java(min_version)
+        new = get_java_major_version()
+
+    if new is not None and new >= min_version:
+        print(f">> Java {new} is now active")
+        return True
+    print(f">> Warning: active Java is {new}, expected >= {min_version}. "
+          f"Select it manually with: sudo update-alternatives --config java")
+    return False
 
 
 def clear_screen() -> None:

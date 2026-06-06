@@ -6,7 +6,7 @@ This script is a thin wrapper that invokes the Linux integration test script
 via Windows Subsystem for Linux (WSL).
 
 All integration test logic has been consolidated into:
-tests/integration/run_docker_tests.sh
+tests/integration/run_docker_tests.py
 #>
 
 $ErrorActionPreference = "Stop"

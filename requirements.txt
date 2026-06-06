@@ -1,0 +1,6 @@
+# EthPillar Python runtime dependencies
+# Installed automatically on startup and during upgrades
+requests
+tqdm
+console-menu
+python-dotenv

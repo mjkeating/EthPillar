@@ -7,6 +7,11 @@
 
 # Made for home and solo stakers 🏠🥩
 
+# Determine repo root if BASE_DIR is not already set by the caller
+if [[ -z "${BASE_DIR:-}" ]]; then
+    BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+
 set -u
 
 # enable command completion
@@ -247,13 +252,75 @@ getNetwork(){
     export NETWORK
 }
 
+# Ensure Python runtime dependencies are available in a project venv.
+# Ubuntu 24.04+ blocks system-wide/user pip installs (PEP 668).
+ensure_python_deps() {
+    local req_file="${BASE_DIR}/requirements.txt"
+    local venv_dir="${BASE_DIR}/.venv"
+    local py_version venv_python venv_pip
+    [[ -f "$req_file" ]] || error "requirements.txt not found in ${BASE_DIR}"
+
+    # venv creation needs ensurepip (provided by python3-venv / python3.X-venv)
+    if ! python3 -c "import ensurepip" &>/dev/null; then
+        ohai "Installing python3-venv"
+        sudo apt-get update -qq
+        py_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+        sudo apt-get install -y -qq python3-venv "python${py_version}-venv" python3-pip
+        python3 -c "import ensurepip" &>/dev/null || error "python3-venv is required but ensurepip is still unavailable"
+    fi
+
+    # Recreate venv if missing or incomplete (can happen when ensurepip was absent)
+    if [[ ! -x "${venv_dir}/bin/python3" || ! -x "${venv_dir}/bin/pip" ]]; then
+        [[ -d "$venv_dir" ]] && rm -rf "$venv_dir"
+        ohai "Creating Python virtual environment"
+        python3 -m venv "$venv_dir" || error "Failed to create Python virtual environment"
+        if [[ ! -x "${venv_dir}/bin/pip" ]]; then
+            "${venv_dir}/bin/python3" -m ensurepip --upgrade || error "Failed to bootstrap pip in virtual environment"
+        fi
+    fi
+
+    venv_python="${venv_dir}/bin/python3"
+    venv_pip="${venv_dir}/bin/pip"
+
+    # Check if any packages are missing
+    local missing=()
+    local pkg import_name
+    while IFS= read -r pkg || [[ -n "$pkg" ]]; do
+        [[ "$pkg" =~ ^#.*$ ]] && continue
+        [[ -z "$pkg" ]] && continue
+        import_name="$pkg"
+        case "$pkg" in
+            console-menu) import_name="consolemenu" ;;
+            python-dotenv) import_name="dotenv" ;;
+        esac
+        if ! PYTHONPATH="${BASE_DIR}" "$venv_python" -c "import ${import_name}" 2>/dev/null; then
+            missing+=("$pkg")
+        fi
+    done < "$req_file"
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        ohai "Installing missing Python packages: ${missing[*]}"
+        "$venv_pip" install -r "$req_file" || error "Failed to install Python dependencies"
+    fi
+
+    export ETHPILLAR_VENV="$venv_dir"
+    export ETHPILLAR_PYTHON="$venv_python"
+    export PATH="${venv_dir}/bin:${PATH}"
+}
+
 # Ensure a Java runtime is available for JVM-based clients (Teku, Besu)
 updateJRE(){
   # Delegate Java installation to the Python helper in deploy.common. This
   # centralizes logic and allows the Python modules to call the same helper.
-  PYTHONPATH="${BASE_DIR}" python3 - <<'PY'
+  # First argument is the minimum required Java major version (defaults to 21);
+  # the helper upgrades the runtime when the installed one is too old.
+  # Returns non-zero if a suitable Java could not be made available, so callers
+  # can abort before replacing a working client binary.
+  local min_version="${1:-21}"
+  PYTHONPATH="${BASE_DIR}" python3 - "$min_version" <<'PY'
+import sys
 from deploy.common import ensure_java_available
-ensure_java_available()
+sys.exit(0 if ensure_java_available(int(sys.argv[1])) else 1)
 PY
 }
 
@@ -1352,3 +1419,6 @@ function export_logs() {
 
     whiptail --title "Export Complete" --msgbox "Logs have been exported to $HOME/$output_file" 10 60
 }
+
+# Auto-install Python dependencies on first load
+ensure_python_deps

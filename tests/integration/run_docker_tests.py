@@ -133,7 +133,7 @@ async def run_test(task: TestTask, results_dir: str, semaphore: asyncio.Semaphor
             await asyncio.sleep(3) # Wait for systemd to initialize
             
             # Exec the actual test
-            exec_cmd = f"docker exec {task.container_name} {task.cmd} >> {task.log_file} 2>&1"
+            exec_cmd = f"docker exec -e PYTHONUNBUFFERED=1 {task.container_name} {task.cmd} >> {task.log_file} 2>&1"
             proc = await asyncio.create_subprocess_shell(exec_cmd)
             await proc.wait()
             

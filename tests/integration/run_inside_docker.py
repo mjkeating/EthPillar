@@ -17,6 +17,16 @@ import shlex
 import time
 from typing import List, Dict, Optional, Any, Union, Tuple
 
+# Line-buffer stdout so docker log files reflect true execution order.
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except (AttributeError, OSError):
+    pass
+
+POLL_INTERVAL_SEC = 5
+EXECUTION_POLL_ATTEMPTS = 12   # 60s
+CONSENSUS_POLL_ATTEMPTS = 36   # 180s — CC checkpoint sync and Caplin P2P can be slow on testnets
+
 # Import INSTALL_DIR from common so the path is maintained centrally
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 try:
@@ -257,6 +267,7 @@ def run_install(args: Any, fee_address: str):
          
     env = os.environ.copy()
     env["ENABLE_EP_CACHE"] = "1"
+    env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONPATH"] = "/ethpillar/tests/integration:" + env.get("PYTHONPATH", "")
          
     try:
@@ -335,6 +346,38 @@ def check_service_journal_errors(service_name: str) -> "bool | str":
     return True
 
 
+def _detect_caplin_from_service() -> bool:
+    """Return True when the execution unit runs Erigon with integrated Caplin."""
+    service_path = "/etc/systemd/system/execution.service"
+    if not os.path.exists(service_path):
+        return False
+    with open(service_path, "r", encoding="utf-8") as f:
+        return "caplin" in f.read().lower()
+
+
+def _required_ports(service_name: str, has_caplin: bool = False) -> List[int]:
+    if service_name == "execution":
+        ports = [30303]
+        if has_caplin:
+            ports.append(9000)
+        return ports
+    if service_name == "consensus":
+        return [9000]
+    if service_name == "mevboost":
+        return [18550]
+    return []
+
+
+def _poll_attempts(service_name: str, has_caplin: bool = False) -> int:
+    if service_name == "consensus" or (service_name == "execution" and has_caplin):
+        return CONSENSUS_POLL_ATTEMPTS
+    return EXECUTION_POLL_ATTEMPTS
+
+
+def _ports_bound(ports: List[int], ss_output: str) -> bool:
+    return all(f":{port}" in ss_output for port in ports)
+
+
 def _has_validator_keys() -> bool:
     """Check if any validator keystore files exist in common locations."""
     keystore_dirs = [
@@ -356,7 +399,7 @@ def _has_validator_keys() -> bool:
     return False
 
 
-def check_service_start(service_name: str) -> bool:
+def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
     """Validates the service file via systemd and verifies it can start securely."""
     service_path = f"/etc/systemd/system/{service_name}.service"
     if not os.path.exists(service_path):
@@ -367,7 +410,7 @@ def check_service_start(service_name: str) -> bool:
         return True
 
     if systemd_available():
-        print(f"  [systemd] Validating {service_name} service via systemctl...")
+        print(f"  [systemd] Validating {service_name} service via systemctl...", flush=True)
 
         # Step 1: reload daemon — this validates unit file syntax
         result = subprocess.run(
@@ -375,9 +418,9 @@ def check_service_start(service_name: str) -> bool:
             capture_output=True, text=True
         )
         if result.returncode != 0:
-            print(f"  ❌ daemon-reload failed for {service_name}:\n{result.stderr}")
+            print(f"  ❌ daemon-reload failed for {service_name}:\n{result.stderr}", flush=True)
             return False
-        print(f"  ✅ daemon-reload succeeded (service file syntax OK)")
+        print(f"  ✅ daemon-reload succeeded (service file syntax OK)", flush=True)
 
         # Step 2: start the service
         result = subprocess.run(
@@ -385,28 +428,29 @@ def check_service_start(service_name: str) -> bool:
             capture_output=True, text=True, timeout=30
         )
         if result.returncode != 0:
-            print(f"  ❌ systemctl start {service_name} failed:\n{result.stderr}")
+            print(f"  ❌ systemctl start {service_name} failed:\n{result.stderr}", flush=True)
             subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "20"])
             return False
 
         # Step 3: Wait and check health
-        import time
-        
-        target_port = None
-        if service_name == "execution": target_port = 30303
-        elif service_name == "consensus": target_port = 9000
-        elif service_name == "mevboost": target_port = 18550
+        required_ports = _required_ports(service_name, has_caplin=has_caplin)
+        max_attempts = _poll_attempts(service_name, has_caplin=has_caplin)
+        max_wait_sec = max_attempts * POLL_INTERVAL_SEC
+        port_label = ", ".join(str(p) for p in required_ports) if required_ports else "stability"
 
-        print(f"  [systemd] Polling {service_name} health for up to 60 seconds...")
-        
+        print(
+            f"  [systemd] Polling {service_name} health for up to {max_wait_sec}s "
+            f"(ports: {port_label})...",
+            flush=True,
+        )
+
         def get_prop(prop):
             res = subprocess.run(["systemctl", "show", "-p", prop, "--value", service_name], capture_output=True, text=True)
             return res.stdout.strip()
 
-        max_attempts = 24 if service_name == "consensus" else 12
         for attempt in range(1, max_attempts + 1):
-            time.sleep(5)
-            
+            time.sleep(POLL_INTERVAL_SEC)
+
             active_state = get_prop("ActiveState")
             sub_state = get_prop("SubState")
             exec_main_status = get_prop("ExecMainStatus")
@@ -414,7 +458,7 @@ def check_service_start(service_name: str) -> bool:
             main_pid = get_prop("MainPID")
 
             if exec_main_status == "203":
-                print(f"  ❌ Service {service_name} failed with exit code 203 (likely bad binary path or permissions)")
+                print(f"  ❌ Service {service_name} failed with exit code 203 (likely bad binary path or permissions)", flush=True)
                 subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "20"])
                 return False
 
@@ -428,39 +472,48 @@ def check_service_start(service_name: str) -> bool:
             if is_bad_state:
                 journal_result = check_service_journal_errors(service_name)
                 if journal_result == CHECKPOINT_SYNC_FAILURE:
-                    print(f"  ⚠️  Service {service_name} is crash-looping due to checkpoint sync (external network issue)")
-                    print(f"      This is advisory — the service binary and config are valid.")
-                    print(f"      State: active={active_state}, sub={sub_state}, restarts={n_restarts}")
+                    print(f"  ⚠️  Service {service_name} is crash-looping due to checkpoint sync (external network issue)", flush=True)
+                    print(f"      This is advisory — the service binary and config are valid.", flush=True)
+                    print(f"      State: active={active_state}, sub={sub_state}, restarts={n_restarts}", flush=True)
                     subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "10"],
                                   capture_output=False)
                     # Count as pass — installation is correct, external sync server is unreachable
                     return True
                 elif journal_result is False:
-                    print(f"  ❌ Service {service_name} has fatal config/binary error")
+                    print(f"  ❌ Service {service_name} has fatal config/binary error", flush=True)
                     subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "20"])
                     return False
                 else:
                     # Unknown bad state — show details
-                    print(f"  ❌ Service {service_name} is in bad state: active={active_state}, sub={sub_state}, restarts={n_restarts}, pid={main_pid}")
+                    print(f"  ❌ Service {service_name} is in bad state: active={active_state}, sub={sub_state}, restarts={n_restarts}, pid={main_pid}", flush=True)
                     subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "20"])
                     return False
 
-            if target_port:
+            if required_ports:
                 try:
                     result = subprocess.run(["ss", "-lntu"], capture_output=True, text=True)
-                    if f":{target_port}" in result.stdout:
-                        print(f"  ✅ Service {service_name} is healthy (active, PID: {main_pid}, bound to port {target_port} after {attempt*5}s)")
+                    if _ports_bound(required_ports, result.stdout):
+                        ports_text = ", ".join(str(p) for p in required_ports)
+                        print(
+                            f"  ✅ Service {service_name} is healthy (active, PID: {main_pid}, "
+                            f"bound to port(s) {ports_text} after {attempt * POLL_INTERVAL_SEC}s)",
+                            flush=True,
+                        )
                         journal_ok = check_service_journal_errors(service_name)
                         return journal_ok is not False
                 except Exception:
                     pass  # ignore ss errors
             else:
                 if attempt >= 3:
-                    print(f"  ✅ Service {service_name} is healthy (active, PID: {main_pid}, 15s stability check passed)")
+                    print(f"  ✅ Service {service_name} is healthy (active, PID: {main_pid}, 15s stability check passed)", flush=True)
                     journal_ok = check_service_journal_errors(service_name)
                     return journal_ok is not False
 
-        print(f"  ❌ Service {service_name} timed out waiting for port {target_port} to bind after 60s")
+        ports_text = ", ".join(str(p) for p in required_ports) if required_ports else "required ports"
+        print(
+            f"  ❌ Service {service_name} timed out waiting for {ports_text} to bind after {max_wait_sec}s",
+            flush=True,
+        )
         subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "20"])
         return False
 
@@ -497,56 +550,12 @@ def check_service_start(service_name: str) -> bool:
             print(f"  ❌ Failed to run service: {e}")
             return False
 
-def check_p2p_ports(expected_services: List[str], has_caplin: bool = False) -> bool:
-    """Check that expected client P2P ports are listening after services start.
-
-    Checks the standard EL (30303) and CL (9000) P2P ports over both TCP and UDP
-    using `ss -lntu`. Results are advisory — clients may still be binding ports
-    immediately after startup, so failures warn but do not fail the test.
-    """
-    if not systemd_available():
-        print("  [no-systemd] Skipping port checks (no live services in fallback mode)")
-        return True
-
-    port_checks = []
-    if "execution" in expected_services:
-        port_checks.append((30303, "Execution P2P"))
-    if "consensus" in expected_services or has_caplin:
-        port_checks.append((9000, "Consensus P2P"))
-
-    if not port_checks:
-        return True
-
-    # Give services a moment to bind their ports after startup.
-    # Caplin (integrated CL in Erigon) binds port 9000 separately from port 30303
-    # and may need extra time after the execution service health check returns.
-    sleep_time = 30 if has_caplin else 5
-    time.sleep(sleep_time)
-
-    print("\n🔌 Checking P2P listening ports...")
-    try:
-        result = subprocess.run(["ss", "-lntu"], capture_output=True, text=True, check=True)
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
-        print(f"  ⚠️  Could not run ss: {e}")
-        return True
-
-    lines = result.stdout.splitlines()
-    for port, label in port_checks:
-        for proto in ("tcp", "udp"):
-            listening = any(
-                line.lower().startswith(proto) and f":{port}" in line
-                for line in lines
-            )
-            status = "✅" if listening else "⚠️ "
-            state = "listening" if listening else "not yet listening (client may still be starting)"
-            print(f"  {status} Port {port}/{proto.upper()} ({label}): {state}")
-
-    return True  # Advisory — never fails the integration test
-
-
 def verify(args: Any):
-    print(f"\n🔍 Verifying Artifacts...")
+    print(f"\n🔍 Verifying Artifacts...", flush=True)
     expected_binaries, expected_users, expected_services = parse_expected_artifacts(args)
+    combo = args.combo.lower() if args.combo else ""
+    cc = args.cc.lower() if args.cc else ""
+    has_caplin = "caplin" in combo or "caplin" in cc
     success = True
     for b in expected_binaries:
         present = check_binary(b)
@@ -561,7 +570,7 @@ def verify(args: Any):
         print(f"{'✅' if present else '❌'} Service File: {s}")
         if not present: success = False
         elif not check_service_file_substitution(s): success = False
-        elif not check_service_start(s): success = False
+        elif not check_service_start(s, has_caplin=has_caplin and s == "execution"): success = False
 
     # Check binary ownership/permissions (should be root:root 755)
     print("\n🔐 Verifying binary ownership/permissions...")
@@ -601,13 +610,6 @@ def verify(args: Any):
             print(f"  ❌ No /var/lib/* directory owned by user {u} (expected) ")
             success = False
 
-    # Advisory port checks — runs after services are started
-    # Recompute local flags used by parse_expected_artifacts
-    combo = args.combo.lower() if args.combo else ""
-    cc = args.cc.lower() if args.cc else ""
-    if not is_validator_only(args.config):
-        check_p2p_ports(expected_services, has_caplin=("caplin" in combo or "caplin" in cc))
-
     return success
 
 if __name__ == "__main__":
@@ -629,9 +631,14 @@ if __name__ == "__main__":
 
     if args.script_name == "verify-service-health":
         if not args.service:
-            print("❌ --service argument is required for verify-service-health")
+            print("❌ --service argument is required for verify-service-health", flush=True)
             sys.exit(1)
-        success = check_service_start(args.service)
+        has_caplin = (
+            _detect_caplin_from_service()
+            if args.service == "execution"
+            else False
+        )
+        success = check_service_start(args.service, has_caplin=has_caplin)
         sys.exit(0 if success else 1)
 
     env_snapshots = snapshot_workspace_env([".env", "env"])
@@ -642,16 +649,27 @@ if __name__ == "__main__":
             sys.exit(1)
         if not verify(args):
             sys.exit(1)
+        sys.stdout.flush()
+        subprocess_env = os.environ.copy()
+        subprocess_env["PYTHONUNBUFFERED"] = "1"
         if args.test_updates:
-            print("\n=========================================")
-            print(" Running Updates Integration Test...")
-            print("=========================================")
-            subprocess.run(["bash", "/ethpillar/tests/integration/test_updates.sh"], check=True)
+            print("\n=========================================", flush=True)
+            print(" Running Updates Integration Test...", flush=True)
+            print("=========================================", flush=True)
+            subprocess.run(
+                ["bash", "/ethpillar/tests/integration/test_updates.sh"],
+                check=True,
+                env=subprocess_env,
+            )
         if args.test_switching:
-            print("\n=========================================")
-            print(" Running Client Switching Integration Test...")
-            print("=========================================")
-            subprocess.run(["bash", "/ethpillar/tests/integration/test_switching.sh"], check=True)
+            print("\n=========================================", flush=True)
+            print(" Running Client Switching Integration Test...", flush=True)
+            print("=========================================", flush=True)
+            subprocess.run(
+                ["bash", "/ethpillar/tests/integration/test_switching.sh"],
+                check=True,
+                env=subprocess_env,
+            )
             # After the switch completes, re-read the new service files and run a full verify
             # to confirm binary ownership, permissions, and health of the new clients.
             print("\n=========================================")

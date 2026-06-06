@@ -36,7 +36,7 @@ RUN find /lib/systemd/system/sysinit.target.wants/ -name "*.service" ! -name "sy
 ENV TERM=xterm
 
 # Test harness only — EthPillar runtime deps are NOT pre-installed here.
-# Integration tests install them via `source functions.sh` (same as production).
+# Unit/integration tests install them via functions.sh bootstrap scripts.
 RUN pip3 install --break-system-packages pytest pyyaml
 
 WORKDIR /ethpillar

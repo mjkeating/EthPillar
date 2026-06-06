@@ -20,7 +20,7 @@ docker build -t ethpillar-test -f tests/integration/Dockerfile.test .
 These tests verify the Python orchestration logic, flag resolution, and systemd service generation.
 
 ```bash
-docker run --rm -v "${PWD}:/ethpillar" ethpillar-test python3 -m pytest tests/ -v
+docker run --rm -v "${PWD}:/ethpillar" ethpillar-test bash /ethpillar/tests/run_unit_tests.sh tests/ -v
 ```
 
 ## 3. Running Shell Tests (Bats)
@@ -52,6 +52,7 @@ bash tests/integration/run_docker_tests.sh
 - `tests/test_service_generators.py`: Golden-string tests for systemd units.
 - `tests/test_install_node.bats`: Validation logic for the install wrapper.
 - `tests/test_ethpillar_installnode.bats`: TUI routing and role selection logic.
+- `tests/run_unit_tests.sh`: Bootstraps Python deps via production `functions.sh`, then runs pytest in the project venv.
 - `tests/integration/run_test.sh`: Bootstraps Python deps via production `functions.sh`, then runs the test runner.
 - `tests/integration/run_inside_docker.py`: The core engine for containerized installation testing.
 

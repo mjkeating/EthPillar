@@ -25,7 +25,8 @@ except (AttributeError, OSError):
 
 POLL_INTERVAL_SEC = 5
 EXECUTION_POLL_ATTEMPTS = 12   # 60s
-CONSENSUS_POLL_ATTEMPTS = 36   # 180s — CC checkpoint sync and Caplin P2P can be slow on testnets
+CONSENSUS_POLL_ATTEMPTS = 36   # 180s — CC checkpoint sync can be slow on testnets
+CAPLIN_POLL_ATTEMPTS = 72      # 360s — HOODI checkpoint + header sync before Caplin binds 9000
 
 # Import INSTALL_DIR from common so the path is maintained centrally
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -255,6 +256,15 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
 
     return list(set(binaries)), list(set(users)), list(set(services))
 
+def integration_subprocess_env() -> Dict[str, str]:
+    """Environment for integration subprocesses that should use download/extract caches."""
+    env = os.environ.copy()
+    env["ENABLE_EP_CACHE"] = "1"
+    env["PYTHONUNBUFFERED"] = "1"
+    env["PYTHONPATH"] = "/ethpillar/tests/integration:" + env.get("PYTHONPATH", "")
+    return env
+
+
 def run_install(args: Any, fee_address: str):
     print(f"\n🚀 Running: deploy/deploy-node.py for {args.combo or args.ec}...")
     cmd = [sys.executable, args.script_name, "--skip_prompts", "true", "--network", args.network, "--install_config", args.config, "--fee_address", fee_address]
@@ -264,14 +274,9 @@ def run_install(args: Any, fee_address: str):
     if args.vc: cmd.extend(["--vc", args.vc])
     if args.mev: cmd.append("--with_mevboost")
     if args.vc_only_bn_address: cmd.extend(["--vc_only_bn_address", args.vc_only_bn_address])
-         
-    env = os.environ.copy()
-    env["ENABLE_EP_CACHE"] = "1"
-    env["PYTHONUNBUFFERED"] = "1"
-    env["PYTHONPATH"] = "/ethpillar/tests/integration:" + env.get("PYTHONPATH", "")
-         
+
     try:
-        subprocess.run(cmd, capture_output=False, check=True, env=env)
+        subprocess.run(cmd, capture_output=False, check=True, env=integration_subprocess_env())
     except subprocess.CalledProcessError as e:
         print(f"❌ Script failed with return code {e.returncode}")
         return False
@@ -369,7 +374,9 @@ def _required_ports(service_name: str, has_caplin: bool = False) -> List[int]:
 
 
 def _poll_attempts(service_name: str, has_caplin: bool = False) -> int:
-    if service_name == "consensus" or (service_name == "execution" and has_caplin):
+    if service_name == "execution" and has_caplin:
+        return CAPLIN_POLL_ATTEMPTS
+    if service_name == "consensus":
         return CONSENSUS_POLL_ATTEMPTS
     return EXECUTION_POLL_ATTEMPTS
 
@@ -649,8 +656,7 @@ if __name__ == "__main__":
         if not verify(args):
             sys.exit(1)
         sys.stdout.flush()
-        subprocess_env = os.environ.copy()
-        subprocess_env["PYTHONUNBUFFERED"] = "1"
+        subprocess_env = integration_subprocess_env()
         if args.test_updates:
             print("\n=========================================", flush=True)
             print(" Running Updates Integration Test...", flush=True)

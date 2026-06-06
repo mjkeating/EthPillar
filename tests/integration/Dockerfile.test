@@ -50,15 +50,19 @@ for arg in "$@"; do
     prev="$arg"
 done
 if [ -n "$URL" ] && [ -n "$OUT" ]; then
-    export PYTHONPATH="/ethpillar"
+    export ENABLE_EP_CACHE=1
+    export PYTHONPATH="/ethpillar/tests/integration:/ethpillar"
     python3 -c "
-import sys, urllib.request
+import sys
 try:
     import requests
     r = requests.get(sys.argv[1], stream=True)
+    r.raise_for_status()
     with open(sys.argv[2], 'wb') as f:
-        for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
-except Exception as e:
+        for chunk in r.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+except Exception:
     sys.exit(1)
 " "$URL" "$OUT"
     if [ $? -eq 0 ]; then exit 0; fi

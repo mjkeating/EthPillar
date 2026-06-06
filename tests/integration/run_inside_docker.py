@@ -333,11 +333,8 @@ def check_service_file_substitution(service_name: str) -> bool:
     return True
 
 
-# Sentinel for "service crashed, but only because of external network issue (checkpoint sync)"
-CHECKPOINT_SYNC_FAILURE = "checkpoint_sync_failure"
-
-def check_service_journal_errors(service_name: str, *, emit_checkpoint_warn: bool = True) -> "bool | str":
-    """Check journal for fatal service errors and narrowly scoped checkpoint transport failures."""
+def check_service_journal_errors(service_name: str) -> bool:
+    """Check journal for fatal service errors that indicate invalid install/config."""
     result = subprocess.run(
         ["journalctl", "-u", service_name, "--no-pager", "-n", "100"],
         capture_output=True, text=True
@@ -368,28 +365,6 @@ def check_service_journal_errors(service_name: str, *, emit_checkpoint_warn: boo
         if pattern in journal:
             print(f"  FAIL: Service {service_name} journal contains fatal error: {pattern}")
             return False
-
-    checkpoint_patterns = (
-        "Error loading checkpoint state",
-        "checkpoint-sync",
-        "checkpoint sync",
-        "checkpointSyncUrl",
-        "checkpoint-sync-url",
-    )
-    network_error_patterns = (
-        "HttpClient",
-        "connect: connection refused",
-        "Connection refused",
-        "Connection timed out",
-        "timed out",
-        "502 Bad Gateway",
-        "503 Service Unavailable",
-        "Temporary failure in name resolution",
-    )
-    if any(pattern in journal for pattern in checkpoint_patterns) and any(pattern in journal for pattern in network_error_patterns):
-        if emit_checkpoint_warn:
-            print(f"  WARN: Service {service_name} journal indicates checkpoint sync transport failure")
-        return CHECKPOINT_SYNC_FAILURE
 
     return True
 
@@ -498,9 +473,6 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
             res = subprocess.run(["systemctl", "show", "-p", prop, "--value", service_name], capture_output=True, text=True)
             return res.stdout.strip()
 
-        caplin_execution = has_caplin and service_name == "execution" and bool(required_ports)
-        checkpoint_warned = False
-
         for attempt in range(1, max_attempts + 1):
             time.sleep(POLL_INTERVAL_SEC)
 
@@ -522,31 +494,12 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
                 or main_pid == "0"
             )
             if is_bad_state:
-                journal_result = check_service_journal_errors(
-                    service_name,
-                    emit_checkpoint_warn=not checkpoint_warned,
-                )
-                if journal_result == CHECKPOINT_SYNC_FAILURE:
-                    checkpoint_warned = True
-                    if caplin_execution:
-                        # Caplin must bind EL+CL ports; keep polling (mevboost may still be starting).
-                        continue
-                    print(f"  ⚠️  Service {service_name} is crash-looping due to checkpoint sync (external network issue)", flush=True)
-                    print(f"      This is advisory — the service binary and config are valid.", flush=True)
-                    print(f"      State: active={active_state}, sub={sub_state}, restarts={n_restarts}", flush=True)
-                    subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "10"],
-                                  capture_output=False)
-                    # Count as pass — installation is correct, external sync server is unreachable
-                    return True
-                elif journal_result is False:
+                if not check_service_journal_errors(service_name):
                     print(f"  ❌ Service {service_name} has fatal config/binary error", flush=True)
                     subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "20"])
                     return False
-                else:
-                    # Unknown bad state — show details
-                    print(f"  ❌ Service {service_name} is in bad state: active={active_state}, sub={sub_state}, restarts={n_restarts}, pid={main_pid}", flush=True)
-                    subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "20"])
-                    return False
+                # Transient crash/restart while syncing — keep polling until ports bind or timeout.
+                continue
 
             if required_ports:
                 try:
@@ -558,18 +511,8 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
                             f"bound to port(s) {ports_text} after {attempt * POLL_INTERVAL_SEC}s)",
                             flush=True,
                         )
-                        journal_ok = check_service_journal_errors(
-                            service_name,
-                            emit_checkpoint_warn=not checkpoint_warned,
-                        )
-                        return journal_ok is not False
-                    journal_result = check_service_journal_errors(
-                        service_name,
-                        emit_checkpoint_warn=not checkpoint_warned,
-                    )
-                    if journal_result == CHECKPOINT_SYNC_FAILURE:
-                        checkpoint_warned = True
-                    if journal_result is False:
+                        return check_service_journal_errors(service_name)
+                    if not check_service_journal_errors(service_name):
                         print(
                             f"  ❌ Service {service_name} journal shows fatal error "
                             f"while waiting for port(s) to bind",
@@ -582,8 +525,7 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
             else:
                 if attempt >= 3:
                     print(f"  ✅ Service {service_name} is healthy (active, PID: {main_pid}, 15s stability check passed)", flush=True)
-                    journal_ok = check_service_journal_errors(service_name)
-                    return journal_ok is not False
+                    return check_service_journal_errors(service_name)
 
         ports_text = ", ".join(str(p) for p in required_ports) if required_ports else "required ports"
         print(

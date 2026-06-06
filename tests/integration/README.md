@@ -39,8 +39,8 @@ The `Dockerfile.test` uses `ubuntu:24.04` and sets systemd as the `CMD`. The tes
 - `run_docker_tests.sh`: (Linux/WSL) Ensures host `rich` is installed, then invokes `run_docker_tests.py`.
 - `run_test.sh`: Production bootstrap wrapper — sources `functions.sh` (venv + `ensure_python_deps`) then execs the test runner.
 - `run_inside_docker.py`: Executes inside each container to run the deployment and verify artifacts via `systemctl`. Does not install Python deps itself.
-- `sitecustomize.py`: Caches remote HTTP(S) downloads (API metadata and release assets) to speed up repeated test runs and avoid rate limits.
-- `cache/`: Persistent cache for GitHub API responses and release binaries.
+- `sitecustomize.py`: Caches release **binaries** only; GitHub API / release metadata always hits the network. Cached binaries are revalidated with `HEAD` (status 200 + size) before reuse.
+- `cache/`: Persistent cache for validated release binaries.
 
 ## Running Tests
 
@@ -94,4 +94,4 @@ Test results are saved in the `results/` directory. Each run creates a timestamp
 
 ## Caching
 
-To avoid hitting GitHub API rate limits, the tests use a local cache. This cache is persistent by default (stored in the `cache/` directory) and is mapped into the Docker containers during test execution.
+Release **binaries** may be served from `cache/` after a live `HEAD` check confirms the URL is still valid and the file size matches. API/metadata requests are never cached, so release URL resolution is exercised on every run. Delete `cache/` to force a full re-download of all binaries.

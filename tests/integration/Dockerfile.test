@@ -35,7 +35,7 @@ RUN find /lib/systemd/system/sysinit.target.wants/ -name "*.service" ! -name "sy
 
 ENV TERM=xterm
 
-RUN pip3 install --break-system-packages requests tqdm python-dotenv console-menu pytest pyyaml
+RUN pip3 install --break-system-packages pytest pyyaml
 
 WORKDIR /ethpillar
 

@@ -740,6 +740,9 @@ while true; do
             git pull --ff-only
             git reset --hard
             git clean -xdf
+
+            # Re-install any new or updated Python dependencies
+            ensure_python_deps
             
             # Restore .env.overrides if it was backed up
             [[ -f /tmp/env.overrides.backup ]] && mv /tmp/env.overrides.backup .env.overrides

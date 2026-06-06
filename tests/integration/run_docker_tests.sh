@@ -101,6 +101,9 @@ for combo in "${combos[@]}"; do
             docker run -d --name "$container_name" $DOCKER_SYSTEMD_FLAGS -v "$(pwd):/ethpillar" ethpillar-rebuild > /dev/null 2>&1
             sleep 3  # wait for systemd to initialize
             
+            # Ensure EthPillar's Python dependencies are available in the vanilla image
+            docker exec "$container_name" bash -c 'cd /ethpillar && source functions.sh' >/dev/null 2>&1 || true
+            
             # Run the test via exec
             # Use eval to properly handle quoted arguments (e.g., --config 'Solo Staking Node')
             eval "docker exec \"$container_name\" python3 /ethpillar/tests/integration/run_inside_docker.py deploy/deploy-node.py --combo \"$combo\" $actual_var > \"$log_file\" 2>&1"
@@ -135,6 +138,9 @@ for custom in "${custom_tests[@]}"; do
         # shellcheck disable=SC2086
         docker run -d --name "$container_name" $DOCKER_SYSTEMD_FLAGS -v "$(pwd):/ethpillar" ethpillar-rebuild > /dev/null 2>&1
         sleep 3  # wait for systemd to initialize
+
+        # Ensure EthPillar's Python dependencies are available in the vanilla image
+        docker exec "$container_name" bash -c 'cd /ethpillar && source functions.sh' >/dev/null 2>&1 || true
 
         # Run the test via exec
         docker exec "$container_name" bash -c "$cmd" > "$log_file" 2>&1

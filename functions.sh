@@ -257,25 +257,32 @@ getNetwork(){
 ensure_python_deps() {
     local req_file="${BASE_DIR}/requirements.txt"
     local venv_dir="${BASE_DIR}/.venv"
+    local py_version venv_python venv_pip
     if [[ ! -f "$req_file" ]]; then
         return 0
     fi
 
-    # Ensure venv support is available
-    if ! python3 -m venv --help &>/dev/null; then
+    # venv creation needs ensurepip (provided by python3-venv / python3.X-venv)
+    if ! python3 -c "import ensurepip" &>/dev/null; then
         ohai "Installing python3-venv"
         sudo apt-get update -qq
-        sudo apt-get install -y -qq python3-venv python3-pip
+        py_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+        sudo apt-get install -y -qq python3-venv "python${py_version}-venv" python3-pip
+        python3 -c "import ensurepip" &>/dev/null || error "python3-venv is required but ensurepip is still unavailable"
     fi
 
-    # Create venv if missing
-    if [[ ! -x "${venv_dir}/bin/python3" ]]; then
+    # Recreate venv if missing or incomplete (can happen when ensurepip was absent)
+    if [[ ! -x "${venv_dir}/bin/python3" || ! -x "${venv_dir}/bin/pip" ]]; then
+        [[ -d "$venv_dir" ]] && rm -rf "$venv_dir"
         ohai "Creating Python virtual environment"
-        python3 -m venv "$venv_dir"
+        python3 -m venv "$venv_dir" || error "Failed to create Python virtual environment"
+        if [[ ! -x "${venv_dir}/bin/pip" ]]; then
+            "${venv_dir}/bin/python3" -m ensurepip --upgrade || error "Failed to bootstrap pip in virtual environment"
+        fi
     fi
 
-    local venv_python="${venv_dir}/bin/python3"
-    local venv_pip="${venv_dir}/bin/pip"
+    venv_python="${venv_dir}/bin/python3"
+    venv_pip="${venv_dir}/bin/pip"
 
     # Check if any packages are missing
     local missing=()
@@ -295,7 +302,7 @@ ensure_python_deps() {
 
     if [[ ${#missing[@]} -gt 0 ]]; then
         ohai "Installing missing Python packages: ${missing[*]}"
-        "$venv_pip" install -r "$req_file"
+        "$venv_pip" install -r "$req_file" || error "Failed to install Python dependencies"
     fi
 
     export ETHPILLAR_VENV="$venv_dir"

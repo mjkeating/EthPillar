@@ -101,7 +101,10 @@ linux_install_pre() {
 linux_install_python_deps() {
     local _repo="$HOME/git/ethpillar"
     ohai "Installing Python runtime dependencies"
-    python3 -m pip install --user -r "${_repo}/requirements.txt"
+    export BASE_DIR="${_repo}"
+    cd "${_repo}" || exit_on_error $?
+    # shellcheck source=functions.sh
+    source "${_repo}/functions.sh"
     exit_on_error $?
 }
 

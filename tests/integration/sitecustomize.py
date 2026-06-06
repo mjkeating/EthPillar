@@ -1,139 +1,160 @@
-import sys
 import os
-from typing import Any, Callable, Dict, Optional
+import re
+import sys
+from typing import Any, Callable
+from urllib.parse import unquote, urlparse
 
-if os.environ.get('ENABLE_EP_CACHE') == '1':
+if os.environ.get("ENABLE_EP_CACHE") == "1":
     try:
-        import requests
-        import json
         import hashlib
+        import json
         import tempfile
-        import shutil
-        import subprocess
+
+        import requests
+
+        CACHE_DIR = "/ethpillar/tests/integration/cache"
+        LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
         original_get: Callable = requests.get
 
-        def validate_cache(url: str, cache_file: str, is_github_api: bool) -> bool:
-            """Return True if cache is valid, False if it should be invalidated."""
-            if not os.path.exists(cache_file):
+        def should_cache(url: str) -> bool:
+            """Cache remote HTTP(S) downloads used during integration tests."""
+            parsed = urlparse(url)
+            if parsed.scheme not in ("http", "https"):
                 return False
-            
-            # API responses are small, assume valid to avoid rate limit
-            if is_github_api:
+            return (parsed.hostname or "").lower() not in LOCAL_HOSTS
+
+        def is_binary_request(url: str, kwargs: dict[str, Any]) -> bool:
+            """Binary assets are streamed; metadata/API/HTML responses are not."""
+            if kwargs.get("stream"):
                 return True
-                
-            # For binary downloads, do a HEAD request to check size
+            path = unquote(urlparse(url).path).lower()
+            return path.endswith(
+                (".tar.gz", ".tar.xz", ".tar.zst", ".tgz", ".zip", ".bin", ".deb", ".rpm")
+            )
+
+        def cache_file_path(url: str, is_binary: bool) -> str:
+            """Build a stable, human-readable cache path from the URL."""
+            key = hashlib.md5(url.encode()).hexdigest()
+            path = unquote(urlparse(url).path).rstrip("/")
+            basename = path.split("/")[-1] if path else ""
+            if basename:
+                prefix = basename
+            else:
+                segments = [segment for segment in path.split("/") if segment]
+                prefix = segments[-1] if segments else key[:8]
+            prefix = re.sub(r"[^\w.\-+]", "_", prefix)[:120]
+            ext = ".bin" if is_binary else ".txt"
+            return os.path.join(CACHE_DIR, f"{prefix}_{key}{ext}")
+
+        def validate_cache(url: str, cache_file: str, is_binary: bool) -> bool:
+            """Return True if cache is valid, False if it should be invalidated."""
+            if not os.path.exists(cache_file) or os.path.getsize(cache_file) == 0:
+                return False
+
+            # Small text/JSON/HTML responses: trust the cache to avoid extra API calls.
+            if not is_binary:
+                return True
+
             try:
-                # We use original requests API to avoid intercepting our own HEAD request
                 head_resp = requests.head(url, allow_redirects=True, timeout=5)
                 if head_resp.status_code == 200:
-                    remote_size = head_resp.headers.get('content-length')
+                    remote_size = head_resp.headers.get("content-length")
                     local_size = os.path.getsize(cache_file)
                     if remote_size and int(remote_size) != local_size:
-                        print(f"[CACHE] Invalidation: Size mismatch for {url} (Local: {local_size}, Remote: {remote_size})")
+                        print(
+                            f"[CACHE] Invalidation: Size mismatch for {url} "
+                            f"(Local: {local_size}, Remote: {remote_size})"
+                        )
                         return False
-            except Exception as e:
-                print(f"[CACHE] Warning: Could not validate cache for {url}: {e}")
-                # If we can't validate (e.g., offline), assume valid if it exists and is >0 bytes
+            except Exception as exc:
+                print(f"[CACHE] Warning: Could not validate cache for {url}: {exc}")
                 return os.path.getsize(cache_file) > 0
-                
+
             return True
 
+        class MockTextResponse:
+            def __init__(self, text: str):
+                self.text = text
+                self.content = text.encode("utf-8")
+                self.status_code = 200
+                self.headers = {"content-length": str(len(self.content))}
+
+            def json(self):
+                return json.loads(self.text)
+
+            def raise_for_status(self):
+                pass
+
+        class MockStreamResponse:
+            def __init__(self, filepath: str, size: int):
+                self.filepath = filepath
+                self.status_code = 200
+                self.headers = {"content-length": str(size)}
+                self.raw = open(filepath, "rb")
+
+            def iter_content(self, chunk_size=1024):
+                self.raw.seek(0)
+                yield self.raw.read()
+
+            def raise_for_status(self):
+                pass
+
+        def read_cached_response(cache_file: str, is_binary: bool) -> Any:
+            if is_binary:
+                size = os.path.getsize(cache_file)
+                return MockStreamResponse(cache_file, size)
+            with open(cache_file, "r", encoding="utf-8") as handle:
+                return MockTextResponse(handle.read())
+
+        def write_cached_response(response: Any, cache_file: str, is_binary: bool, stream: bool) -> None:
+            if is_binary:
+                if stream:
+                    original_iter = response.iter_content
+                    temp_fd, temp_path = tempfile.mkstemp(dir=CACHE_DIR)
+                    temp_file = os.fdopen(temp_fd, "wb")
+
+                    def tee_iter_content(chunk_size=1024):
+                        try:
+                            for chunk in original_iter(chunk_size):
+                                temp_file.write(chunk)
+                                yield chunk
+                        finally:
+                            temp_file.close()
+                            os.rename(temp_path, cache_file)
+
+                    response.iter_content = tee_iter_content
+                    return
+
+                with tempfile.NamedTemporaryFile("wb", delete=False, dir=CACHE_DIR) as handle:
+                    handle.write(response.content)
+                    temp_name = handle.name
+                os.rename(temp_name, cache_file)
+                return
+
+            with tempfile.NamedTemporaryFile("w", delete=False, dir=CACHE_DIR, encoding="utf-8") as handle:
+                handle.write(response.text)
+                temp_name = handle.name
+            os.rename(temp_name, cache_file)
+
         def cached_get(url: str, *args: Any, **kwargs: Any) -> Any:
-            """
-            Intercepts requests.get calls and serves content from a local cache 
-            if the URL points to GitHub API or release assets.  This is mainly to avoid 
-            Github's rate limits.
-            """
-            cache_dir = "/ethpillar/tests/integration/cache"
-            os.makedirs(cache_dir, exist_ok=True)
-            
-            is_github_api = url.startswith("https://api.github.com")
-            is_github_download = "github.com" in url and ("releases/download" in url or "archive" in url)
-            # Geth provides a downloads page and stores release assets on gethstore.blob.core.windows.net
-            is_geth_page = url.startswith("https://geth.ethereum.org/downloads")
-            is_geth_asset = "gethstore.blob.core.windows.net" in url or "geth.ethereum.org" in url and ("/download" in url or "/builds/" in url)
-            # Teku artifacts are hosted on artifacts.consensys.net — treat as binary asset
-            is_artifacts_asset = "artifacts.consensys.net" in url
-            
-            if is_github_api or is_github_download or is_geth_page or is_geth_asset or is_artifacts_asset:
-                key = hashlib.md5(url.encode()).hexdigest()
-                ext = ".json" if is_github_api or is_geth_page else ".bin"
+            """Intercept requests.get and serve integration-test downloads from a local cache."""
+            if not should_cache(url):
+                return original_get(url, *args, **kwargs)
 
-                # Prefix with a readable piece of the URL to make cache contents understandable
-                if is_github_download or is_geth_asset or is_artifacts_asset:
-                    prefix = url.split("/")[-1]
-                else:
-                    # For API or HTML pages pick a short path segment
-                    prefix = url.split("/")[-3] if len(url.split("/")) >= 3 else key
-                cache_file = os.path.join(cache_dir, f"{prefix}_{key}{ext}")
-                
-                if validate_cache(url, cache_file, is_github_api):
-                    print(f"[CACHE] Hit for {url}")
-                    if is_github_api or is_geth_page:
-                        class MockResponse:
-                            def __init__(self, text):
-                                self.text = text
-                                self.content = text.encode('utf-8')
-                                self.status_code = 200
-                                self.headers = {'content-length': str(len(self.content))}
-                            def json(self): return json.loads(self.text)
-                            def raise_for_status(self): pass
-                        with open(cache_file, "r", encoding='utf-8') as f:
-                            return MockResponse(f.read())
-                    else:
-                        class MockStreamResponse:
-                            def __init__(self, filepath, size):
-                                self.filepath = filepath
-                                self.status_code = 200
-                                self.headers = {'content-length': str(size)}
-                                self.raw = open(filepath, "rb")
-                            def iter_content(self, chunk_size=1024):
-                                # Yield entire file at once since we're reading from
-                                # local cache — no need to simulate network I/O
-                                self.raw.seek(0)
-                                yield self.raw.read()
-                            def raise_for_status(self): pass
-                        size = os.path.getsize(cache_file)
-                        return MockStreamResponse(cache_file, size)
-                
-                print(f"[CACHE] Miss for {url}, downloading...")
-                response = original_get(url, *args, **kwargs)
-                
-                if response.status_code == 200:
-                    if is_github_api or is_geth_page:
-                        # cache text/html/json responses
-                        with tempfile.NamedTemporaryFile("w", delete=False, dir=cache_dir, encoding='utf-8') as f:
-                            f.write(response.text)
-                            temp_name = f.name
-                        os.rename(temp_name, cache_file)
-                    else:
-                        # For stream=True requests (binary assets), intercept iter_content
-                        if kwargs.get('stream', False):
-                            original_iter = response.iter_content
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            is_binary = is_binary_request(url, kwargs)
+            cache_file = cache_file_path(url, is_binary)
 
-                            temp_fd, temp_path = tempfile.mkstemp(dir=cache_dir)
-                            temp_file = os.fdopen(temp_fd, "wb")
+            if validate_cache(url, cache_file, is_binary):
+                print(f"[CACHE] Hit for {url}")
+                return read_cached_response(cache_file, is_binary)
 
-                            def tee_iter_content(chunk_size=1024):
-                                try:
-                                    for chunk in original_iter(chunk_size):
-                                        temp_file.write(chunk)
-                                        yield chunk
-                                finally:
-                                    temp_file.close()
-                                    os.rename(temp_path, cache_file)
-
-                            response.iter_content = tee_iter_content
-                        else:
-                            # Non-stream binary responses: write content atomically
-                            with tempfile.NamedTemporaryFile("wb", delete=False, dir=cache_dir) as f:
-                                f.write(response.content)
-                                temp_name = f.name
-                            os.rename(temp_name, cache_file)
-                return response
-            
-            return original_get(url, *args, **kwargs)
+            print(f"[CACHE] Miss for {url}, downloading...")
+            response = original_get(url, *args, **kwargs)
+            if response.status_code == 200:
+                write_cached_response(response, cache_file, is_binary, kwargs.get("stream", False))
+            return response
 
         requests.get = cached_get
     except ImportError:

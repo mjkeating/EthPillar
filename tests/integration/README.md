@@ -37,7 +37,7 @@ The `Dockerfile.test` uses `ubuntu:24.04` and sets systemd as the `CMD`. The tes
 - `run_docker_tests.ps1`: (Windows) Main script to run all test combinations in parallel batches.
 - `run_docker_tests.sh`: (Linux/WSL) Main script to run all test combinations in parallel batches.
 - `run_inside_docker.py`: Executes inside each container to run the deployment and verify artifacts via `systemctl`.
-- `sitecustomize.py`: Provides GitHub API caching to avoid rate limits.
+- `sitecustomize.py`: Caches remote HTTP(S) downloads (API metadata and release assets) to speed up repeated test runs and avoid rate limits.
 - `cache/`: Persistent cache for GitHub API responses and release binaries.
 
 ## Running Tests

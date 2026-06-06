@@ -258,9 +258,7 @@ ensure_python_deps() {
     local req_file="${BASE_DIR}/requirements.txt"
     local venv_dir="${BASE_DIR}/.venv"
     local py_version venv_python venv_pip
-    if [[ ! -f "$req_file" ]]; then
-        return 0
-    fi
+    [[ -f "$req_file" ]] || error "requirements.txt not found in ${BASE_DIR}"
 
     # venv creation needs ensurepip (provided by python3-venv / python3.X-venv)
     if ! python3 -c "import ensurepip" &>/dev/null; then

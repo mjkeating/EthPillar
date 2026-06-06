@@ -252,20 +252,30 @@ getNetwork(){
     export NETWORK
 }
 
-# Ensure Python runtime dependencies are available.
-# Installs from requirements.txt if any required packages are missing.
+# Ensure Python runtime dependencies are available in a project venv.
+# Ubuntu 24.04+ blocks system-wide/user pip installs (PEP 668).
 ensure_python_deps() {
     local req_file="${BASE_DIR}/requirements.txt"
+    local venv_dir="${BASE_DIR}/.venv"
     if [[ ! -f "$req_file" ]]; then
         return 0
     fi
 
-    # Ensure pip is available
-    if ! python3 -m pip --version &>/dev/null; then
-        ohai "Installing python3-pip"
+    # Ensure venv support is available
+    if ! python3 -m venv --help &>/dev/null; then
+        ohai "Installing python3-venv"
         sudo apt-get update -qq
-        sudo apt-get install -y -qq python3-pip
+        sudo apt-get install -y -qq python3-venv python3-pip
     fi
+
+    # Create venv if missing
+    if [[ ! -x "${venv_dir}/bin/python3" ]]; then
+        ohai "Creating Python virtual environment"
+        python3 -m venv "$venv_dir"
+    fi
+
+    local venv_python="${venv_dir}/bin/python3"
+    local venv_pip="${venv_dir}/bin/pip"
 
     # Check if any packages are missing
     local missing=()
@@ -278,15 +288,19 @@ ensure_python_deps() {
             console-menu) import_name="consolemenu" ;;
             python-dotenv) import_name="dotenv" ;;
         esac
-        if ! PYTHONPATH="${BASE_DIR}" python3 -c "import ${import_name}" 2>/dev/null; then
+        if ! PYTHONPATH="${BASE_DIR}" "$venv_python" -c "import ${import_name}" 2>/dev/null; then
             missing+=("$pkg")
         fi
     done < "$req_file"
 
     if [[ ${#missing[@]} -gt 0 ]]; then
         ohai "Installing missing Python packages: ${missing[*]}"
-        python3 -m pip install --user -r "$req_file"
+        "$venv_pip" install -r "$req_file"
     fi
+
+    export ETHPILLAR_VENV="$venv_dir"
+    export ETHPILLAR_PYTHON="$venv_python"
+    export PATH="${venv_dir}/bin:${PATH}"
 }
 
 # Ensure a Java runtime is available for JVM-based clients (Teku, Besu)

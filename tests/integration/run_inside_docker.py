@@ -190,10 +190,18 @@ def run_install(args: Any, fee_address: str):
 
     # In vanilla images EthPillar Python deps might not be present yet. Install them.
     req_file = "/ethpillar/requirements.txt"
+    venv_python = "/ethpillar/.venv/bin/python3"
     if os.path.isfile(req_file):
         try:
+            venv_dir = "/ethpillar/.venv"
+            if not os.path.isfile(venv_python):
+                subprocess.run(
+                    [sys.executable, "-m", "venv", venv_dir],
+                    check=True,
+                    timeout=120,
+                )
             deps_result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--user", "-r", req_file],
+                [f"{venv_dir}/bin/pip", "install", "-r", req_file],
                 capture_output=True,
                 text=True,
                 timeout=120,
@@ -205,7 +213,8 @@ def run_install(args: Any, fee_address: str):
         except Exception as e:
             print(f"  ⚠️  Could not auto-install Python deps: {e}")
 
-    cmd = [sys.executable, args.script_name, "--skip_prompts", "true", "--network", args.network, "--install_config", args.config, "--fee_address", fee_address]
+    python_exe = venv_python if os.path.isfile(venv_python) else sys.executable
+    cmd = [python_exe, args.script_name, "--skip_prompts", "true", "--network", args.network, "--install_config", args.config, "--fee_address", fee_address]
     if args.combo: cmd.extend(["--combo", args.combo])
     if args.ec: cmd.extend(["--ec", args.ec])
     if args.cc: cmd.extend(["--cc", args.cc])

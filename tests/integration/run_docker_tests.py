@@ -4,6 +4,7 @@ import time
 import asyncio
 import subprocess
 import argparse
+import shlex
 from datetime import datetime
 
 try:
@@ -120,7 +121,12 @@ async def run_test(task: TestTask, results_dir: str, semaphore: asyncio.Semaphor
             
             flags = "--privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock"
             cwd = os.getcwd()
-            run_cmd = f"docker run -d --name {task.container_name} {flags} -v {cwd}:/ethpillar ethpillar-rebuild"
+            token = os.environ.get("GITHUB_TOKEN", "")
+            token_flag = f"-e GITHUB_TOKEN={shlex.quote(token)}" if token else ""
+            run_cmd = (
+                f"docker run -d --name {task.container_name} {flags} {token_flag} "
+                f"-v {shlex.quote(cwd)}:/ethpillar ethpillar-rebuild"
+            )
             
             proc = await asyncio.create_subprocess_shell(run_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
             await proc.wait()
@@ -135,7 +141,10 @@ async def run_test(task: TestTask, results_dir: str, semaphore: asyncio.Semaphor
             await asyncio.sleep(3) # Wait for systemd to initialize
             
             # Exec the actual test
-            exec_cmd = f"docker exec -e PYTHONUNBUFFERED=1 {task.container_name} {task.cmd} >> {task.log_file} 2>&1"
+            exec_env = "-e PYTHONUNBUFFERED=1"
+            if token:
+                exec_env += f" -e GITHUB_TOKEN={shlex.quote(token)}"
+            exec_cmd = f"docker exec {exec_env} {task.container_name} {task.cmd} >> {task.log_file} 2>&1"
             proc = await asyncio.create_subprocess_shell(exec_cmd)
             await proc.wait()
             
@@ -314,6 +323,18 @@ async def main():
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     results_dir = os.path.join(os.getcwd(), "tests", "integration", "results", f"run_{timestamp}")
     os.makedirs(results_dir, exist_ok=True)
+
+    if not os.environ.get("GITHUB_TOKEN"):
+        print(
+            "WARNING: GITHUB_TOKEN is not set. Integration tests call the GitHub API "
+            "for every client install; without a token you may hit rate limits (403)."
+        )
+        print(
+            "         Set a read-only classic PAT first, e.g. PowerShell:\n"
+            "           $env:GITHUB_TOKEN = \"ghp_...\""
+        )
+    else:
+        print("GITHUB_TOKEN is set — GitHub API calls will be authenticated.")
 
     print("Rebuilding Docker image...")
     res = subprocess.run("docker build -t ethpillar-rebuild -f tests/integration/Dockerfile.test .", shell=True)

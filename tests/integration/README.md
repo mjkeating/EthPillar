@@ -19,6 +19,23 @@ The integration tests simulate various validator configurations (Solo Staking, L
 - **Linux host or WSL2**: The systemd-in-Docker pattern requires Linux kernel cgroups. On Windows, use WSL2 with Docker Desktop configured to use the WSL2 backend.
 - **Python 3**: For running the verification logic within the containers.
 - **PowerShell (Windows)** or **Bash (Linux/WSL)**: For orchestrating the test batches.
+- **`GITHUB_TOKEN`**: A read-only GitHub classic PAT (no scopes required for public repos).
+  Each install resolves release metadata via `api.github.com`. Without a token the
+  unauthenticated limit (~60 requests/hour per IP) is exhausted quickly — especially
+  after running the live release tests. Export the token in your shell before starting:
+
+```powershell
+# User env var is fine, but open a NEW terminal after saving it in Windows Settings.
+# The .ps1 wrapper reads Windows env and forwards it into WSL (WSL does not inherit it).
+./tests/integration/run_docker_tests.ps1
+```
+
+If you run from an already-open PowerShell session before the variable existed, set it for that session too:
+
+```powershell
+$env:GITHUB_TOKEN = "ghp_your_token_here"
+./tests/integration/run_docker_tests.ps1
+```
 
 ## How Systemd-in-Docker Works
 
@@ -39,7 +56,7 @@ The `Dockerfile.test` uses `ubuntu:24.04` and sets systemd as the `CMD`. The tes
 - `run_docker_tests.sh`: (Linux/WSL) Ensures host `rich` is installed, then invokes `run_docker_tests.py`.
 - `run_test.sh`: Production bootstrap wrapper — sources `functions.sh` (venv + `ensure_python_deps`) then execs the test runner.
 - `run_inside_docker.py`: Executes inside each container to run the deployment and verify artifacts via `systemctl`. Does not install Python deps itself.
-- `sitecustomize.py`: Caches release **binaries** only; GitHub API / release metadata always hits the network. Cached binaries are revalidated with `HEAD` (status 200 + size) before reuse.
+- `sitecustomize.py`: Caches release **binaries** only (revalidated with `HEAD` before reuse). GitHub API / release metadata always hits the network.
 - `cache/`: Persistent cache for validated release binaries.
 
 ## Running Tests

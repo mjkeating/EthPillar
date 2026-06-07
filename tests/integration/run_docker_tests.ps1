@@ -29,12 +29,32 @@ $wslPath = $wslPath.Trim()
 
 Write-Host "🚀 Launching EthPillar Integration Tests via WSL..." -ForegroundColor Cyan
 Write-Host "Working directory (WSL): $wslPath" -ForegroundColor Gray
+
+# WSL does not inherit Windows user/machine env vars automatically.
+# Read GITHUB_TOKEN from the current process, then User, then Machine scopes.
+$githubToken = $env:GITHUB_TOKEN
+if ([string]::IsNullOrWhiteSpace($githubToken)) {
+    $githubToken = [Environment]::GetEnvironmentVariable("GITHUB_TOKEN", "User")
+}
+if ([string]::IsNullOrWhiteSpace($githubToken)) {
+    $githubToken = [Environment]::GetEnvironmentVariable("GITHUB_TOKEN", "Machine")
+}
+
+$tokenExport = ""
+if (-not [string]::IsNullOrWhiteSpace($githubToken)) {
+    $escapedToken = $githubToken -replace "'", "'\''"
+    $tokenExport = "export GITHUB_TOKEN='$escapedToken' && "
+    Write-Host "GITHUB_TOKEN found in Windows — forwarding into WSL." -ForegroundColor Green
+} else {
+    Write-Host "WARNING: GITHUB_TOKEN not visible to this shell or WSL." -ForegroundColor Yellow
+    Write-Host "         Set it under User environment variables, restart the terminal, then retry." -ForegroundColor Yellow
+}
+
 Write-Host "----------------------------------------`n"
 
 # Execute the bash script via WSL, passing along any arguments
-# Use bash -c to ensure we start in the right directory and run the script
 $argsStr = $args -join " "
-wsl -e bash -c "cd '$wslPath' && bash tests/integration/run_docker_tests.sh $argsStr"
+wsl -e bash -c "cd '$wslPath' && ${tokenExport}bash tests/integration/run_docker_tests.sh $argsStr"
 
 # Forward the exit code
 $exitCode = $LASTEXITCODE

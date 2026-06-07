@@ -182,6 +182,16 @@ class TestGetClientReleaseInfo:
         info = get_client_release_info("mev-boost", "LATEST")
         assert info["version"] == "v1.12"
 
+    @patch("deploy.common.get_github_release")
+    def test_mevboost_v1_11_0_resolves_to_v1_11_release(self, mock_gh):
+        mock_gh.return_value = _make_github_release("v1.11", [
+            "mev-boost_1.11_linux_amd64.tar.gz"
+        ])
+        info = get_client_release_info("mevboost", "v1.11.0")
+        assert info["version"] == "v1.11"
+        assert info["filenames"][0] == "mev-boost_1.11_linux_amd64.tar.gz"
+        mock_gh.assert_called_once_with("flashbots/mev-boost", "v1.11.0")
+
     @patch("requests.get")
     def test_geth_scrapes_download_page(self, mock_req):
         mock_req.return_value = MagicMock(

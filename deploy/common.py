@@ -756,14 +756,86 @@ def pick_github_release_asset(
     return name, url
 
 
+def _normalize_release_version_key(tag: str) -> str:
+    """Normalize a version tag for loose matching (``v1.11.0`` and ``v1.11`` → ``1.11``)."""
+    normalized = tag.strip().lstrip("vV")
+    if re.fullmatch(r"\d+\.\d+\.0", normalized):
+        normalized = normalized[:-2]
+    return normalized.lower()
+
+
+def _github_release_tag_candidates(version_tag: str) -> list[str]:
+    """Build ordered tag strings to try when resolving a GitHub release by tag."""
+    tag = version_tag.strip()
+    candidates = [tag]
+    bare = tag.lstrip("vV")
+    if bare != tag:
+        candidates.append(bare)
+    if re.fullmatch(r"v?\d+\.\d+\.0", tag, re.IGNORECASE):
+        major_minor = bare.rsplit(".", 1)[0]
+        candidates.extend([f"v{major_minor}", major_minor])
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for candidate in candidates:
+        if candidate not in seen:
+            seen.add(candidate)
+            ordered.append(candidate)
+    return ordered
+
+
+def _fetch_github_release_by_tag(repo: str, tag: str) -> Optional[dict]:
+    """Return release JSON for *tag*, or ``None`` when no published release exists."""
+    url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+    res = requests.get(url, headers=_github_api_headers(), timeout=30)
+    if res.status_code == 404:
+        return None
+    res.raise_for_status()
+    return res.json()
+
+
+def _find_github_release_by_normalized_tag(repo: str, version_tag: str) -> Optional[dict]:
+    """Scan published releases for one whose normalized tag matches *version_tag*."""
+    target = _normalize_release_version_key(version_tag)
+    page = 1
+    while page <= 10:
+        url = f"https://api.github.com/repos/{repo}/releases?per_page=100&page={page}"
+        res = requests.get(url, headers=_github_api_headers(), timeout=30)
+        res.raise_for_status()
+        releases = res.json()
+        if not releases:
+            break
+        for release in releases:
+            if release.get("draft"):
+                continue
+            if _normalize_release_version_key(release.get("tag_name", "")) == target:
+                return release
+        page += 1
+    return None
+
+
 def get_github_release(repo: str, version_tag: str) -> dict:
-    """Helper function to fetch release info from GitHub API."""
-    import requests
+    """Fetch release info from the GitHub API.
+
+    Some repos publish releases under shortened tags (for example ``v1.11``) while
+    git also has patch tags such as ``v1.11.0`` with no release assets. When the
+    exact tag is missing, this tries common aliases and scans published releases.
+    """
     if version_tag.upper() == "LATEST":
-        suffix = "latest"
-    else:
-        suffix = f"tags/{version_tag}"
-    url = f"https://api.github.com/repos/{repo}/releases/{suffix}"
+        url = f"https://api.github.com/repos/{repo}/releases/latest"
+        res = requests.get(url, headers=_github_api_headers(), timeout=30)
+        res.raise_for_status()
+        return res.json()
+
+    for candidate in _github_release_tag_candidates(version_tag):
+        release = _fetch_github_release_by_tag(repo, candidate)
+        if release is not None:
+            return release
+
+    release = _find_github_release_by_normalized_tag(repo, version_tag)
+    if release is not None:
+        return release
+
+    url = f"https://api.github.com/repos/{repo}/releases/tags/{version_tag}"
     res = requests.get(url, headers=_github_api_headers(), timeout=30)
     res.raise_for_status()
     return res.json()

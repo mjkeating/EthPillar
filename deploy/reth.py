@@ -15,20 +15,15 @@ def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     Returns:
         A dictionary with keys 'version', 'download_urls', and 'filenames'.
     """
-    from deploy.common import get_github_release
+    from deploy.common import get_github_release, pick_github_release_asset
     data = get_github_release("paradigmxyz/reth", version_tag)
     tag = data["tag_name"]
-    arch = "x86_64" if arch_amd64 else "aarch64"
-    download_url = None
-    filename = None
-    for asset in data["assets"]:
-        if asset["name"].lower().endswith(f"{arch}-unknown-linux-gnu.tar.gz"):
-            download_url = asset["browser_download_url"]
-            filename = asset["name"]
-            break
-    if not download_url:
-        filename = f"reth-{tag}-{arch}-unknown-linux-gnu.tar.gz"
-        download_url = f"https://github.com/paradigmxyz/reth/releases/download/{tag}/{filename}"
+    filename, download_url = pick_github_release_asset(
+        data.get("assets", []),
+        arch_amd64,
+        name_contains=("reth",),
+        client_label="Reth",
+    )
     return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
 
 

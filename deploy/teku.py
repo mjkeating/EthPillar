@@ -5,6 +5,34 @@ from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_c
 from client_requirements import validate_version_for_network
 from typing import Optional
 
+def _teku_download_from_release(data: dict) -> tuple[str, str]:
+    """Resolve Teku binary URL from GitHub assets or release notes."""
+    import re
+
+    from deploy.common import pick_github_release_asset
+
+    assets = data.get("assets", [])
+    if assets:
+        return pick_github_release_asset(
+            assets,
+            None,
+            name_contains=("teku",),
+            prefer_extensions=(".tar.gz", ".zip"),
+            client_label="Teku",
+        )
+
+    body = data.get("body", "")
+    match = re.search(
+        r"https://artifacts\.consensys\.net/public/teku/raw/names/teku\.tar\.gz/versions/[^/\s)]+/teku-[^/\s)]+\.tar\.gz",
+        body,
+    )
+    if not match:
+        raise ValueError("No Teku download URL found in GitHub release assets or release notes")
+
+    download_url = match.group(0)
+    return download_url.rsplit("/", 1)[-1], download_url
+
+
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     """Get Teku release version, download URL, and filename.
 
@@ -18,9 +46,7 @@ def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     from deploy.common import get_github_release
     data = get_github_release("ConsenSys/teku", version_tag)
     tag = data["tag_name"]
-    version = tag.lstrip("v")
-    filename = f"teku-{version}.tar.gz"
-    download_url = f"https://artifacts.consensys.net/public/teku/raw/names/teku.tar.gz/versions/{version}/{filename}"
+    filename, download_url = _teku_download_from_release(data)
     return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
 
 

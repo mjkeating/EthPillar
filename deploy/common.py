@@ -602,6 +602,160 @@ def _github_api_headers() -> dict:
     return headers
 
 
+_NON_LINUX_ASSET_MARKERS = (
+    "osx",
+    "darwin",
+    "win",
+    "windows",
+    ".exe",
+    ".dmg",
+    ".msi",
+    ".sha256",
+    ".sha512",
+    "checksum",
+    "checksums",
+)
+
+_AMD64_ASSET_MARKERS = (
+    "x86_64",
+    "amd64",
+    "linux-x64",
+    "linux_x64",
+    "linux-amd64",
+    "linux_amd64",
+)
+
+_ARM64_ASSET_MARKERS = (
+    "aarch64",
+    "arm64",
+    "linux-arm64",
+    "linux_arm64",
+)
+
+
+def _asset_name_excluded(name: str) -> bool:
+    """Return True when an asset name looks non-installable or non-Linux.
+
+    Filters checksum sidecars, Windows/macOS builds, and similar artifacts that
+    appear on GitHub releases but must never be downloaded as client binaries.
+    """
+    lowered = name.lower()
+    return any(marker in lowered for marker in _NON_LINUX_ASSET_MARKERS)
+
+
+def _asset_matches_arch(name: str, arch_amd64: bool) -> bool:
+    """Return True when *name* matches the requested CPU architecture.
+
+    Accepts common upstream naming variants (``amd64``, ``x86_64``, ``linux-x64``,
+    ``arm64``, ``aarch64``, etc.) and rejects assets that clearly target the
+    opposite architecture.
+    """
+    lowered = name.lower()
+    want = _AMD64_ASSET_MARKERS if arch_amd64 else _ARM64_ASSET_MARKERS
+    reject = _ARM64_ASSET_MARKERS if arch_amd64 else _AMD64_ASSET_MARKERS
+    if not any(marker in lowered for marker in want):
+        return False
+    return not any(marker in lowered for marker in reject)
+
+
+def _asset_is_linux_candidate(name: str) -> bool:
+    """Return True when an asset name plausibly refers to a Linux client binary.
+
+    Most clients embed ``linux`` in the filename. Some (e.g. older Grandine builds)
+    publish bare architecture suffixes such as ``grandine-2.0.1-amd64`` instead.
+    """
+    lowered = name.lower()
+    if _asset_name_excluded(name):
+        return False
+    if "linux" in lowered:
+        return True
+    return any(marker in lowered for marker in _AMD64_ASSET_MARKERS + _ARM64_ASSET_MARKERS)
+
+
+def _asset_extension_rank(name: str, prefer_extensions: tuple[str, ...]) -> Optional[int]:
+    """Return the preference index of the first matching extension, or None.
+
+    An empty string in *prefer_extensions* matches extensionless bare binaries
+    (for example ``grandine-2.0.4-linux-x64``). Lower indices are higher priority.
+    """
+    lowered = name.lower()
+    for index, ext in enumerate(prefer_extensions):
+        if ext == "":
+            if not any(lowered.endswith(skip) for skip in (".tar.gz", ".zip", ".exe", ".sha256", ".sha512")):
+                return index
+        elif lowered.endswith(ext):
+            return index
+    return None
+
+
+def pick_github_release_asset(
+    assets: list,
+    arch_amd64: Optional[bool],
+    *,
+    role_contains: str = "",
+    name_contains: tuple[str, ...] = (),
+    prefer_extensions: tuple[str, ...] = (".tar.gz", ".zip", ""),
+    client_label: str = "release",
+) -> tuple[str, str]:
+    """Select the best Linux release asset from a GitHub ``release[\"assets\"]`` list.
+
+    EthPillar never constructs download URLs from version tags. Callers fetch the
+    release JSON (via :func:`get_github_release`) and pass its ``assets`` array here
+    so the returned ``browser_download_url`` is always the URL GitHub published.
+
+    Args:
+        assets: GitHub API asset dicts, each with ``name`` and
+            ``browser_download_url``.
+        arch_amd64: ``True`` for amd64/x86_64 hosts, ``False`` for arm64/aarch64,
+            or ``None`` for architecture-neutral archives (e.g. Besu tarballs).
+        role_contains: When set, the asset name must contain this substring
+            (case-insensitive). Used for multi-binary releases such as Prysm
+            (``beacon-chain`` vs ``validator``).
+        name_contains: When non-empty, every substring must appear in the asset
+            name (case-insensitive).
+        prefer_extensions: Filename endings to prefer, highest priority first.
+            Use ``\"\"`` to allow extensionless bare binaries.
+        client_label: Client name included in :class:`ValueError` messages.
+
+    Returns:
+        ``(filename, browser_download_url)`` for the highest-priority matching asset.
+
+    Raises:
+        ValueError: If no asset matches the requested filters.
+    """
+    candidates: list[tuple[int, str, str]] = []
+    for asset in assets:
+        name = asset.get("name", "")
+        url = asset.get("browser_download_url", "")
+        if not name or not url:
+            continue
+        if role_contains and role_contains.lower() not in name.lower():
+            continue
+        if name_contains and not all(part.lower() in name.lower() for part in name_contains):
+            continue
+        if arch_amd64 is None:
+            if _asset_name_excluded(name):
+                continue
+        elif not _asset_is_linux_candidate(name) or not _asset_matches_arch(name, arch_amd64):
+            continue
+        ext_rank = _asset_extension_rank(name, prefer_extensions)
+        if ext_rank is None:
+            continue
+        candidates.append((ext_rank, name, url))
+
+    if not candidates:
+        if arch_amd64 is None:
+            arch_label = "neutral"
+        else:
+            arch_label = "amd64" if arch_amd64 else "arm64"
+        role = f" matching {role_contains!r}" if role_contains else ""
+        raise ValueError(f"No Linux {arch_label} {client_label} asset found{role}")
+
+    candidates.sort(key=lambda item: item[0])
+    _, name, url = candidates[0]
+    return name, url
+
+
 def get_github_release(repo: str, version_tag: str) -> dict:
     """Helper function to fetch release info from GitHub API."""
     import requests

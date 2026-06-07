@@ -110,12 +110,18 @@ class TestGetClientReleaseInfo:
 
     @patch("deploy.common.get_github_release")
     def test_teku_returns_expected_structure(self, mock_gh):
-        mock_gh.return_value = _make_github_release("26.5.0", [
-            "teku-26.5.0.tar.gz"
-        ])
+        mock_gh.return_value = {
+            "tag_name": "26.5.0",
+            "assets": [],
+            "body": (
+                "[tar.gz](https://artifacts.consensys.net/public/teku/raw/names/"
+                "teku.tar.gz/versions/26.5.0/teku-26.5.0.tar.gz)"
+            ),
+        }
         info = get_client_release_info("teku", "LATEST")
         assert info["version"] == "26.5.0"
-        assert "teku" in info["filenames"][0]
+        assert info["filenames"][0] == "teku-26.5.0.tar.gz"
+        assert info["download_urls"][0].endswith("teku-26.5.0.tar.gz")
 
     @patch("deploy.common.get_github_release")
     def test_nimbus_returns_expected_structure(self, mock_gh):
@@ -133,7 +139,18 @@ class TestGetClientReleaseInfo:
         ])
         info = get_client_release_info("grandine", "LATEST")
         assert info["version"] == "v2.0.4"
-        assert "grandine" in info["filenames"][0]
+        assert info["filenames"][0] == "grandine-2.0.4-linux-x64"
+
+    @patch("deploy.common.get_github_release")
+    def test_grandine_legacy_asset_names(self, mock_gh):
+        mock_gh.return_value = _make_github_release("2.0.1", [
+            "grandine-2.0.1-amd64",
+            "grandine-2.0.1-arm64",
+        ])
+        info = get_client_release_info("grandine", "2.0.1")
+        assert info["version"] == "2.0.1"
+        assert info["filenames"][0] == "grandine-2.0.1-amd64"
+        assert info["download_urls"][0].endswith("/grandine-2.0.1-amd64")
 
     @patch("deploy.common.get_github_release")
     def test_prysm_returns_two_urls(self, mock_gh):
@@ -210,7 +227,15 @@ class TestGetClientReleaseInfo:
 
     @patch("deploy.common.get_github_release")
     def test_specific_version_tag(self, mock_gh):
-        mock_gh.return_value = _make_github_release("v1.2.3", ["reth-v1.2.3.tar.gz"])
+        mock_gh.return_value = _make_github_release("v1.2.3", [
+            "reth-v1.2.3-x86_64-unknown-linux-gnu.tar.gz"
+        ])
         info = get_client_release_info("reth", "v1.2.3")
         assert info["version"] == "v1.2.3"
         mock_gh.assert_called_once_with("paradigmxyz/reth", "v1.2.3")
+
+    @patch("deploy.common.get_github_release")
+    def test_lighthouse_raises_without_matching_asset(self, mock_gh):
+        mock_gh.return_value = _make_github_release("v8.0.0", ["checksums.txt"])
+        with pytest.raises(ValueError, match="Lighthouse"):
+            get_client_release_info("lighthouse", "LATEST")

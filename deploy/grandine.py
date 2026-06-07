@@ -14,13 +14,15 @@ def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     Returns:
         A dictionary with keys 'version', 'download_urls', and 'filenames'.
     """
-    from deploy.common import get_github_release
+    from deploy.common import get_github_release, pick_github_release_asset
     data = get_github_release("grandinetech/grandine", version_tag)
     tag = data["tag_name"]
-    version = tag.lstrip("v")
-    arch = "x64" if arch_amd64 else "arm64"
-    filename = "grandine"
-    download_url = f"https://github.com/grandinetech/grandine/releases/download/{tag}/grandine-{version}-linux-{arch}"
+    filename, download_url = pick_github_release_asset(
+        data.get("assets", []),
+        arch_amd64,
+        name_contains=("grandine",),
+        client_label="Grandine",
+    )
     return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
 
 

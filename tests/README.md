@@ -23,6 +23,25 @@ These tests verify the Python orchestration logic, flag resolution, and systemd 
 docker run --rm -v "${PWD}:/ethpillar" ethpillar-test bash /ethpillar/tests/run_unit_tests.sh tests/ -v
 ```
 
+Live release-info tests (GitHub + geth.ethereum.org) are **skipped by default** in the unit run. They verify that `get_client_release_info()` resolves real download URLs for LATEST and for older tags — the same path used when picking a non-latest version in the update menus.
+
+**Requires `GITHUB_TOKEN`** (read-only public repo access is sufficient).
+
+1. Create a classic PAT: [github.com/settings/tokens](https://github.com/settings/tokens) → *Generate new token (classic)* → no scopes needed for public release metadata (or enable `public_repo`).
+2. Run with the token in your shell:
+
+```powershell
+# PowerShell
+$env:GITHUB_TOKEN = "ghp_your_token_here"
+docker run --rm -e GITHUB_TOKEN -v "${PWD}:/ethpillar" ethpillar-test bash /ethpillar/tests/run_live_release_tests.sh
+```
+
+```bash
+# bash
+export GITHUB_TOKEN=ghp_your_token_here
+docker run --rm -e GITHUB_TOKEN -v "${PWD}:/ethpillar" ethpillar-test bash /ethpillar/tests/run_live_release_tests.sh
+```
+
 ## 3. Running Shell Tests (Bats)
 
 These tests verify the Bash TUI logic in `ethpillar.sh` and the wrapper logic in `install-node.sh`.

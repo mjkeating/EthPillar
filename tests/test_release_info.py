@@ -4,6 +4,9 @@ Unit tests for client release info functions.
 These tests verify that each deploy module's get_release_info function returns
 correctly structured data with valid URLs and filenames, without making real
 network requests.
+
+For live checks against upstream APIs (catches regex/page drift like the Geth
+pinned-version bug), run: bash tests/run_live_release_tests.sh
 """
 import sys
 import os
@@ -172,6 +175,21 @@ class TestGetClientReleaseInfo:
         assert info["version"] == "v1.14.0"
         assert "geth-linux-amd64" in info["download_urls"][0]
         assert info["filenames"][0].endswith(".tar.gz")
+
+    @patch("requests.get")
+    def test_geth_specific_version_tag(self, mock_req):
+        mock_req.return_value = MagicMock(
+            status_code=200,
+            text=(
+                "https://gethstore.blob.core.windows.net/builds/"
+                "geth-linux-amd64-1.17.3-117e067f.tar.gz "
+                "https://gethstore.blob.core.windows.net/builds/"
+                "geth-linux-amd64-1.17.1-16783c16.tar.gz"
+            ),
+        )
+        info = get_client_release_info("geth", "v1.17.1")
+        assert info["version"] == "v1.17.1"
+        assert "1.17.1-16783c16" in info["download_urls"][0]
 
     @patch("requests.get")
     def test_geth_raises_when_no_match(self, mock_req):

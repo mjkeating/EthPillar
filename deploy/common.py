@@ -592,6 +592,16 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
         exit(0)
 
 
+def _github_api_headers() -> dict:
+    """Headers for GitHub API requests (optional GITHUB_TOKEN raises rate limits)."""
+    import os
+    headers = {"User-Agent": "ethpillar"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def get_github_release(repo: str, version_tag: str) -> dict:
     """Helper function to fetch release info from GitHub API."""
     import requests
@@ -600,7 +610,7 @@ def get_github_release(repo: str, version_tag: str) -> dict:
     else:
         suffix = f"tags/{version_tag}"
     url = f"https://api.github.com/repos/{repo}/releases/{suffix}"
-    res = requests.get(url)
+    res = requests.get(url, headers=_github_api_headers(), timeout=30)
     res.raise_for_status()
     return res.json()
 

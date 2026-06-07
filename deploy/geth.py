@@ -20,19 +20,24 @@ def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     res = requests.get("https://geth.ethereum.org/downloads")
     res.raise_for_status()
     arch = "amd64" if arch_amd64 else "arm64"
-    
+    base = rf"https://gethstore\.blob\.core\.windows\.net/builds/geth-linux-{arch}-"
+
     if version_tag.upper() == "LATEST":
-        suffix = ""
+        pattern = rf"({base}([0-9.]+)-[a-f0-9]+\.tar\.gz)"
+        matches = re.findall(pattern, res.text)
+        if not matches:
+            raise ValueError(f"Could not find Geth download URL for linux-{arch} and version {version_tag}")
+        download_url, version_num = matches[0]
+        version = f"v{version_num}"
     else:
-        suffix = f"-{version_tag.lstrip('v')}-"
-        
-    pattern = r"(https://gethstore\.blob\.core\.windows\.net/builds/geth-linux-" + arch + r"-" + suffix + r"([0-9.]+)-[a-f0-9]+\.tar\.gz)"
-    matches = re.findall(pattern, res.text)
-    if not matches:
-        raise ValueError(f"Could not find Geth download URL for linux-{arch} and version {version_tag}")
-    
-    download_url = matches[0][0]
-    version = "v" + matches[0][1]
+        ver = version_tag.removeprefix("v")
+        pattern = base + re.escape(ver) + r"-[a-f0-9]+\.tar\.gz"
+        matches = re.findall(pattern, res.text)
+        if not matches:
+            raise ValueError(f"Could not find Geth download URL for linux-{arch} and version {version_tag}")
+        download_url = matches[0]
+        version = f"v{ver}"
+
     filename = download_url.split("/")[-1]
     return {"version": version, "download_urls": [download_url], "filenames": [filename]}
 

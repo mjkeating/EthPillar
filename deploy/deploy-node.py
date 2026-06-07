@@ -56,6 +56,12 @@ parser.add_argument("--cl_max_peers", type=int, default=CL_MAX_PEER_COUNT)
 parser.add_argument("--vc_only_bn_address", type=str, default="")
 parser.add_argument("--switch_client", type=str, choices=["execution", "consensus"], default="")
 parser.add_argument("--skip_prompts", type=str, default="")
+parser.add_argument(
+    "--checkpoint_sync_url",
+    type=str,
+    default="",
+    help="Override checkpoint sync URL (skips menu / default list selection)",
+)
 args = parser.parse_args()
 
 if args.fee_address:
@@ -215,8 +221,8 @@ if (_cc_needs_fee or _vc_needs_fee) and not FEE_RECIPIENT_ADDRESS:
         FEE_RECIPIENT_ADDRESS = input("What is your fee recipient address? (0x...): ").strip()
 
 # Sync URL
-sync_url = ""
-if not flags['validator_only'] and args.switch_client != "execution":
+sync_url = args.checkpoint_sync_url or ""
+if not sync_url and not flags['validator_only'] and args.switch_client != "execution":
     try:
         sync_urls_list = getattr(config, f"{eth_network}_sync_urls", [])
         if sync_urls_list:
@@ -229,7 +235,7 @@ if not flags['validator_only'] and args.switch_client != "execution":
                 sync_url = sync_urls_list[index][1]
     except AttributeError:
         pass
-else:
+elif not sync_url:
     try:
         sync_urls_list = getattr(config, f"{eth_network}_sync_urls", [])
         if sync_urls_list:

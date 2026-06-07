@@ -8,3 +8,4 @@ __pycache__/
 *.zip
 tests/integration/results/
 tests/integration/cache/
+tests/integration/checkpoint_cache/

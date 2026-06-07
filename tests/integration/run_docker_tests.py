@@ -123,8 +123,15 @@ async def run_test(task: TestTask, results_dir: str, semaphore: asyncio.Semaphor
             cwd = os.getcwd()
             token = os.environ.get("GITHUB_TOKEN", "")
             token_flag = f"-e GITHUB_TOKEN={shlex.quote(token)}" if token else ""
+            cache_mount = ""
+            cache_path = os.path.join(cwd, "tests", "integration", "checkpoint_cache")
+            if os.path.isfile(os.path.join(cache_path, "manifest.json")):
+                cache_mount = (
+                    f"-v {shlex.quote(cache_path)}:/ethpillar/tests/integration/checkpoint_cache:ro "
+                )
             run_cmd = (
                 f"docker run -d --name {task.container_name} {flags} {token_flag} "
+                f"{cache_mount}"
                 f"-v {shlex.quote(cwd)}:/ethpillar ethpillar-rebuild"
             )
             
@@ -341,7 +348,19 @@ async def main():
     if res.returncode != 0:
         print("Failed to build Docker image.")
         sys.exit(1)
-        
+
+    cwd = os.getcwd()
+    cache_dir = os.path.join(cwd, "tests", "integration", "checkpoint_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    print("Warming checkpoint cache (weekly refresh)...")
+    warm_cmd = (
+        f"docker run --rm -v {shlex.quote(cwd)}:/ethpillar "
+        f"ethpillar-rebuild python3 /ethpillar/tests/integration/warm_checkpoint_cache.py"
+    )
+    warm_res = subprocess.run(warm_cmd, shell=True)
+    if warm_res.returncode != 0:
+        print("WARNING: Checkpoint cache warm failed; tests will use upstream checkpoint URLs.")
+
     tasks = generate_tests()
     semaphore = asyncio.Semaphore(args.parallel)
     

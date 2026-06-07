@@ -28,6 +28,9 @@ EXECUTION_POLL_ATTEMPTS = 12   # 60s
 CONSENSUS_POLL_ATTEMPTS = 36   # 180s — CC checkpoint sync can be slow on testnets
 CAPLIN_POLL_ATTEMPTS = 72      # 360s — HOODI checkpoint + header sync before Caplin binds 9000
 
+# Prefer local warmed cache (see warm_checkpoint_cache.py); fall back to ethpandaops.
+from checkpoint_cache_common import checkpoint_sync_url_for_network  # noqa: E402
+
 # Import INSTALL_DIR from common so the path is maintained centrally
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 try:
@@ -312,6 +315,13 @@ def run_install(args: Any, fee_address: str):
     if args.vc: cmd.extend(["--vc", args.vc])
     if args.mev: cmd.append("--with_mevboost")
     if args.vc_only_bn_address: cmd.extend(["--vc_only_bn_address", args.vc_only_bn_address])
+    checkpoint_url = checkpoint_sync_url_for_network(args.network)
+    if checkpoint_url:
+        cmd.extend(["--checkpoint_sync_url", checkpoint_url])
+        if os.environ.get("ENABLE_CHECKPOINT_CACHE") == "1":
+            print(f"  Checkpoint sync via local cache: {checkpoint_url}")
+        else:
+            print(f"  Checkpoint sync via upstream: {checkpoint_url}")
 
     try:
         subprocess.run(cmd, capture_output=False, check=True, env=integration_subprocess_env())

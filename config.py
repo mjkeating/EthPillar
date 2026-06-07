@@ -48,9 +48,9 @@ holesky_sync_urls = [
 ]
 
 sepolia_sync_urls = [
-    ("Beaconstate", "https://sepolia.beaconstate.info"),
-    ("Lodestar", "https://beaconstate-sepolia.chainsafe.io"),
     ("EF DevOps", "https://checkpoint-sync.sepolia.ethpandaops.io"),
+    ("Lodestar", "https://beaconstate-sepolia.chainsafe.io"),
+    ("Beaconstate", "https://sepolia.beaconstate.info"),
 ]
 
 ephemery_sync_urls = [

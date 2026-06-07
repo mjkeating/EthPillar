@@ -112,3 +112,18 @@ Test results are saved in the `results/` directory. Each run creates a timestamp
 ## Caching
 
 Release **binaries** may be served from `cache/` after a live `HEAD` check confirms the URL is still valid and the file size matches. API/metadata requests are never cached, so release URL resolution is exercised on every run. Delete `cache/` to force a full re-download of all binaries.
+
+### Checkpoint sync (SEPOLIA + HOODI)
+
+Before the test matrix runs, `warm_checkpoint_cache.py` prefetches Beacon checkpoint API
+responses from ethpandaops into `checkpoint_cache/` (gitignored). Entries expire after
+**7 days**; a fresh run re-downloads only when stale.
+
+Each test container mounts that cache read-only and `run_test.sh` starts a local proxy on
+`http://127.0.0.1:19595`. Consensus clients use that URL instead of hitting the WAN on
+every install (~190 MB per HOODI client otherwise). Slightly stale checkpoints are fine:
+clients backfill via P2P after checkpoint sync, and integration only waits for services to
+reach `active` and bind ports.
+
+Delete `checkpoint_cache/` to force a full re-warm. If warming fails, tests fall back to
+upstream ethpandaops URLs automatically.

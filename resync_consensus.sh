@@ -54,7 +54,7 @@ function resyncClient(){
 			_checkpointsync="--network=mainnet --trusted-node-url=https://beaconstate.ethstaker.cc"
 			;;
 		Sepolia)
-			_checkpointsync="--network=sepolia --trusted-node-url=https://sepolia.beaconstate.info"
+			_checkpointsync="--network=sepolia --trusted-node-url=https://checkpoint-sync.sepolia.ethpandaops.io"
 			;;
 		Ephemery)
 			_checkpointsync="--network=/opt/ethpillar/testnet --trusted-node-url=https://ephemery.beaconstate.ethstaker.cc"

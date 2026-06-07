@@ -181,6 +181,7 @@ def systemd_available() -> bool:
         return False
     
 def is_validator_only(config: str) -> bool:
+    """Return True for Validator Client Only install configs."""
     return "Validator Client Only" in config
 
 def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]]:
@@ -298,6 +299,7 @@ def require_production_python_deps() -> None:
 
 
 def _missing_module(module: str) -> bool:
+    """Return True when *module* cannot be imported."""
     try:
         __import__(module)
         return False
@@ -306,6 +308,7 @@ def _missing_module(module: str) -> bool:
 
 
 def run_install(args: Any, fee_address: str):
+    """Run ``deploy-node.py`` with integration overrides (checkpoint URL, caches)."""
     print(f"\n🚀 Running: deploy/deploy-node.py for {args.combo or args.ec}...")
 
     cmd = [sys.executable, args.script_name, "--skip_prompts", "true", "--network", args.network, "--install_config", args.config, "--fee_address", fee_address]
@@ -389,6 +392,7 @@ def _detect_caplin_from_service() -> bool:
 
 
 def _required_ports(service_name: str, has_caplin: bool = False) -> List[int]:
+    """Return listening ports that must be bound before a service is considered healthy."""
     if service_name == "execution":
         ports = [30303]
         if has_caplin:
@@ -402,6 +406,7 @@ def _required_ports(service_name: str, has_caplin: bool = False) -> List[int]:
 
 
 def _poll_attempts(service_name: str, has_caplin: bool = False) -> int:
+    """Return health-poll iteration budget for *service_name* (× ``POLL_INTERVAL_SEC``)."""
     if service_name == "execution" and has_caplin:
         return CAPLIN_POLL_ATTEMPTS
     if service_name == "consensus":
@@ -410,6 +415,7 @@ def _poll_attempts(service_name: str, has_caplin: bool = False) -> int:
 
 
 def _ports_bound(ports: List[int], ss_output: str) -> bool:
+    """Return True when every *ports* entry appears in ``ss -lntu`` output."""
     return all(f":{port}" in ss_output for port in ports)
 
 
@@ -578,6 +584,7 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
             return False
 
 def verify(args: Any):
+    """Assert expected binaries, users, services, permissions, and service health."""
     print(f"\n🔍 Verifying Artifacts...", flush=True)
     expected_binaries, expected_users, expected_services = parse_expected_artifacts(args)
     combo = args.combo.lower() if args.combo else ""

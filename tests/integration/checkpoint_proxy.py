@@ -25,6 +25,8 @@ from checkpoint_cache_common import (
 
 
 class CheckpointProxyHandler(BaseHTTPRequestHandler):
+    """HTTP handler that serves warmed checkpoint responses with upstream fallback."""
+
     network: str = "SEPOLIA"
     upstream: str = ""
     entries: dict[str, str] = {}
@@ -33,6 +35,7 @@ class CheckpointProxyHandler(BaseHTTPRequestHandler):
         print(f"[checkpoint-proxy] {self.address_string()} {fmt % args}", flush=True)
 
     def _accept_candidates(self, accept: str) -> list[str]:
+        """Build Accept-header variants to match cached SSZ vs JSON responses."""
         candidates = [accept, ""]
         lowered = accept.lower()
         if "application/octet-stream" in lowered:
@@ -49,6 +52,7 @@ class CheckpointProxyHandler(BaseHTTPRequestHandler):
         return ordered
 
     def _lookup(self, path: str, accept: str) -> Optional[dict[str, Any]]:
+        """Return cached response metadata and body path, or None on miss."""
         for candidate in self._accept_candidates(accept):
             lookup = f"GET|{path}|{candidate}"
             key = self.entries.get(lookup)
@@ -64,6 +68,7 @@ class CheckpointProxyHandler(BaseHTTPRequestHandler):
         return None
 
     def _proxy_upstream(self, path: str, accept: str) -> tuple[int, dict[str, str], bytes]:
+        """Fetch *path* from the configured upstream checkpoint provider."""
         url = f"{self.upstream.rstrip('/')}{path}"
         headers = {"User-Agent": "ethpillar-checkpoint-proxy/1.0"}
         if accept:
@@ -95,6 +100,7 @@ class CheckpointProxyHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
+        """Serve GET from cache when possible; otherwise proxy to upstream."""
         parsed = urlparse(self.path)
         path = parsed.path
         if parsed.query:
@@ -125,6 +131,7 @@ class CheckpointProxyHandler(BaseHTTPRequestHandler):
 
 
 def build_handler_class(network: str) -> type[CheckpointProxyHandler]:
+    """Return a handler class configured for *network* manifest entries and upstream."""
     manifest = load_manifest()
     info = manifest.get("networks", {}).get(network.upper(), {})
     entries = info.get("entries", {})
@@ -140,6 +147,7 @@ def build_handler_class(network: str) -> type[CheckpointProxyHandler]:
 
 
 def wait_until_ready(network: str, timeout_sec: float = 10.0) -> bool:
+    """Poll the proxy until ``/eth/v1/node/version`` responds or *timeout_sec* elapses."""
     import time
     import urllib.request
 
@@ -156,6 +164,7 @@ def wait_until_ready(network: str, timeout_sec: float = 10.0) -> bool:
 
 
 def main() -> int:
+    """Run the checkpoint proxy until interrupted."""
     parser = argparse.ArgumentParser(description="Local Beacon checkpoint cache proxy")
     parser.add_argument("--network", required=True, help="SEPOLIA or HOODI")
     parser.add_argument("--host", default=CHECKPOINT_PROXY_HOST)

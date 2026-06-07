@@ -1,3 +1,9 @@
+"""Integration test orchestrator for the EthPillar Docker/systemd matrix.
+
+Builds the test image, warms checkpoint and binary caches, runs each case in an
+isolated privileged container, streams live Rich UI output, and writes HTML reports
+under ``tests/integration/results/run_<timestamp>/``.
+"""
 import os
 import sys
 import time
@@ -52,6 +58,8 @@ switch_tests = [
 ]
 
 class TestTask:
+    """Mutable state for one integration case (container, log path, status, timing)."""
+
     def __init__(self, label, cmd, display_var, log_suffix=""):
         self.label = label
         self.cmd = cmd
@@ -73,6 +81,7 @@ class TestTask:
         self.start_time = 0
 
 def generate_tests():
+    """Build the full integration matrix as :class:`TestTask` instances."""
     tests = []
     import re
     for combo in combos:
@@ -95,6 +104,7 @@ def generate_tests():
     return tests
 
 def tail_file(filepath, lines=20):
+    """Return the last *lines* of *filepath* for live log panels."""
     if not filepath or not os.path.exists(filepath):
         return "Waiting for logs..."
     try:
@@ -105,6 +115,7 @@ def tail_file(filepath, lines=20):
         return f"Error reading log: {e}"
 
 async def run_test(task: TestTask, results_dir: str, semaphore: asyncio.Semaphore):
+    """Start one systemd container, exec the test command, and record PASS/FAIL."""
     async with semaphore:
         task.status = "RUNNING"
         task.log_file = os.path.join(results_dir, f"{task.log_name}.log")
@@ -161,6 +172,7 @@ async def run_test(task: TestTask, results_dir: str, semaphore: asyncio.Semaphor
             subprocess.run(f"docker rm -f {task.container_name}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 async def ui_loop(tasks: list[TestTask]):
+    """Render the Rich live dashboard until every task completes."""
     if Console is None:
         print("The 'rich' library is required. Install it using: pip install rich")
         sys.exit(1)
@@ -227,6 +239,7 @@ async def ui_loop(tasks: list[TestTask]):
             await asyncio.sleep(0.5)
 
 def get_git_commit():
+    """Return short git SHA for the current checkout, or ``unknown``."""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--short=8", "HEAD"],
@@ -239,6 +252,7 @@ def get_git_commit():
     return "unknown"
 
 def generate_html_report(tasks, results_dir, total_duration, timestamp, commit):
+    """Write ``index.html`` summarizing pass/fail, durations, and log links."""
     html_path = os.path.join(results_dir, "index.html")
     passed = len([t for t in tasks if t.status == "PASS"])
     failed = len([t for t in tasks if t.status == "FAIL"])
@@ -320,6 +334,7 @@ def generate_html_report(tasks, results_dir, total_duration, timestamp, commit):
     return html_path
 
 async def main():
+    """Entry point: build image, warm caches, run matrix, emit report, set exit code."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--parallel", type=int, default=1, help="Max concurrent tests (must be 1)")
     args = parser.parse_args()

@@ -31,6 +31,7 @@ def _fetch(
     path: str,
     accept: Optional[str],
 ) -> tuple[int, dict[str, str], bytes]:
+    """Download one Beacon API response from *upstream*; raise on non-200."""
     url = f"{upstream.rstrip('/')}{path}"
     headers: dict[str, str] = {"User-Agent": "ethpillar-checkpoint-cache/1.0"}
     if accept:
@@ -71,6 +72,7 @@ def _store_entry(
     response_headers: dict[str, str],
     body: bytes,
 ) -> str:
+    """Write one response to disk; return its manifest lookup key."""
     key = entry_key(method, path, accept)
     paths = entry_paths(network, key)
     os.makedirs(os.path.dirname(paths["meta"]), exist_ok=True)
@@ -92,6 +94,7 @@ def _store_entry(
 
 
 def warm_network(network: str, manifest: dict[str, Any]) -> None:
+    """Prefetch required (and best-effort optional) checkpoint paths for *network*."""
     network = network.upper()
     upstream = UPSTREAM_URLS[network]
     print(f"[checkpoint] Warming {network} from {upstream}")
@@ -127,6 +130,7 @@ def warm_network(network: str, manifest: dict[str, Any]) -> None:
 
 
 def main() -> int:
+    """Refresh stale network caches; skip networks still within the weekly TTL."""
     manifest = load_manifest()
     refreshed = False
 

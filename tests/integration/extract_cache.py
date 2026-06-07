@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""Transparent tar/unzip wrapper that caches extracted client install trees.
+
+Invoked from ``PATH`` ahead of real ``tar``/``unzip`` inside integration containers.
+On cache hit, replays a prior extract; on miss, runs the real command and snapshots
+only the archive member paths into ``tests/integration/cache/``.
+"""
 import hashlib
 import os
 import subprocess
@@ -12,6 +18,7 @@ ZIP_ARCHIVE_SUFFIX = ".zip"
 
 
 def get_extracted_cache_key(archive_path: str, dest_dir: str, strip_components: int) -> str:
+    """Hash archive prefix, destination, and strip count into a stable cache id."""
     hasher = hashlib.md5()
     with open(archive_path, "rb") as handle:
         # Hash the first 1MB to be fast but reasonably unique.
@@ -22,6 +29,7 @@ def get_extracted_cache_key(archive_path: str, dest_dir: str, strip_components: 
 
 
 def parse_strip_components(args: List[str]) -> int:
+    """Parse ``--strip-components`` from a tar argument list."""
     for index, arg in enumerate(args):
         if arg == "--strip-components" and index + 1 < len(args):
             return int(args[index + 1])
@@ -31,6 +39,7 @@ def parse_strip_components(args: List[str]) -> int:
 
 
 def parse_tar_invocation(args: List[str]) -> tuple[Optional[str], Optional[str], int]:
+    """Extract archive path, ``-C`` destination, and strip count from tar args."""
     archive_path = None
     dest_dir = None
     strip_components = parse_strip_components(args)
@@ -45,6 +54,7 @@ def parse_tar_invocation(args: List[str]) -> tuple[Optional[str], Optional[str],
 
 
 def parse_unzip_invocation(args: List[str]) -> tuple[Optional[str], Optional[str], int]:
+    """Extract archive path and ``-d`` destination from unzip args."""
     archive_path = None
     dest_dir = None
 
@@ -58,6 +68,7 @@ def parse_unzip_invocation(args: List[str]) -> tuple[Optional[str], Optional[str
 
 
 def list_tar_members(archive_path: str) -> List[str]:
+    """List member paths inside a tar archive without extracting."""
     if archive_path.endswith((".tar.gz", ".tgz")):
         cmd = ["/usr/bin/tar", "tzf", archive_path]
     elif archive_path.endswith(".tar.xz"):
@@ -74,6 +85,7 @@ def list_tar_members(archive_path: str) -> List[str]:
 
 
 def list_zip_members(archive_path: str) -> List[str]:
+    """List member paths inside a zip archive without extracting."""
     result = subprocess.run(
         ["/usr/bin/unzip", "-Z1", archive_path],
         capture_output=True,
@@ -85,6 +97,7 @@ def list_zip_members(archive_path: str) -> List[str]:
 
 
 def archive_members(cmd_type: str, archive_path: str) -> List[str]:
+    """Return member paths for either a tar or zip archive."""
     if cmd_type == "tar":
         return list_tar_members(archive_path)
     return list_zip_members(archive_path)
@@ -113,6 +126,7 @@ def stripped_dest_paths(members: List[str], strip_components: int) -> List[str]:
 
 
 def existing_dest_paths(dest_dir: str, relative_paths: List[str]) -> List[str]:
+    """Return *relative_paths* that exist under *dest_dir* after extraction."""
     existing: List[str] = []
     for relative in relative_paths:
         if os.path.lexists(os.path.join(dest_dir, relative)):
@@ -126,6 +140,7 @@ def write_selective_cache(
     cache_tar: str,
     cache_key: str,
 ) -> None:
+    """Snapshot extracted *relative_paths* from *dest_dir* into *cache_tar*."""
     temp_tar = os.path.join(CACHE_DIR, f"tmp_{cache_key}.tar")
     result = subprocess.run(
         ["/usr/bin/sudo", "/usr/bin/tar", "cf", temp_tar, "-C", dest_dir, *relative_paths],
@@ -144,6 +159,7 @@ def write_selective_cache(
 
 
 def main() -> None:
+    """Intercept tar/unzip: replay or populate the extract cache, then exit with tar's code."""
     if len(sys.argv) < 2:
         sys.exit(1)
 

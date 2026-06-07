@@ -1,3 +1,9 @@
+"""Python startup hook: transparent binary download cache for integration tests.
+
+Loaded via ``PYTHONPATH`` when ``ENABLE_EP_CACHE=1``. Patches ``requests.get`` so
+release tarballs/binaries may be served from disk after a live ``HEAD`` check.
+GitHub API and other metadata requests are never cached.
+"""
 import os
 import re
 import sys
@@ -74,6 +80,8 @@ if os.environ.get("ENABLE_EP_CACHE") == "1":
             return True
 
         class MockStreamResponse:
+            """Minimal response object replaying a cached binary from disk."""
+
             def __init__(self, filepath: str, size: int):
                 self.filepath = filepath
                 self.status_code = 200
@@ -88,10 +96,12 @@ if os.environ.get("ENABLE_EP_CACHE") == "1":
                 pass
 
         def read_cached_response(cache_file: str) -> Any:
+            """Open a cached download for streaming via ``iter_content``."""
             size = os.path.getsize(cache_file)
             return MockStreamResponse(cache_file, size)
 
         def write_cached_response(response: Any, cache_file: str, stream: bool) -> None:
+            """Persist a network response to *cache_file* (streaming or buffered)."""
             if stream:
                 original_iter = response.iter_content
                 temp_fd, temp_path = tempfile.mkstemp(dir=CACHE_DIR)

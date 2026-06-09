@@ -127,3 +127,10 @@ reach `active` and bind ports.
 
 Delete `checkpoint_cache/` to force a full re-warm. If warming fails, tests fall back to
 upstream ethpandaops URLs automatically.
+
+### Environment file
+
+Integration tests write configuration to `/tmp/ethpillar-integration.env` inside the
+container and set `ETHPILLAR_ENV_FILE` for `deploy-node.py`, `functions.sh`, and the
+update/switch test scripts. The repo-root `env` file on the host checkout is never
+modified, including on Ctrl-C or `docker rm -f`.

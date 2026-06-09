@@ -113,6 +113,9 @@ def check_service(service_name: str) -> bool:
     """Checks if a systemd service file exists."""
     return os.path.isfile(f"/etc/systemd/system/{service_name}.service")
 
+# Container-local path — not bind-mounted, so host checkout env is never modified.
+INTEGRATION_ENV_FILE = "/tmp/ethpillar-integration.env"
+
 TEST_ENV_CONTENT = """MEVBOOST={mevboost}
 EL_P2P_PORT=30303
 EL_P2P_PORT_2=30304
@@ -136,37 +139,14 @@ CSM_FEE_RECIPIENT_ADDRESS_HOODI=0x2222222222222222222222222222222222222222
 CSM_FEE_RECIPIENT_ADDRESS_HOLESKY=0x3333333333333333333333333333333333333333
 """
 
-def snapshot_workspace_env(paths: List[str]) -> Dict[str, Optional[bytes]]:
-    """Capture env files so integration tests do not dirty the host checkout."""
-    snapshots: Dict[str, Optional[bytes]] = {}
-    for path in paths:
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                snapshots[path] = f.read()
-        else:
-            snapshots[path] = None
-    return snapshots
-
-def restore_workspace_env(snapshots: Dict[str, Optional[bytes]]) -> None:
-    for path, content in snapshots.items():
-        try:
-            if content is None:
-                if os.path.exists(path):
-                    os.remove(path)
-            else:
-                with open(path, "wb") as f:
-                    f.write(content)
-        except Exception as exc:
-            print(f"Warning: could not restore {path}: {exc}")
-
-def write_test_env(args: Any) -> None:
+def write_test_env(args: Any, env_path: str = INTEGRATION_ENV_FILE) -> None:
+    """Write integration test configuration to a container-local env file."""
     content = TEST_ENV_CONTENT.format(
         mevboost="true" if args.mev else "false",
         install_config=args.config,
     )
-    for path in (".env", "env"):
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.write(content)
 
 def systemd_available() -> bool:
     """Returns True if systemd is running as PID 1 (real systemd, not container stub)."""
@@ -277,6 +257,7 @@ def integration_subprocess_env() -> Dict[str, str]:
     """Environment for integration subprocesses that should use download/extract caches."""
     env = os.environ.copy()
     env["ENABLE_EP_CACHE"] = "1"
+    env["ETHPILLAR_ENV_FILE"] = INTEGRATION_ENV_FILE
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONPATH"] = "/ethpillar/tests/integration:" + env.get("PYTHONPATH", "")
     return env
@@ -686,9 +667,8 @@ if __name__ == "__main__":
         success = check_service_start(args.service, has_caplin=has_caplin)
         sys.exit(0 if success else 1)
 
-    env_snapshots = snapshot_workspace_env([".env", "env"])
     write_test_env(args)
-            
+
     try:
         if not run_install(args, "0x1234567890123456789012345678901234567890"):
             sys.exit(1)
@@ -735,7 +715,11 @@ if __name__ == "__main__":
                 sys.exit(1)
         print(f"\n🐳 Integration Test PASSED for {args.combo or args.ec}.")
     finally:
-        restore_workspace_env(env_snapshots)
+        try:
+            if os.path.exists(INTEGRATION_ENV_FILE):
+                os.remove(INTEGRATION_ENV_FILE)
+        except OSError:
+            pass
         for f in [p for p in os.listdir(".") if p.endswith((".tar.gz", ".tar.xz", ".zip"))]:
             try:
                 if os.path.exists(f): os.remove(f)

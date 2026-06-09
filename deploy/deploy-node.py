@@ -18,7 +18,7 @@ import config
 common.clear_screen()
 valid_networks = ['MAINNET', 'HOODI', 'EPHEMERY', 'HOLESKY', 'SEPOLIA']
 
-load_dotenv("env")
+load_dotenv(os.getenv("ETHPILLAR_ENV_FILE", "env"))
 
 # Defaults from env
 EL_P2P_PORT = os.getenv('EL_P2P_PORT')

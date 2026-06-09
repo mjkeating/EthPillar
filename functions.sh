@@ -17,8 +17,8 @@ set -u
 # enable command completion
 set -o history -o histexpand
 
-# Load BN and EL ENDPOINTS
-source ./env
+# Load BN and EL ENDPOINTS (integration tests may set ETHPILLAR_ENV_FILE to a sidecar env)
+source "${ETHPILLAR_ENV_FILE:-./env}"
 
 # Stores validator index
 declare -a INDICES

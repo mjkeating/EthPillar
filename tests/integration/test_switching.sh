@@ -5,7 +5,7 @@
 set -e
 
 cd /ethpillar
-source /ethpillar/env
+source "${ETHPILLAR_ENV_FILE:-/ethpillar/env}"
 : "${EL_IP_ADDRESS:=127.0.0.1}"
 : "${EL_RPC_PORT:=8545}"
 export EL_RPC_ENDPOINT="http://${EL_IP_ADDRESS}:${EL_RPC_PORT}"

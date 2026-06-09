@@ -1,8 +1,9 @@
 """Checkpoint sync cache paths, manifest I/O, and URL selection for integration tests.
 
-Warmed responses live under ``checkpoint_cache/`` (gitignored). Each test container
-mounts the cache read-only and may start :mod:`checkpoint_proxy` to serve them on
-localhost, avoiding repeated WAN downloads during the integration matrix.
+Warmed responses live under a host cache directory (default
+``~/.cache/ethpillar/checkpoint_cache`` when using the WSL orchestrator, or
+``tests/integration/checkpoint_cache`` in-repo on native Linux). Each test
+container mounts that directory at :data:`CONTAINER_CACHE_PATH`.
 """
 
 from __future__ import annotations
@@ -10,12 +11,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import time
 from typing import Any, Optional
 
-CACHE_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "checkpoint_cache")
-MANIFEST_PATH = os.path.join(CACHE_ROOT, "manifest.json")
 CACHE_MAX_AGE_SEC = 7 * 24 * 60 * 60
+
+# In-container mount point (host cache is bind-mounted here).
+CONTAINER_CACHE_PATH = "/ethpillar/tests/integration/checkpoint_cache"
 
 CHECKPOINT_PROXY_HOST = "127.0.0.1"
 CHECKPOINT_PROXY_PORT = 19595
@@ -51,6 +54,42 @@ HOP_BY_HOP = frozenset({
 })
 
 
+def _repo_default_cache_root() -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "checkpoint_cache")
+
+
+def _wsl_sidecar_cache_root() -> str:
+    return os.path.expanduser("~/.cache/ethpillar/checkpoint_cache")
+
+
+def _should_use_sidecar_cache(repo_default: str) -> bool:
+    """Docker Desktop bind mounts break mkdir/rmdir under the repo on WSL."""
+    if os.environ.get("ETHPILLAR_CHECKPOINT_CACHE_DIR"):
+        return False
+    probes = (
+        os.path.abspath(repo_default),
+        os.getcwd(),
+        os.path.abspath(__file__),
+    )
+    return any("docker-desktop-bind-mounts" in probe for probe in probes)
+
+
+def get_cache_root() -> str:
+    """Return the host directory used to store warmed checkpoint responses."""
+    override = os.environ.get("ETHPILLAR_CHECKPOINT_CACHE_DIR")
+    if override:
+        return os.path.abspath(override)
+    repo_default = _repo_default_cache_root()
+    if _should_use_sidecar_cache(repo_default):
+        return _wsl_sidecar_cache_root()
+    return repo_default
+
+
+def get_manifest_path() -> str:
+    """Absolute path to the checkpoint cache manifest on the host."""
+    return os.path.join(get_cache_root(), "manifest.json")
+
+
 def entry_key(method: str, path: str, accept: Optional[str]) -> str:
     """Stable cache lookup key for an HTTP method, path, and Accept header."""
     raw = f"{method.upper()}|{path}|{accept or ''}"
@@ -59,7 +98,7 @@ def entry_key(method: str, path: str, accept: Optional[str]) -> str:
 
 def network_cache_dir(network: str) -> str:
     """Absolute directory holding cached entries for *network* (e.g. ``SEPOLIA``)."""
-    return os.path.join(CACHE_ROOT, network.upper())
+    return os.path.join(get_cache_root(), network.upper())
 
 
 def entry_paths(network: str, key: str) -> dict[str, str]:
@@ -70,19 +109,56 @@ def entry_paths(network: str, key: str) -> dict[str, str]:
 
 def load_manifest() -> dict[str, Any]:
     """Load ``manifest.json``; return an empty manifest if missing or corrupt."""
-    if not os.path.isfile(MANIFEST_PATH):
+    manifest_path = get_manifest_path()
+    if not os.path.isfile(manifest_path):
         return {"version": 1, "networks": {}}
     try:
-        with open(MANIFEST_PATH, encoding="utf-8") as handle:
+        with open(manifest_path, encoding="utf-8") as handle:
             return json.load(handle)
     except (json.JSONDecodeError, OSError):
         return {"version": 1, "networks": {}}
 
 
+def ensure_directory(path: str) -> None:
+    """Create *path* as a directory, clearing broken prior entries if needed."""
+    if os.path.isdir(path):
+        return
+    if os.path.lexists(path):
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            elif os.path.islink(path):
+                os.unlink(path)
+            else:
+                os.remove(path)
+        except OSError:
+            shutil.rmtree(path, ignore_errors=True)
+            if os.path.lexists(path) and not os.path.isdir(path):
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+    try:
+        os.makedirs(path, exist_ok=True)
+    except FileExistsError:
+        if os.path.isdir(path):
+            return
+        shutil.rmtree(path, ignore_errors=True)
+        os.makedirs(path, exist_ok=True)
+
+
+def ensure_cache_root() -> str:
+    """Ensure the host cache directory exists and return its path."""
+    cache_root = get_cache_root()
+    ensure_directory(cache_root)
+    return cache_root
+
+
 def save_manifest(manifest: dict[str, Any]) -> None:
-    """Persist the checkpoint cache manifest to ``MANIFEST_PATH``."""
-    os.makedirs(CACHE_ROOT, exist_ok=True)
-    with open(MANIFEST_PATH, "w", encoding="utf-8") as handle:
+    """Persist the checkpoint cache manifest to disk."""
+    ensure_cache_root()
+    manifest_path = get_manifest_path()
+    with open(manifest_path, "w", encoding="utf-8") as handle:
         json.dump(manifest, handle, indent=2)
         handle.write("\n")
 

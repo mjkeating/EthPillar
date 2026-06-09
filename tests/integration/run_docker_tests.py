@@ -24,6 +24,16 @@ except ImportError:
 
 RUN_TEST = "bash /ethpillar/tests/integration/run_test.sh"
 
+_INTEGRATION_DIR = os.path.dirname(os.path.abspath(__file__))
+if _INTEGRATION_DIR not in sys.path:
+    sys.path.insert(0, _INTEGRATION_DIR)
+from checkpoint_cache_common import (  # noqa: E402
+    CONTAINER_CACHE_PATH,
+    ensure_cache_root,
+    get_cache_root,
+    get_manifest_path,
+)
+
 # Matrices
 combos = [
     "Caplin-Erigon",
@@ -135,10 +145,10 @@ async def run_test(task: TestTask, results_dir: str, semaphore: asyncio.Semaphor
             token = os.environ.get("GITHUB_TOKEN", "")
             token_flag = f"-e GITHUB_TOKEN={shlex.quote(token)}" if token else ""
             cache_mount = ""
-            cache_path = os.path.join(cwd, "tests", "integration", "checkpoint_cache")
-            if os.path.isfile(os.path.join(cache_path, "manifest.json")):
+            cache_path = get_cache_root()
+            if os.path.isfile(get_manifest_path()):
                 cache_mount = (
-                    f"-v {shlex.quote(cache_path)}:/ethpillar/tests/integration/checkpoint_cache:ro "
+                    f"-v {shlex.quote(cache_path)}:{CONTAINER_CACHE_PATH}:ro "
                 )
             run_cmd = (
                 f"docker run -d --name {task.container_name} {flags} {token_flag} "
@@ -365,11 +375,12 @@ async def main():
         sys.exit(1)
 
     cwd = os.getcwd()
-    cache_dir = os.path.join(cwd, "tests", "integration", "checkpoint_cache")
-    os.makedirs(cache_dir, exist_ok=True)
-    print("Warming checkpoint cache (weekly refresh)...")
+    cache_dir = ensure_cache_root()
+    print(f"Warming checkpoint cache at {cache_dir} ...")
     warm_cmd = (
         f"docker run --rm -v {shlex.quote(cwd)}:/ethpillar "
+        f"-v {shlex.quote(cache_dir)}:{CONTAINER_CACHE_PATH} "
+        f"-e ETHPILLAR_CHECKPOINT_CACHE_DIR={CONTAINER_CACHE_PATH} "
         f"ethpillar-rebuild python3 /ethpillar/tests/integration/warm_checkpoint_cache.py"
     )
     warm_res = subprocess.run(warm_cmd, shell=True)

@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from checkpoint_cache_common import (
     CACHE_MAX_AGE_SEC,
-    MANIFEST_PATH,
+    get_manifest_path,
     OPTIONAL_PREFETCH_REQUESTS,
     REQUIRED_PREFETCH_REQUESTS,
     UPSTREAM_URLS,
@@ -148,7 +148,7 @@ def main() -> int:
             )
 
     if not refreshed:
-        print(f"[checkpoint] All networks fresh; manifest at {MANIFEST_PATH}")
+        print(f"[checkpoint] All networks fresh; manifest at {get_manifest_path()}")
     return 0
 
 

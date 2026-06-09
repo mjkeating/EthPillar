@@ -8,6 +8,10 @@
 
 set -e
 
+# Keep checkpoint cache off Docker Desktop's repo bind mount (broken mkdir on WSL).
+export ETHPILLAR_CHECKPOINT_CACHE_DIR="${ETHPILLAR_CHECKPOINT_CACHE_DIR:-${HOME}/.cache/ethpillar/checkpoint_cache}"
+mkdir -p "$ETHPILLAR_CHECKPOINT_CACHE_DIR"
+
 # Ensure rich is installed
 if ! python3 -c "import rich" 2>/dev/null; then
     echo "Installing required Python library 'rich' for the terminal UI..."

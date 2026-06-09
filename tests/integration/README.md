@@ -116,8 +116,15 @@ Release **binaries** may be served from `cache/` after a live `HEAD` check confi
 ### Checkpoint sync (SEPOLIA + HOODI)
 
 Before the test matrix runs, `warm_checkpoint_cache.py` prefetches Beacon checkpoint API
-responses from ethpandaops into `checkpoint_cache/` (gitignored). Entries expire after
-**7 days**; a fresh run re-downloads only when stale.
+responses from ethpandaops. Entries expire after **7 days**; a fresh run re-downloads only
+when stale.
+
+**Cache location:** WSL/Windows runs store the cache at
+``~/.cache/ethpillar/checkpoint_cache`` (not under the repo). Docker Desktop's repo bind
+mount breaks ``mkdir`` on ``tests/integration/checkpoint_cache``; the orchestrator mounts
+the sidecar cache into each container at ``/ethpillar/tests/integration/checkpoint_cache``.
+Native Linux runs without ``ETHPILLAR_CHECKPOINT_CACHE_DIR`` use the in-repo path
+(``tests/integration/checkpoint_cache/``, gitignored).
 
 Each test container mounts that cache read-only and `run_test.sh` starts a local proxy on
 `http://127.0.0.1:19595`. Consensus clients use that URL instead of hitting the WAN on
@@ -125,8 +132,9 @@ every install (~190 MB per HOODI client otherwise). Slightly stale checkpoints a
 clients backfill via P2P after checkpoint sync, and integration only waits for services to
 reach `active` and bind ports.
 
-Delete `checkpoint_cache/` to force a full re-warm. If warming fails, tests fall back to
-upstream ethpandaops URLs automatically.
+Delete ``~/.cache/ethpillar/checkpoint_cache`` (WSL) or ``tests/integration/checkpoint_cache``
+(Linux) to force a full re-warm. If warming fails, tests fall back to upstream ethpandaops
+URLs automatically.
 
 ### Environment file
 

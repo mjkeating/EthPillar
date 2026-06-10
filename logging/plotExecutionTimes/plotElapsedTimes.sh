@@ -26,13 +26,16 @@ if [[ ! -f /etc/systemd/system/execution.service ]]; then
   exit 0
 fi
 
-missing_packages=()
-python3 -c "import rich" >/dev/null 2>&1 || missing_packages+=("python3-rich")
-
-if [[ ${#missing_packages[@]} -gt 0 ]]; then
-  echo "Installing execution time plotter dependencies: ${missing_packages[*]}"
-  sudo apt-get update
-  sudo apt-get install --no-install-recommends --no-install-suggests -y "${missing_packages[@]}"
+# Ensure 'rich' is available in the active Python environment for best plotting 
+# (works with venvs).
+if ! python3 -c "import rich" >/dev/null 2>&1; then
+  echo "'rich' not found in the active Python environment. Attempting to install via pip..."
+  if python3 -m pip install --upgrade --no-cache-dir rich; then
+    echo "Installed 'rich' into the active Python environment."
+  else
+    echo "Failed to install 'rich'. Activate your venv and run: python -m pip install rich" >&2
+    exit 1
+  fi
 fi
 
 python3 "$PLOTTER" --source journalctl --unit execution "$@"

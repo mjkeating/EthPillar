@@ -245,11 +245,38 @@ class PlotRenderer:
 
         # --- Plain Text Fallback ---
         lines = ["-" * (width + 2)]
+        # ANSI color codes for plain-text fallback
+        ansi = {"green": "\033[92m", "yellow": "\033[93m", "red": "\033[91m"}
+        reset = "\033[0m"
+
         for row in grid:
-            lines.append("|" + "".join(char for char, _style in row) + "|")
+            rendered = "|"
+            for char, style in row:
+                if style and style in ansi:
+                    rendered += f"{ansi[style]}{char}{reset}"
+                else:
+                    rendered += char
+            rendered += "|"
+            lines.append(rendered)
         lines.append("-" * (width + 2))
-        # draw the # in the footer in red using ANSI codes        
-        lines.extend(line.replace("#", "\033[91m#\033[0m") for line in footer)
+        # draw colors for footer (color the '#' marker and tier percentages)
+        colored_footer: list[str] = []
+        for line in footer:
+            if line.startswith("Tiers:"):
+                parts = line.split("|")
+                if len(parts) >= 3:
+                    g = parts[0].split(":", 1)[1].strip()
+                    y = parts[1].strip()
+                    r = parts[2].strip()
+                    colored_footer.append(
+                        f"Tiers: {ansi['green']}{g}{reset} | {ansi['yellow']}{y}{reset} | {ansi['red']}{r}{reset}"
+                    )
+                else:
+                    colored_footer.append(line)
+            else:
+                colored_footer.append(line.replace("#", f"{ansi['red']}#{reset}"))
+
+        lines.extend(colored_footer)
         lines.append(summary_line)
         return "\n".join(lines)
 

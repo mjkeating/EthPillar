@@ -59,14 +59,25 @@ def download_and_install_reth(eth_network: str, el_p2p_port: str, el_p2p_port_2:
     download_file(download_url, download_path, "Reth")
 
     # Extract the binary to /usr/local/bin/ using sudo
-    # Reth tarball contains just the binary at root
     subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}"], check=True)
 
-    # Find the extracted reth binary and rename it
-    subprocess.run(["sudo", "sh", "-c", "mv /usr/local/bin/reth-* /usr/local/bin/reth"], check=True)
+    # v2.3+ ships ``reth`` at archive root; older reproducible builds used ``reth-*``.
+    dest_path = os.path.join(INSTALL_DIR, "reth")
+    find_result = subprocess.run(
+        ["sudo", "find", INSTALL_DIR, "-maxdepth", "1", "-type", "f", "-name", "reth*"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    matches = [line.strip() for line in find_result.stdout.splitlines() if line.strip()]
+    if not matches:
+        print("Error: Could not find reth binary after extracting archive.")
+        exit(1)
+    src_path = next((path for path in matches if os.path.basename(path) == "reth"), matches[0])
+    if os.path.abspath(src_path) != os.path.abspath(dest_path):
+        subprocess.run(["sudo", "mv", src_path, dest_path], check=True)
 
-    # Ensure ownership and correct permissions via helper
-    install_system_binary(f"{INSTALL_DIR}/reth", os.path.join(INSTALL_DIR, "reth"))
+    install_system_binary(dest_path, dest_path)
 
     # Remove the tar file
     os.remove(download_path)

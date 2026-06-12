@@ -15,7 +15,7 @@ import shutil
 import time
 from typing import Any, Optional
 
-CACHE_MAX_AGE_SEC = 7 * 24 * 60 * 60
+CACHE_MAX_AGE_SEC = 20 * 60 * 60
 
 # In-container mount point (host cache is bind-mounted here).
 CONTAINER_CACHE_PATH = "/ethpillar/tests/integration/checkpoint_cache"

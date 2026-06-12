@@ -130,7 +130,7 @@ def warm_network(network: str, manifest: dict[str, Any]) -> None:
 
 
 def main() -> int:
-    """Refresh stale network caches; skip networks still within the weekly TTL."""
+    """Refresh stale network caches; skip networks still within the daily TTL."""
     manifest = load_manifest()
     refreshed = False
 
@@ -141,10 +141,10 @@ def main() -> int:
             refreshed = True
         else:
             warmed_at = manifest["networks"][network]["warmed_at"]
-            age_days = (time.time() - warmed_at) / 86400
+            age_hours = (time.time() - warmed_at) / 3600
             print(
                 f"[checkpoint] {network} cache is fresh "
-                f"({age_days:.1f}d old, expires after 7d) — skipping"
+                f"({age_hours:.1f}h old, expires after 20h) — skipping"
             )
 
     if not refreshed:

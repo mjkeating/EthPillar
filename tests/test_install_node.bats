@@ -9,6 +9,11 @@
 setup() {
     cd "$BATS_TEST_DIRNAME/.."
 
+    # Isolate venv on local tmpfs so mocks are used (repo .venv from integration
+    # runs would bypass mocks; deleting it fails on Windows Docker mounts).
+    export ETHPILLAR_VENV="/tmp/ethpillar_bats_venv"
+    rm -rf "$ETHPILLAR_VENV"
+
     export COMMAND_LOG="$PWD/tests/mock_calls.log"
     : > "$COMMAND_LOG"
 
@@ -29,18 +34,18 @@ echo "$name \$*" >> "$COMMAND_LOG"
 # If python3 is called to create a venv, create fake venv binaries
 if [ "$name" == "python3" ] && [[ "\$*" == *"-m venv"* ]]; then
     venv_path="\${@: -1}"
-    mkdir -p "\$venv_path/bin"
-    cat <<PIPOV > "\$venv_path/bin/pip"
-#!/bin/bash
-echo "pip \\\$*" >> "$COMMAND_LOG"
-exit 0
-PIPOV
+    command -p mkdir -p "\$venv_path/bin"
+    {
+        echo '#!/bin/bash'
+        echo "echo \"pip \\\$*\" >> \"$COMMAND_LOG\""
+        echo 'exit 0'
+    } > "\$venv_path/bin/pip"
     chmod +x "\$venv_path/bin/pip"
-    cat <<PYOV > "\$venv_path/bin/python3"
-#!/bin/bash
-echo "python3 \\\$*" >> "$COMMAND_LOG"
-exit 0
-PYOV
+    {
+        echo '#!/bin/bash'
+        echo "echo \"python3 \\\$*\" >> \"$COMMAND_LOG\""
+        echo 'exit 0'
+    } > "\$venv_path/bin/python3"
     chmod +x "\$venv_path/bin/python3"
 fi
 if [ -n "$stdout" ]; then echo "$stdout"; fi
@@ -73,13 +78,14 @@ teardown() {
     rm -rf "$MOCK_BIN_DIR"
     rm -f "$COMMAND_LOG"
     rm -rf "/tmp/test_home"
+    rm -rf "${ETHPILLAR_VENV:-/tmp/ethpillar_bats_venv}"
 }
 
 @test "install-node.sh: uses default script if none provided" {
     # Pass 'true' explicitly to skip the interactive wait_for_user prompt
     run bash deploy/install-node.sh "true"
     [ "$status" -eq 0 ]
-    grep -q "python3 .*deploy-node.py" "$COMMAND_LOG"
+    grep -qE '(^|/)python3 .*/deploy/deploy-node\.py' "$COMMAND_LOG"
 }
 
 @test "install-node.sh: invokes python3 with correct arguments" {
@@ -87,7 +93,7 @@ teardown() {
     run bash deploy/install-node.sh "true" "--install_config" "Solo Staking Node"
     
     [ "$status" -eq 0 ]
-    grep -q "python3 .*deploy-node.py" "$COMMAND_LOG"
+    grep -qE '(^|/)python3 .*/deploy/deploy-node\.py' "$COMMAND_LOG"
     grep -q "Solo Staking Node" "$COMMAND_LOG"
 }
 

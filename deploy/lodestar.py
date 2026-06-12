@@ -15,20 +15,15 @@ def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     Returns:
         A dictionary with keys 'version', 'download_urls', and 'filenames'.
     """
-    from deploy.common import get_github_release
+    from deploy.common import get_github_release, pick_github_release_asset
     data = get_github_release("ChainSafe/lodestar", version_tag)
     tag = data["tag_name"]
-    arch = "amd64" if arch_amd64 else "arm64"
-    download_url = None
-    filename = None
-    for asset in data["assets"]:
-        if asset["name"].lower().endswith(f"linux-{arch}.tar.gz"):
-            download_url = asset["browser_download_url"]
-            filename = asset["name"]
-            break
-    if not download_url:
-        filename = f"lodestar-{tag}-linux-{arch}.tar.gz"
-        download_url = f"https://github.com/ChainSafe/lodestar/releases/download/{tag}/{filename}"
+    filename, download_url = pick_github_release_asset(
+        data.get("assets", []),
+        arch_amd64,
+        name_contains=("lodestar",),
+        client_label="Lodestar",
+    )
     return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
 
 
@@ -58,12 +53,19 @@ def download_lodestar(eth_network: str) -> str:
 
     # We want the binary to end up at /usr/local/bin/lodestar.  Each instance (lodestar beacon and validator) will reference the same 
     # binary, and will each have their own tmp foler in /var/lib/lodestar and /var/lib/lodestar_validator respectively for caxa
-    subprocess.run(["sudo", "mkdir", "-p", "/tmp/lodestar_extract"])
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/tmp/lodestar_extract"])
-    result = subprocess.run(["sudo", "find", "/tmp/lodestar_extract", "-type", "f", "-name", "lodestar"], capture_output=True, text=True)
+    subprocess.run(["sudo", "mkdir", "-p", "/tmp/lodestar_extract"], check=True)
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/tmp/lodestar_extract"], check=True)
+    result = subprocess.run(
+        ["sudo", "find", "/tmp/lodestar_extract", "-type", "f", "-name", "lodestar"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     lodestar_bin = result.stdout.strip().split("\n")[0]
-    if lodestar_bin:
-        install_system_binary(lodestar_bin, f"{INSTALL_DIR}/lodestar")
+    if not lodestar_bin:
+        print("Error: Could not find lodestar binary after extracting archive.")
+        exit(1)
+    install_system_binary(lodestar_bin, f"{INSTALL_DIR}/lodestar")
 
     # Remove the tar file and temporary extraction directory
     os.remove(download_path)

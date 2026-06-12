@@ -20,7 +20,26 @@ docker build -t ethpillar-test -f tests/integration/Dockerfile.test .
 These tests verify the Python orchestration logic, flag resolution, and systemd service generation.
 
 ```bash
-docker run --rm -v "${PWD}:/ethpillar" ethpillar-test python3 -m pytest tests/ -v
+docker run --rm -v "${PWD}:/ethpillar" ethpillar-test bash /ethpillar/tests/run_unit_tests.sh tests/ -v
+```
+
+Live release-info tests (GitHub + geth.ethereum.org) are **skipped by default** in the unit run. They verify that `get_client_release_info()` resolves real download URLs for LATEST and for older tags — the same path used when picking a non-latest version in the update menus.
+
+**Requires `GITHUB_TOKEN`** (read-only public repo access is sufficient).
+
+1. Create a classic PAT: [github.com/settings/tokens](https://github.com/settings/tokens) → *Generate new token (classic)* → no scopes needed for public release metadata (or enable `public_repo`).
+2. Run with the token in your shell:
+
+```powershell
+# PowerShell
+$env:GITHUB_TOKEN = "ghp_your_token_here"
+docker run --rm -e GITHUB_TOKEN -v "${PWD}:/ethpillar" ethpillar-test bash /ethpillar/tests/run_live_release_tests.sh
+```
+
+```bash
+# bash
+export GITHUB_TOKEN=ghp_your_token_here
+docker run --rm -e GITHUB_TOKEN -v "${PWD}:/ethpillar" ethpillar-test bash /ethpillar/tests/run_live_release_tests.sh
 ```
 
 ## 3. Running Shell Tests (Bats)
@@ -37,21 +56,13 @@ These tests perform end-to-end installations of various client combinations and 
 
 ### On Windows (PowerShell)
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tests\integration\run_docker_tests.ps1
+pwsh -ExecutionPolicy Bypass -File .\tests\integration\run_docker_tests.ps1
 ```
 
 ### On Linux/macOS (Manual)
-You can run individual integration tests directly:
-To run a specific test scenario with full systemd validation:
+You can run the full integration test suite directly:
 ```bash
-# Start a persistent container
-docker run -d --name ep-test --privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock -v "${PWD}:/ethpillar" ethpillar-test
-
-# Execute the test script inside the container
-docker exec ep-test bash /ethpillar/tests/integration/run_test.sh deploy/deploy-node.py --combo Lighthouse-Reth --config "Solo Staking Node" --network SEPOLIA
-
-# Clean up
-docker rm -f ep-test
+bash tests/integration/run_docker_tests.sh
 ```
 
 ## Test Structure
@@ -60,6 +71,7 @@ docker rm -f ep-test
 - `tests/test_service_generators.py`: Golden-string tests for systemd units.
 - `tests/test_install_node.bats`: Validation logic for the install wrapper.
 - `tests/test_ethpillar_installnode.bats`: TUI routing and role selection logic.
+- `tests/run_unit_tests.sh`: Bootstraps Python deps via production `functions.sh`, then runs pytest in the project venv.
 - `tests/integration/run_test.sh`: Bootstraps Python deps via production `functions.sh`, then runs the test runner.
 - `tests/integration/run_inside_docker.py`: The core engine for containerized installation testing.
 

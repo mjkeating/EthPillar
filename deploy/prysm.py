@@ -15,31 +15,27 @@ def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     Returns:
         A dictionary with keys 'version', 'download_urls', and 'filenames'.
     """
-    from deploy.common import get_github_release
+    from deploy.common import get_github_release, pick_github_release_asset
     data = get_github_release("prysmaticlabs/prysm", version_tag)
     tag = data["tag_name"]
-    arch = "amd64" if arch_amd64 else "arm64"
-    
-    bn_url = None
-    vc_url = None
-    for asset in data["assets"]:
-        if asset["name"] == f"beacon-chain-{tag}-linux-{arch}":
-            bn_url = asset["browser_download_url"]
-        elif asset["name"] == f"validator-{tag}-linux-{arch}":
-            vc_url = asset["browser_download_url"]
-            
-    if not bn_url or not vc_url:
-        for asset in data["assets"]:
-            name = asset["name"]
-            if "beacon-chain" in name and arch in name:
-                bn_url = asset["browser_download_url"]
-            elif "validator" in name and arch in name:
-                vc_url = asset["browser_download_url"]
-                
-    if not bn_url or not vc_url:
-        raise ValueError(f"Could not find Prysm assets for linux-{arch}")
-        
-    return {"version": tag, "download_urls": [bn_url, vc_url], "filenames": [f"beacon-chain-{tag}-linux-{arch}", f"validator-{tag}-linux-{arch}"]}
+    assets = data.get("assets", [])
+    bn_filename, bn_url = pick_github_release_asset(
+        assets,
+        arch_amd64,
+        role_contains="beacon-chain",
+        client_label="Prysm beacon-chain",
+    )
+    vc_filename, vc_url = pick_github_release_asset(
+        assets,
+        arch_amd64,
+        role_contains="validator",
+        client_label="Prysm validator",
+    )
+    return {
+        "version": tag,
+        "download_urls": [bn_url, vc_url],
+        "filenames": [bn_filename, vc_filename],
+    }
 
 
 

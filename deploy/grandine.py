@@ -14,13 +14,15 @@ def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     Returns:
         A dictionary with keys 'version', 'download_urls', and 'filenames'.
     """
-    from deploy.common import get_github_release
+    from deploy.common import get_github_release, pick_github_release_asset
     data = get_github_release("grandinetech/grandine", version_tag)
     tag = data["tag_name"]
-    version = tag.lstrip("v")
-    arch = "x64" if arch_amd64 else "arm64"
-    filename = "grandine"
-    download_url = f"https://github.com/grandinetech/grandine/releases/download/{tag}/grandine-{version}-linux-{arch}"
+    filename, download_url = pick_github_release_asset(
+        data.get("assets", []),
+        arch_amd64,
+        name_contains=("grandine",),
+        client_label="Grandine",
+    )
     return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
 
 
@@ -92,9 +94,9 @@ def install_grandine_bn(eth_network: str, checkpoint_sync_url: str, jwtsecret_pa
     )
     
     if is_integrated_vc:
-        subprocess.run(["sudo", "mkdir", "-p", "/var/lib/grandine/validator_keys"])
-        subprocess.run(["sudo", "chown", "-R", "consensus:consensus", "/var/lib/grandine/validator_keys"])
-        subprocess.run(["sudo", "chmod", "700", "/var/lib/grandine/validator_keys"])
+        subprocess.run(["sudo", "mkdir", "-p", "/var/lib/grandine/validator_keys"], check=True)
+        subprocess.run(["sudo", "chown", "-R", "consensus:consensus", "/var/lib/grandine/validator_keys"], check=True)
+        subprocess.run(["sudo", "chmod", "700", "/var/lib/grandine/validator_keys"], check=True)
 
     service_file_path = '/etc/systemd/system/consensus.service'
     write_service_file(service_content, service_file_path, 'consensus_temp.service')

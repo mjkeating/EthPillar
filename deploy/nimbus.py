@@ -15,20 +15,15 @@ def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     Returns:
         A dictionary with keys 'version', 'download_urls', and 'filenames'.
     """
-    from deploy.common import get_github_release
+    from deploy.common import get_github_release, pick_github_release_asset
     data = get_github_release("status-im/nimbus-eth2", version_tag)
     tag = data["tag_name"]
-    arch = "amd64" if arch_amd64 else "arm64"
-    download_url = None
-    filename = None
-    for asset in data["assets"]:
-        name = asset["name"].lower()
-        if "_linux_" in name and arch in name and name.endswith(".tar.gz"):
-            download_url = asset["browser_download_url"]
-            filename = asset["name"]
-            break
-    if not download_url:
-        raise ValueError(f"Could not find Nimbus asset for linux-{arch}")
+    filename, download_url = pick_github_release_asset(
+        data.get("assets", []),
+        arch_amd64,
+        name_contains=("nimbus", "_linux_"),
+        client_label="Nimbus",
+    )
     return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
 
 
@@ -40,7 +35,7 @@ def download_nimbus(eth_network: str) -> str:
     
     # Install dependencies for Nimbus
     print(f">> Installing Nimbus dependencies")
-    subprocess.run(["sudo", "apt-get", "-y", "-qq", "install", "libnss3", "libsqlite3-0"])
+    subprocess.run(["sudo", "apt-get", "-y", "-qq", "install", "libnss3", "libsqlite3-0"], check=True)
 
     # Resolve version and download URL
     arch_amd64 = get_machine_architecture() == "amd64"
@@ -61,12 +56,12 @@ def download_nimbus(eth_network: str) -> str:
     download_file(download_url, download_path, "Nimbus")
 
     # Extract the binary to /usr/local/bin/ using sudo
-    subprocess.run(["sudo", "mkdir", "-p", "/tmp/nimbus_extract"])
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/tmp/nimbus_extract", "--strip-components=1"])
-    
+    subprocess.run(["sudo", "mkdir", "-p", "/tmp/nimbus_extract"], check=True)
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/tmp/nimbus_extract", "--strip-components=1"], check=True)
+
     # Move the actual binaries we need
-    subprocess.run(["sudo", "cp", "/tmp/nimbus_extract/build/nimbus_beacon_node", f"{INSTALL_DIR}/"])
-    subprocess.run(["sudo", "cp", "/tmp/nimbus_extract/build/nimbus_validator_client", f"{INSTALL_DIR}/"])
+    subprocess.run(["sudo", "cp", "/tmp/nimbus_extract/build/nimbus_beacon_node", f"{INSTALL_DIR}/"], check=True)
+    subprocess.run(["sudo", "cp", "/tmp/nimbus_extract/build/nimbus_validator_client", f"{INSTALL_DIR}/"], check=True)
 
     # Remove the tar file and extract dir
     os.remove(download_path)

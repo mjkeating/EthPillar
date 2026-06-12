@@ -10,9 +10,6 @@ import tempfile
 from consolemenu import PromptUtils, Screen
 from typing import Optional, List
 import glob
-import traceback
-
-
 INSTALL_DIR = "/usr/local/bin"
 DOWNLOAD_DIR = "/tmp"
 BASE_DATA_DIR = "/var/lib"
@@ -34,21 +31,17 @@ def install_system_binary(src_path: str, dest: str) -> str:
         dest_path = dest
     else:
         dest_path = os.path.join(INSTALL_DIR, dest)
-    try:
-        # Ensure destination directory exists
-        dest_dir = os.path.dirname(dest_path) or INSTALL_DIR
-        subprocess.run(["sudo", "mkdir", "-p", dest_dir], check=True)
-        # If src and dest are same, skip moving
-        if os.path.abspath(src_path) != os.path.abspath(dest_path):
-            subprocess.run(["sudo", "mv", src_path, dest_path], check=True)
-        # Ensure it's executable and has 755
-        subprocess.run(["sudo", "chmod", "+x", dest_path], check=False)
-        subprocess.run(["sudo", "chmod", "755", dest_path], check=True)
-        # Ensure owned by root:root
-        subprocess.run(["sudo", "chown", "root:root", dest_path], check=True)
-    except Exception:
-        print(">> Exception in install_system_binary:")
-        traceback.print_exc()
+    # Ensure destination directory exists
+    dest_dir = os.path.dirname(dest_path) or INSTALL_DIR
+    subprocess.run(["sudo", "mkdir", "-p", dest_dir], check=True)
+    # If src and dest are same, skip moving
+    if os.path.abspath(src_path) != os.path.abspath(dest_path):
+        subprocess.run(["sudo", "mv", src_path, dest_path], check=True)
+    # Ensure it's executable and has 755
+    subprocess.run(["sudo", "chmod", "+x", dest_path], check=False)
+    subprocess.run(["sudo", "chmod", "755", dest_path], check=True)
+    # Ensure owned by root:root
+    subprocess.run(["sudo", "chown", "root:root", dest_path], check=True)
     return dest_path
 
 
@@ -70,41 +63,37 @@ def install_system_directory(src_dir: str, dest_dir: str, service_user: Optional
     Returns:
         The absolute destination directory.
     """
-    try:
-        print(f">> Installing to {dest_dir} from {src_dir}")
-        # Ensure parent exists and remove any old install
-        parent = os.path.dirname(dest_dir)
-        subprocess.run(["sudo", "mkdir", "-p", parent], check=True)
-        subprocess.run(["sudo", "rm", "-rf", dest_dir], check=False)
+    print(f">> Installing to {dest_dir} from {src_dir}")
+    # Ensure parent exists and remove any old install
+    parent = os.path.dirname(dest_dir)
+    subprocess.run(["sudo", "mkdir", "-p", parent], check=True)
+    subprocess.run(["sudo", "rm", "-rf", dest_dir], check=False)
 
-        # Move into place
-        subprocess.run(["sudo", "mv", src_dir, dest_dir], check=True)
+    # Move into place
+    subprocess.run(["sudo", "mv", src_dir, dest_dir], check=True)
 
-        # Set ownership to root:root and tighten perms
-        subprocess.run(["sudo", "chown", "-R", "root:root", dest_dir], check=True)
-        # Ensure directories are accessible
-        subprocess.run(["sudo", "find", dest_dir, "-type", "d", "-exec", "chmod", "755", "{}", ";"], check=True)
-        # Preserve files that are executable and ensure they remain executable.
-        # Then normalize all non-executable regular files to 644. This order
-        # prevents clearing execute bits and avoids a race where we would
-        # set everything to 644 and then be unable to detect previously
-        # executable files.
-        subprocess.run(["sudo", "find", dest_dir, "-type", "f", "-perm", "/111", "-exec", "chmod", "755", "{}", ";"], check=False)
-        subprocess.run(["sudo", "find", dest_dir, "-type", "f", "!", "-perm", "/111", "-exec", "chmod", "644", "{}", ";"], check=True)
+    # Set ownership to root:root and tighten perms
+    subprocess.run(["sudo", "chown", "-R", "root:root", dest_dir], check=True)
+    # Ensure directories are accessible
+    subprocess.run(["sudo", "find", dest_dir, "-type", "d", "-exec", "chmod", "755", "{}", ";"], check=True)
+    # Preserve files that are executable and ensure they remain executable.
+    # Then normalize all non-executable regular files to 644. This order
+    # prevents clearing execute bits and avoids a race where we would
+    # set everything to 644 and then be unable to detect previously
+    # executable files.
+    subprocess.run(["sudo", "find", dest_dir, "-type", "f", "-perm", "/111", "-exec", "chmod", "755", "{}", ";"], check=False)
+    subprocess.run(["sudo", "find", dest_dir, "-type", "f", "!", "-perm", "/111", "-exec", "chmod", "644", "{}", ";"], check=True)
 
-        # Create writable subdirs and assign to service_user if provided
-        if writable_subdirs:
-            for sub in writable_subdirs:
-                full = os.path.join(dest_dir, sub)
-                subprocess.run(["sudo", "mkdir", "-p", full], check=True)
-                if service_user:
-                    subprocess.run(["sudo", "chown", "-R", f"{service_user}:{service_user}", full], check=True)
-                    subprocess.run(["sudo", "chmod", "700", full], check=True)
-                else:
-                    subprocess.run(["sudo", "chmod", "750", full], check=True)
-    except Exception:
-        print(">> Exception in install_system_directory:")
-        traceback.print_exc()
+    # Create writable subdirs and assign to service_user if provided
+    if writable_subdirs:
+        for sub in writable_subdirs:
+            full = os.path.join(dest_dir, sub)
+            subprocess.run(["sudo", "mkdir", "-p", full], check=True)
+            if service_user:
+                subprocess.run(["sudo", "chown", "-R", f"{service_user}:{service_user}", full], check=True)
+                subprocess.run(["sudo", "chmod", "700", full], check=True)
+            else:
+                subprocess.run(["sudo", "chmod", "750", full], check=True)
     return dest_dir
 
 def setup_client_user_and_dir(user: str, client_name: str) -> None:
@@ -435,14 +424,14 @@ def setup_node(jwt_secret_path: str, validator_only: bool = False) -> None:
             subprocess.run(['sudo', 'tee', jwt_secret_path], input=rand_hex.stdout, stdout=subprocess.DEVNULL, check=True)
 
     # Update and upgrade packages
-    subprocess.run(['sudo', 'apt', '-y', '-qq', 'update'])
-    subprocess.run(['sudo', 'apt', '-y', '-qq', 'upgrade'])
+    subprocess.run(['sudo', 'apt', '-y', '-qq', 'update'], check=True)
+    subprocess.run(['sudo', 'apt', '-y', '-qq', 'upgrade'], check=True)
 
     # Autoremove packages
-    subprocess.run(['sudo', 'apt', '-y', '-qq' , 'autoremove'])
+    subprocess.run(['sudo', 'apt', '-y', '-qq' , 'autoremove'], check=True)
 
     # Chrony timesync package
-    subprocess.run(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'])
+    subprocess.run(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'], check=True)
 
 def write_service_file(content: str, target_path: str, temp_filename: str = 'temp.service') -> None:
     """Write service content to a target path using a temporary file.
@@ -499,10 +488,7 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
     """
     
     # Reload the systemd daemon
-    try:
-        subprocess.run(['sudo', 'systemctl', 'daemon-reload'], capture_output=True)
-    except Exception:
-        pass
+    subprocess.run(['sudo', 'systemctl', 'daemon-reload'], capture_output=True, check=True)
 
     print(f'##########################\n')
     print(f'## Installation Summary ##\n')
@@ -592,15 +578,251 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
         exit(0)
 
 
+def _github_api_headers() -> dict:
+    """Headers for GitHub API requests (optional GITHUB_TOKEN raises rate limits)."""
+    import os
+    headers = {"User-Agent": "ethpillar"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+_NON_LINUX_ASSET_MARKERS = (
+    "osx",
+    "darwin",
+    "win",
+    "windows",
+    ".exe",
+    ".dmg",
+    ".msi",
+    ".sha256",
+    ".sha512",
+    "checksum",
+    "checksums",
+)
+
+_AMD64_ASSET_MARKERS = (
+    "x86_64",
+    "amd64",
+    "linux-x64",
+    "linux_x64",
+    "linux-amd64",
+    "linux_amd64",
+)
+
+_ARM64_ASSET_MARKERS = (
+    "aarch64",
+    "arm64",
+    "linux-arm64",
+    "linux_arm64",
+)
+
+
+def _asset_name_excluded(name: str) -> bool:
+    """Return True when an asset name looks non-installable or non-Linux.
+
+    Filters checksum sidecars, Windows/macOS builds, and similar artifacts that
+    appear on GitHub releases but must never be downloaded as client binaries.
+    """
+    lowered = name.lower()
+    return any(marker in lowered for marker in _NON_LINUX_ASSET_MARKERS)
+
+
+def _asset_matches_arch(name: str, arch_amd64: bool) -> bool:
+    """Return True when *name* matches the requested CPU architecture.
+
+    Accepts common upstream naming variants (``amd64``, ``x86_64``, ``linux-x64``,
+    ``arm64``, ``aarch64``, etc.) and rejects assets that clearly target the
+    opposite architecture.
+    """
+    lowered = name.lower()
+    want = _AMD64_ASSET_MARKERS if arch_amd64 else _ARM64_ASSET_MARKERS
+    reject = _ARM64_ASSET_MARKERS if arch_amd64 else _AMD64_ASSET_MARKERS
+    if not any(marker in lowered for marker in want):
+        return False
+    return not any(marker in lowered for marker in reject)
+
+
+def _asset_is_linux_candidate(name: str) -> bool:
+    """Return True when an asset name plausibly refers to a Linux client binary.
+
+    Most clients embed ``linux`` in the filename. Some (e.g. older Grandine builds)
+    publish bare architecture suffixes such as ``grandine-2.0.1-amd64`` instead.
+    """
+    lowered = name.lower()
+    if _asset_name_excluded(name):
+        return False
+    if "linux" in lowered:
+        return True
+    return any(marker in lowered for marker in _AMD64_ASSET_MARKERS + _ARM64_ASSET_MARKERS)
+
+
+def _asset_extension_rank(name: str, prefer_extensions: tuple[str, ...]) -> Optional[int]:
+    """Return the preference index of the first matching extension, or None.
+
+    An empty string in *prefer_extensions* matches extensionless bare binaries
+    (for example ``grandine-2.0.4-linux-x64``). Lower indices are higher priority.
+    """
+    lowered = name.lower()
+    for index, ext in enumerate(prefer_extensions):
+        if ext == "":
+            if not any(lowered.endswith(skip) for skip in (".tar.gz", ".zip", ".exe", ".sha256", ".sha512")):
+                return index
+        elif lowered.endswith(ext):
+            return index
+    return None
+
+
+def pick_github_release_asset(
+    assets: list,
+    arch_amd64: Optional[bool],
+    *,
+    role_contains: str = "",
+    name_contains: tuple[str, ...] = (),
+    prefer_extensions: tuple[str, ...] = (".tar.gz", ".zip", ""),
+    client_label: str = "release",
+) -> tuple[str, str]:
+    """Select the best Linux release asset from a GitHub ``release[\"assets\"]`` list.
+
+    EthPillar never constructs download URLs from version tags. Callers fetch the
+    release JSON (via :func:`get_github_release`) and pass its ``assets`` array here
+    so the returned ``browser_download_url`` is always the URL GitHub published.
+
+    Args:
+        assets: GitHub API asset dicts, each with ``name`` and
+            ``browser_download_url``.
+        arch_amd64: ``True`` for amd64/x86_64 hosts, ``False`` for arm64/aarch64,
+            or ``None`` for architecture-neutral archives (e.g. Besu tarballs).
+        role_contains: When set, the asset name must contain this substring
+            (case-insensitive). Used for multi-binary releases such as Prysm
+            (``beacon-chain`` vs ``validator``).
+        name_contains: When non-empty, every substring must appear in the asset
+            name (case-insensitive).
+        prefer_extensions: Filename endings to prefer, highest priority first.
+            Use ``\"\"`` to allow extensionless bare binaries.
+        client_label: Client name included in :class:`ValueError` messages.
+
+    Returns:
+        ``(filename, browser_download_url)`` for the highest-priority matching asset.
+
+    Raises:
+        ValueError: If no asset matches the requested filters.
+    """
+    candidates: list[tuple[int, str, str]] = []
+    for asset in assets:
+        name = asset.get("name", "")
+        url = asset.get("browser_download_url", "")
+        if not name or not url:
+            continue
+        if role_contains and role_contains.lower() not in name.lower():
+            continue
+        if name_contains and not all(part.lower() in name.lower() for part in name_contains):
+            continue
+        if arch_amd64 is None:
+            if _asset_name_excluded(name):
+                continue
+        elif not _asset_is_linux_candidate(name) or not _asset_matches_arch(name, arch_amd64):
+            continue
+        ext_rank = _asset_extension_rank(name, prefer_extensions)
+        if ext_rank is None:
+            continue
+        candidates.append((ext_rank, name, url))
+
+    if not candidates:
+        if arch_amd64 is None:
+            arch_label = "neutral"
+        else:
+            arch_label = "amd64" if arch_amd64 else "arm64"
+        role = f" matching {role_contains!r}" if role_contains else ""
+        raise ValueError(f"No Linux {arch_label} {client_label} asset found{role}")
+
+    candidates.sort(key=lambda item: item[0])
+    _, name, url = candidates[0]
+    return name, url
+
+
+def _normalize_release_version_key(tag: str) -> str:
+    """Normalize a version tag for loose matching (``v1.11.0`` and ``v1.11`` → ``1.11``)."""
+    normalized = tag.strip().lstrip("vV")
+    if re.fullmatch(r"\d+\.\d+\.0", normalized):
+        normalized = normalized[:-2]
+    return normalized.lower()
+
+
+def _github_release_tag_candidates(version_tag: str) -> list[str]:
+    """Build ordered tag strings to try when resolving a GitHub release by tag."""
+    tag = version_tag.strip()
+    candidates = [tag]
+    bare = tag.lstrip("vV")
+    if bare != tag:
+        candidates.append(bare)
+    if re.fullmatch(r"v?\d+\.\d+\.0", tag, re.IGNORECASE):
+        major_minor = bare.rsplit(".", 1)[0]
+        candidates.extend([f"v{major_minor}", major_minor])
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for candidate in candidates:
+        if candidate not in seen:
+            seen.add(candidate)
+            ordered.append(candidate)
+    return ordered
+
+
+def _fetch_github_release_by_tag(repo: str, tag: str) -> Optional[dict]:
+    """Return release JSON for *tag*, or ``None`` when no published release exists."""
+    url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+    res = requests.get(url, headers=_github_api_headers(), timeout=30)
+    if res.status_code == 404:
+        return None
+    res.raise_for_status()
+    return res.json()
+
+
+def _find_github_release_by_normalized_tag(repo: str, version_tag: str) -> Optional[dict]:
+    """Scan published releases for one whose normalized tag matches *version_tag*."""
+    target = _normalize_release_version_key(version_tag)
+    page = 1
+    while page <= 10:
+        url = f"https://api.github.com/repos/{repo}/releases?per_page=100&page={page}"
+        res = requests.get(url, headers=_github_api_headers(), timeout=30)
+        res.raise_for_status()
+        releases = res.json()
+        if not releases:
+            break
+        for release in releases:
+            if release.get("draft"):
+                continue
+            if _normalize_release_version_key(release.get("tag_name", "")) == target:
+                return release
+        page += 1
+    return None
+
+
 def get_github_release(repo: str, version_tag: str) -> dict:
-    """Helper function to fetch release info from GitHub API."""
-    import requests
+    """Fetch release info from the GitHub API.
+
+    Some repos publish releases under shortened tags (for example ``v1.11``) while
+    git also has patch tags such as ``v1.11.0`` with no release assets. When the
+    exact tag is missing, this tries common aliases and scans published releases.
+    """
     if version_tag.upper() == "LATEST":
-        suffix = "latest"
-    else:
-        suffix = f"tags/{version_tag}"
-    url = f"https://api.github.com/repos/{repo}/releases/{suffix}"
-    res = requests.get(url)
+        url = f"https://api.github.com/repos/{repo}/releases/latest"
+        res = requests.get(url, headers=_github_api_headers(), timeout=30)
+        res.raise_for_status()
+        return res.json()
+
+    for candidate in _github_release_tag_candidates(version_tag):
+        release = _fetch_github_release_by_tag(repo, candidate)
+        if release is not None:
+            return release
+
+    release = _find_github_release_by_normalized_tag(repo, version_tag)
+    if release is not None:
+        return release
+
+    url = f"https://api.github.com/repos/{repo}/releases/tags/{version_tag}"
+    res = requests.get(url, headers=_github_api_headers(), timeout=30)
     res.raise_for_status()
     return res.json()
 

@@ -346,6 +346,8 @@ class TestErigonService:
         assert f"--maxpeers={EL_MAX_PEER_COUNT}" in result
         assert "--prune.mode=minimal" in result
         assert "--caplin.mev-relay-url=http://127.0.0.1:18550" in result
+        assert "After=network-online.target mevboost.service" in result
+        assert "Requires=mevboost.service" in result
         assert f"--caplin.discovery.port={CL_P2P_PORT}" in result
         assert f"--beacon.api.port={CL_REST_PORT}" in result
         assert f"--caplin.checkpoint-sync-url={SYNC_URL}/eth/v2/debug/beacon/states/finalized" in result
@@ -357,6 +359,7 @@ class TestErigonService:
             SYNC_URL
         )
         assert "--caplin.mev-relay-url" not in result
+        assert "Requires=mevboost.service" not in result
 
 
 # ═══════════════════════════════════════════════

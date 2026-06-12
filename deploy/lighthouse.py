@@ -1,7 +1,7 @@
 import os
 import subprocess
 from deploy.service_generators import generate_lighthouse_bn_service, generate_lighthouse_vc_service
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, install_system_binary
 from client_requirements import validate_version_for_network
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
@@ -14,20 +14,15 @@ def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     Returns:
         A dictionary with keys 'version', 'download_urls', and 'filenames'.
     """
-    from deploy.common import get_github_release
+    from deploy.common import get_github_release, pick_github_release_asset
     data = get_github_release("sigp/lighthouse", version_tag)
     tag = data["tag_name"]
-    arch = "x86_64" if arch_amd64 else "aarch64"
-    download_url = None
-    filename = None
-    for asset in data["assets"]:
-        if asset["name"].lower().endswith(f"{arch}-unknown-linux-gnu.tar.gz"):
-            download_url = asset["browser_download_url"]
-            filename = asset["name"]
-            break
-    if not download_url:
-        filename = f"lighthouse-{tag}-{arch}-unknown-linux-gnu.tar.gz"
-        download_url = f"https://github.com/sigp/lighthouse/releases/download/{tag}/{filename}"
+    filename, download_url = pick_github_release_asset(
+        data.get("assets", []),
+        arch_amd64,
+        name_contains=("lighthouse",),
+        client_label="Lighthouse",
+    )
     return {"version": tag, "download_urls": [download_url], "filenames": [filename]}
 
 
@@ -56,7 +51,11 @@ def download_lighthouse(eth_network: str) -> str:
     download_file(download_url, download_path, "Lighthouse")
 
     # Extract the binary to /usr/local/bin/ using sudo
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}"])
+    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}"], check=True)
+
+    # Ensure the binary is owned by root:root with correct permissions
+    # (same as other clients — tar extracts with the running user's uid in some envs)
+    install_system_binary(f"{INSTALL_DIR}/lighthouse", f"{INSTALL_DIR}/lighthouse")
 
     # Remove the tar file
     os.remove(download_path)

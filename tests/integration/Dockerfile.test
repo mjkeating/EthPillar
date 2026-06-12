@@ -36,10 +36,55 @@ RUN find /lib/systemd/system/sysinit.target.wants/ -name "*.service" ! -name "sy
 ENV TERM=xterm
 
 # Test harness only — EthPillar runtime deps are NOT pre-installed here.
-# Integration tests install them via `source functions.sh` (same as production).
+# Unit/integration tests install them via functions.sh bootstrap scripts.
 RUN pip3 install --break-system-packages pytest pyyaml
 
 WORKDIR /ethpillar
+
+# Add transparent cache wrappers to PATH
+RUN cat << 'EOF' > /usr/local/sbin/wget
+#!/bin/bash
+URL=""
+OUT=""
+for arg in "$@"; do
+    if [[ "$arg" == http* ]]; then URL="$arg"; fi
+    if [[ "$prev" == "-O" ]]; then OUT="$arg"; fi
+    prev="$arg"
+done
+if [ -n "$URL" ] && [ -n "$OUT" ]; then
+    export ENABLE_EP_CACHE=1
+    export PYTHONPATH="/ethpillar/tests/integration:/ethpillar"
+    python3 -c "
+import sys
+try:
+    import requests
+    r = requests.get(sys.argv[1], stream=True)
+    r.raise_for_status()
+    with open(sys.argv[2], 'wb') as f:
+        for chunk in r.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+except Exception:
+    sys.exit(1)
+" "$URL" "$OUT"
+    if [ $? -eq 0 ]; then exit 0; fi
+fi
+/usr/bin/wget "$@"
+EOF
+
+RUN cat << 'EOF' > /usr/local/sbin/tar
+#!/bin/bash
+export PYTHONPATH="/ethpillar"
+python3 /ethpillar/tests/integration/extract_cache.py tar "$@"
+EOF
+
+RUN cat << 'EOF' > /usr/local/sbin/unzip
+#!/bin/bash
+export PYTHONPATH="/ethpillar"
+python3 /ethpillar/tests/integration/extract_cache.py unzip "$@"
+EOF
+
+RUN chmod +x /usr/local/sbin/wget /usr/local/sbin/tar /usr/local/sbin/unzip
 
 # Use systemd as PID 1. Integration tests run via 'docker exec' after container starts.
 CMD ["/lib/systemd/systemd"]

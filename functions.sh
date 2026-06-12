@@ -17,8 +17,8 @@ set -u
 # enable command completion
 set -o history -o histexpand
 
-# Load BN and EL ENDPOINTS
-source ./env
+# Load BN and EL ENDPOINTS (integration tests may set ETHPILLAR_ENV_FILE to a sidecar env)
+source "${ETHPILLAR_ENV_FILE:-./env}"
 
 # Stores validator index
 declare -a INDICES
@@ -256,7 +256,7 @@ getNetwork(){
 # Ubuntu 24.04+ blocks system-wide/user pip installs (PEP 668).
 ensure_python_deps() {
     local req_file="${BASE_DIR}/requirements.txt"
-    local venv_dir="${BASE_DIR}/.venv"
+    local venv_dir="${ETHPILLAR_VENV:-${BASE_DIR}/.venv}"
     local py_version venv_python venv_pip
     [[ -f "$req_file" ]] || error "requirements.txt not found in ${BASE_DIR}"
 
@@ -368,10 +368,19 @@ getCurrentVersion(){
 
 # Read clients from systemd config files
 getClient(){
-    EL=$(test -f /etc/systemd/system/execution.service && grep Description= /etc/systemd/system/execution.service | awk -F'=' '{print $2}' | awk '{print $1}')
-    CL=$(test -f /etc/systemd/system/consensus.service && grep Description= /etc/systemd/system/consensus.service | awk -F'=' '{print $2}' | awk '{print $1}')
-    VC=$(test -f /etc/systemd/system/validator.service && grep Description= /etc/systemd/system/validator.service | awk -F'=' '{print $2}' | awk '{print $1}')
-    CSM_VC=$(test -f /etc/systemd/system/csm_nimbusvalidator.service && grep Description= /etc/systemd/system/csm_nimbusvalidator.service | awk -F'=' '{print $2}' | awk '{print $1}')
+    EL=""; CL=""; VC=""; CSM_VC=""
+    if [ -f /etc/systemd/system/execution.service ]; then
+        EL=$(grep Description= /etc/systemd/system/execution.service | awk -F'=' '{print $2}' | awk '{print $1}')
+    fi
+    if [ -f /etc/systemd/system/consensus.service ]; then
+        CL=$(grep Description= /etc/systemd/system/consensus.service | awk -F'=' '{print $2}' | awk '{print $1}')
+    fi
+    if [ -f /etc/systemd/system/validator.service ]; then
+        VC=$(grep Description= /etc/systemd/system/validator.service | awk -F'=' '{print $2}' | awk '{print $1}')
+    fi
+    if [ -f /etc/systemd/system/csm_nimbusvalidator.service ]; then
+        CSM_VC=$(grep Description= /etc/systemd/system/csm_nimbusvalidator.service | awk -F'=' '{print $2}' | awk '{print $1}')
+    fi
     if [[ -n $CL  ]]; then
         CLIENT=$CL
     elif [[ -n $VC ]]; then

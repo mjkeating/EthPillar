@@ -9,7 +9,9 @@ def _generate_systemd_template(
     extra_env: Optional[List[str]] = None,
     working_dir: Optional[str] = None,
     timeout_stop_sec: int = 900,
-    limit_nofile: Optional[int] = None
+    limit_nofile: Optional[int] = None,
+    unit_after: Optional[List[str]] = None,
+    unit_requires: Optional[List[str]] = None,
 ) -> str:
     """Generate a systemd service file content.
 
@@ -21,6 +23,8 @@ def _generate_systemd_template(
         working_dir: Optional working directory.
         timeout_stop_sec: Timeout for stopping the service.
         limit_nofile: Optional file descriptor limit.
+        unit_after: Additional systemd units that must start before this service.
+        unit_requires: Hard dependencies on other systemd units.
 
     Returns:
         Complete systemd service file content as a string.
@@ -28,10 +32,18 @@ def _generate_systemd_template(
     env_str = "".join(f"Environment={e}\n" for e in extra_env) if extra_env else ""
     wd_str = f"WorkingDirectory={working_dir}\n" if working_dir else ""
     nofile_str = f"LimitNOFILE={limit_nofile}\n" if limit_nofile else ""
+    after_units = ["network-online.target"]
+    wants_units = ["network-online.target"]
+    if unit_after:
+        after_units.extend(unit_after)
+        wants_units.extend(unit_after)
+    requires_str = ""
+    if unit_requires:
+        requires_str = "Requires=" + " ".join(unit_requires) + "\n"
     return f'''[Unit]
 Description={description}
-After=network-online.target
-Wants=network-online.target
+After={' '.join(after_units)}
+{requires_str}Wants={' '.join(wants_units)}
 Documentation=https://docs.coincashew.com
 
 [Service]
@@ -381,6 +393,7 @@ def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str
 
     _exec_start = form_exec_start(_args)
 
+    caplin_mev = bool(mev_parameters and "caplin.mev-relay-url" in mev_parameters)
     return _generate_systemd_template(
         description=f"Erigon-Caplin Integrated Execution-Consensus Client for {eth_network.upper()}",
         user="execution",
@@ -388,7 +401,9 @@ def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str
         extra_env=None,
         working_dir=None,
         timeout_stop_sec=900,
-        limit_nofile=None
+        limit_nofile=None,
+        unit_after=["mevboost.service"] if caplin_mev else None,
+        unit_requires=["mevboost.service"] if caplin_mev else None,
     )
 
 
@@ -730,7 +745,6 @@ def generate_nimbus_vc_service(eth_network: str, graffiti: str, beacon_node_addr
     Returns:
         Service file content as a string
     """
-    _network = "--network=/opt/ethpillar/testnet/config.yaml" if eth_network == "ephemery" else f"--network={eth_network}"
     _args = [
         f"{INSTALL_DIR}/nimbus_validator_client",
         f"--data-dir={BASE_DATA_DIR}/nimbus_validator",
@@ -740,7 +754,6 @@ def generate_nimbus_vc_service(eth_network: str, graffiti: str, beacon_node_addr
         "--doppelganger-detection=off",
         f"--graffiti={graffiti}",
         beacon_node_address,
-        _network
     ]
     if fee_parameters:
         _args.append(fee_parameters.strip())

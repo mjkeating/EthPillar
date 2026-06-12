@@ -20,19 +20,24 @@ def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     res = requests.get("https://geth.ethereum.org/downloads")
     res.raise_for_status()
     arch = "amd64" if arch_amd64 else "arm64"
-    
+    base = rf"https://gethstore\.blob\.core\.windows\.net/builds/geth-linux-{arch}-"
+
     if version_tag.upper() == "LATEST":
-        suffix = ""
+        pattern = rf"({base}([0-9.]+)-[a-f0-9]+\.tar\.gz)"
+        matches = re.findall(pattern, res.text)
+        if not matches:
+            raise ValueError(f"Could not find Geth download URL for linux-{arch} and version {version_tag}")
+        download_url, version_num = matches[0]
+        version = f"v{version_num}"
     else:
-        suffix = f"-{version_tag.lstrip('v')}-"
-        
-    pattern = r"(https://gethstore\.blob\.core\.windows\.net/builds/geth-linux-" + arch + r"-" + suffix + r"([0-9.]+)-[a-f0-9]+\.tar\.gz)"
-    matches = re.findall(pattern, res.text)
-    if not matches:
-        raise ValueError(f"Could not find Geth download URL for linux-{arch} and version {version_tag}")
-    
-    download_url = matches[0][0]
-    version = "v" + matches[0][1]
+        ver = version_tag.removeprefix("v")
+        pattern = base + re.escape(ver) + r"-[a-f0-9]+\.tar\.gz"
+        matches = re.findall(pattern, res.text)
+        if not matches:
+            raise ValueError(f"Could not find Geth download URL for linux-{arch} and version {version_tag}")
+        download_url = matches[0]
+        version = f"v{ver}"
+
     filename = download_url.split("/")[-1]
     return {"version": version, "download_urls": [download_url], "filenames": [filename]}
 
@@ -73,14 +78,16 @@ def download_and_install_geth(eth_network: str, el_p2p_port: str, el_rpc_port: s
     
     # Extract to a temporary directory in DOWNLOAD_DIR, INSTALL_DIR
     temp_extract_dir = f"{DOWNLOAD_DIR}/geth_temp"
-    subprocess.run(["mkdir", "-p", temp_extract_dir])
-    subprocess.run(["tar", "xzf", download_path, "-C", temp_extract_dir])
-    
+    subprocess.run(["mkdir", "-p", temp_extract_dir], check=True)
+    subprocess.run(["tar", "xzf", download_path, "-C", temp_extract_dir], check=True)
+
     # Find the geth binary and move it
     extracted_dirs = [d for d in os.listdir(temp_extract_dir) if d.startswith("geth-linux")]
-    if extracted_dirs:
-        geth_bin_path = f"{temp_extract_dir}/{extracted_dirs[0]}/geth"
-        install_system_binary(geth_bin_path, f"{INSTALL_DIR}/geth")
+    if not extracted_dirs:
+        print("Error: Could not find geth binary after extracting archive.")
+        exit(1)
+    geth_bin_path = f"{temp_extract_dir}/{extracted_dirs[0]}/geth"
+    install_system_binary(geth_bin_path, f"{INSTALL_DIR}/geth")
     
     # Cleanup temp directory
     subprocess.run(["rm", "-rf", temp_extract_dir])

@@ -346,7 +346,7 @@ def generate_ethrex_service(eth_network: str, el_p2p_port: str, el_rpc_port: str
     if network_override:
         _network = network_override
     else:
-        _network = f'--network {eth_network}'
+        _network = f'--network {eth_network.lower()}'
 
     _args = [
         f"{INSTALL_DIR}/ethrex",

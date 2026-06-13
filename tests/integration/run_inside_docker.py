@@ -329,10 +329,22 @@ def check_service_file_substitution(service_name: str) -> bool:
     return True
 
 
+def _journalctl_args(service_name: str) -> List[str]:
+    """Return journalctl args scoped to the service's current MainPID when available."""
+    pid_result = subprocess.run(
+        ["systemctl", "show", "-p", "MainPID", "--value", service_name],
+        capture_output=True, text=True,
+    )
+    main_pid = pid_result.stdout.strip()
+    if main_pid and main_pid != "0":
+        return ["journalctl", "-u", service_name, f"_PID={main_pid}", "--no-pager", "-n", "100"]
+    return ["journalctl", "-u", service_name, "--no-pager", "-n", "100"]
+
+
 def check_service_journal_errors(service_name: str) -> bool:
     """Check journal for fatal service errors that indicate invalid install/config."""
     result = subprocess.run(
-        ["journalctl", "-u", service_name, "--no-pager", "-n", "100"],
+        _journalctl_args(service_name),
         capture_output=True, text=True
     )
     if result.returncode != 0:
@@ -360,6 +372,9 @@ def check_service_journal_errors(service_name: str) -> bool:
     for pattern in fatal_patterns:
         if pattern in journal:
             print(f"  FAIL: Service {service_name} journal contains fatal error: {pattern}")
+            print("--- JOURNAL OUTPUT ---")
+            print(journal)
+            print("----------------------")
             return False
 
     return True

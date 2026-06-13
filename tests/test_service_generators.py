@@ -279,6 +279,12 @@ class TestEthrexService:
         assert "--network /opt/ethpillar/testnet/genesis.json \\" in result
         assert "--network mainnet \\" not in result
 
+    def test_network_name_is_lowercased(self):
+        result = generate_ethrex_service(
+            "SEPOLIA", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH
+        )
+        assert "--network sepolia \\" in result
+
     def test_service_structure(self):
         """Verify overall service file structure and key Ethrex-specific flags."""
         result = generate_ethrex_service(

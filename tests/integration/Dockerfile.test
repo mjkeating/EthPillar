@@ -41,49 +41,10 @@ ENV TERM=xterm
 
 WORKDIR /ethpillar
 
-# Add transparent cache wrappers to PATH
-RUN cat << 'EOF' > /usr/local/sbin/wget
-#!/bin/bash
-URL=""
-OUT=""
-for arg in "$@"; do
-    if [[ "$arg" == http* ]]; then URL="$arg"; fi
-    if [[ "$prev" == "-O" ]]; then OUT="$arg"; fi
-    prev="$arg"
-done
-if [ -n "$URL" ] && [ -n "$OUT" ]; then
-    export ENABLE_EP_CACHE=1
-    export PYTHONPATH="/ethpillar/tests/integration:/ethpillar"
-    python3 -c "
-import sys
-try:
-    import requests
-    r = requests.get(sys.argv[1], stream=True)
-    r.raise_for_status()
-    with open(sys.argv[2], 'wb') as f:
-        for chunk in r.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
-except Exception:
-    sys.exit(1)
-" "$URL" "$OUT"
-    if [ $? -eq 0 ]; then exit 0; fi
-fi
-/usr/bin/wget "$@"
-EOF
-
-RUN cat << 'EOF' > /usr/local/sbin/tar
-#!/bin/bash
-export PYTHONPATH="/ethpillar"
-python3 /ethpillar/tests/integration/extract_cache.py tar "$@"
-EOF
-
-RUN cat << 'EOF' > /usr/local/sbin/unzip
-#!/bin/bash
-export PYTHONPATH="/ethpillar"
-python3 /ethpillar/tests/integration/extract_cache.py unzip "$@"
-EOF
-
+# Cache wrappers (separate files — heredocs require BuildKit and break plain `docker build` on CI).
+COPY tests/integration/docker/wget-wrapper.sh /usr/local/sbin/wget
+COPY tests/integration/docker/tar-wrapper.sh /usr/local/sbin/tar
+COPY tests/integration/docker/unzip-wrapper.sh /usr/local/sbin/unzip
 RUN chmod +x /usr/local/sbin/wget /usr/local/sbin/tar /usr/local/sbin/unzip
 
 # Use systemd as PID 1. Integration tests run via 'docker exec' after container starts.

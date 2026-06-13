@@ -1,0 +1,57 @@
+name: CI — Integration
+
+# Informational until branch protection promotes these checks to required.
+# Scheduled full-suite runs use ci-nightly.yml; use workflow_dispatch for ad-hoc integration only.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-integration
+  cancel-in-progress: false
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ETHPILLAR_CHECKPOINT_CACHE_DIR: ${{ github.workspace }}/tests/integration/checkpoint_cache
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore binary download cache
+        uses: actions/cache@v4
+        with:
+          path: tests/integration/cache
+          key: binary-cache-${{ runner.os }}-${{ hashFiles('tests/integration/cache/**') }}
+          restore-keys: |
+            binary-cache-${{ runner.os }}-
+
+      - name: Restore checkpoint cache
+        uses: actions/cache@v4
+        with:
+          path: tests/integration/checkpoint_cache
+          key: checkpoint-${{ runner.os }}-${{ hashFiles('tests/integration/checkpoint_cache/manifest.json') }}
+          restore-keys: |
+            checkpoint-${{ runner.os }}-
+
+      - name: Prepare cache directories
+        run: |
+          mkdir -p tests/integration/cache tests/integration/checkpoint_cache
+
+      - name: Run integration matrix
+        run: bash tests/integration/run_docker_tests.sh
+
+      - name: Upload integration report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-report-${{ github.run_id }}
+          path: tests/integration/results/
+          retention-days: 90
+          if-no-files-found: ignore

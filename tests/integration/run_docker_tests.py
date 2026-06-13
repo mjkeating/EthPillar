@@ -183,6 +183,32 @@ async def run_test(task: TestTask, results_dir: str, semaphore: asyncio.Semaphor
         finally:
             subprocess.run(f"docker rm -f {task.container_name}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+async def headless_monitor(tasks: list[TestTask], exec_coros):
+    """Run tests in CI/headless mode with simple progress lines instead of Rich UI."""
+    completed = set()
+
+    async def monitor():
+        while True:
+            for task in tasks:
+                if task.status in ("PASS", "FAIL") and task.label not in completed:
+                    print(f"[{task.status}] {task.label} ({task.duration}s)", flush=True)
+                    completed.add(task.label)
+            if all(task.status in ("PASS", "FAIL") for task in tasks):
+                break
+            await asyncio.sleep(5)
+
+    await asyncio.gather(monitor(), *exec_coros)
+
+
+def use_rich_ui() -> bool:
+    """Rich alternate-screen UI needs a TTY; GitHub Actions sets CI=true without one."""
+    if os.environ.get("CI") == "true":
+        return False
+    if Console is None:
+        return False
+    return sys.stdout.isatty()
+
+
 async def ui_loop(tasks: list[TestTask]):
     """Render the Rich live dashboard until every task completes."""
     if Console is None:
@@ -394,10 +420,13 @@ async def main():
     
     start_time = time.time()
     
-    # Start UI and execution
     exec_coros = [run_test(t, results_dir, semaphore) for t in tasks]
-    
-    await asyncio.gather(ui_loop(tasks), *exec_coros)
+
+    if use_rich_ui():
+        await asyncio.gather(ui_loop(tasks), *exec_coros)
+    else:
+        print(f"Running {len(tasks)} integration tests (headless)...")
+        await headless_monitor(tasks, exec_coros)
     
     total_duration = int(time.time() - start_time)
     

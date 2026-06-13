@@ -14,20 +14,19 @@ INSTALL_DIR = "/usr/local/bin"
 DOWNLOAD_DIR = "/tmp"
 BASE_DATA_DIR = "/var/lib"
 
+
+def _load_runtime_packages() -> tuple[str, ...]:
+    packages_path = os.path.join(os.path.dirname(__file__), 'runtime_packages.txt')
+    with open(packages_path, encoding='utf-8') as handle:
+        return tuple(
+            line.strip()
+            for line in handle
+            if line.strip() and not line.startswith('#')
+        )
+
+
 # Apt packages installed during node setup (deploy + update scripts + health checks).
-# Overlaps install-node.sh linux_install_pre; kept here so deploy-node.py is self-contained.
-NODE_RUNTIME_PACKAGES = (
-    'chrony',
-    'curl',
-    'git',
-    'jq',
-    'bc',
-    'wget',
-    'iproute2',
-    'unzip',
-    'whiptail',
-    'openssl',
-)
+NODE_RUNTIME_PACKAGES = _load_runtime_packages()
 
 
 def install_system_binary(src_path: str, dest: str) -> str:

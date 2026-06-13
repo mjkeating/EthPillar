@@ -1495,11 +1495,13 @@ function export_logs() {
     whiptail --title "Export Complete" --msgbox "Logs have been exported to $HOME/$output_file" 10 60
 }
 
-# Install apt packages required by the TUI, deploy scripts, and updates (see deploy.common.NODE_RUNTIME_PACKAGES).
+# Install apt packages required by the TUI, deploy scripts, and updates.
+# List lives in deploy/runtime_packages.txt (no Python imports — safe before venv exists).
 ensure_host_runtime_packages() {
-    local pkg
+    local pkg packages_file="${BASE_DIR}/deploy/runtime_packages.txt"
     local -a packages missing=()
-    mapfile -t packages < <(PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import NODE_RUNTIME_PACKAGES; print('\n'.join(NODE_RUNTIME_PACKAGES))")
+    [[ -f "$packages_file" ]] || error "runtime_packages.txt not found in ${BASE_DIR}/deploy"
+    mapfile -t packages < <(grep -v '^#' "$packages_file" | grep -v '^[[:space:]]*$')
     for pkg in "${packages[@]}"; do
         dpkg -s "$pkg" &>/dev/null || missing+=("$pkg")
     done
@@ -1509,6 +1511,6 @@ ensure_host_runtime_packages() {
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${missing[@]}"
 }
 
-# Auto-install host tools and Python dependencies on first load
+# Host tools first (whiptail, curl, …), then Python venv deps.
 ensure_host_runtime_packages
 ensure_python_deps

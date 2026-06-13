@@ -1,0 +1,12 @@
+# Apt packages for EthPillar host operation (TUI, deploy, updates, health checks).
+# Used by functions.sh bootstrap and deploy.common.setup_node.
+chrony
+curl
+git
+jq
+bc
+wget
+iproute2
+unzip
+whiptail
+openssl

@@ -19,6 +19,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # installed by deploy setup_node() so tests verify EthPillar pulls its own deps.
 RUN apt-get update && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
+    ca-certificates \
     systemd systemd-sysv \
     sudo \
     python3 \

@@ -144,7 +144,7 @@ def main() -> int:
             age_hours = (time.time() - warmed_at) / 3600
             print(
                 f"[checkpoint] {network} cache is fresh "
-                f"({age_hours:.1f}h old, expires after 20h) — skipping"
+                f"({age_hours:.1f}h old, expires after 2h) — skipping"
             )
 
     if not refreshed:

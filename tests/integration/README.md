@@ -118,8 +118,8 @@ Release **binaries** may be served from `cache/` after a live `HEAD` check confi
 ### Checkpoint sync (SEPOLIA + HOODI)
 
 Before the test matrix runs, `warm_checkpoint_cache.py` prefetches Beacon checkpoint API
-responses from ethpandaops. Entries expire after **20 hours**; a fresh run re-downloads only
-when stale (suited to nightly CI).
+responses from ethpandaops. Entries expire after **2 hours**; a fresh run re-downloads only
+when stale.
 
 **Cache location:** WSL/Windows runs store the cache at
 ``~/.cache/ethpillar/checkpoint_cache`` (not under the repo). Docker Desktop's repo bind

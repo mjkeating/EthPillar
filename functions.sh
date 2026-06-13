@@ -55,13 +55,14 @@ get_systemd_exec_path() {
 # Default execution-client binary path (overridden by ExecStart when present).
 get_execution_binary_path() {
   local el="$1"
+  local svc="${EXEC_SERVICE_FILE:-/etc/systemd/system/execution.service}"
   case "$el" in
-    Nethermind) get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/nethermind/nethermind" ;;
-    Besu)       get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/besu/bin/besu" ;;
-    Erigon)     get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/erigon" ;;
-    Geth)       get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/geth" ;;
-    Reth)       get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/reth" ;;
-    Ethrex)     get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/ethrex" ;;
+    Nethermind) get_systemd_exec_path "$svc" "/usr/local/bin/nethermind/nethermind" ;;
+    Besu)       get_systemd_exec_path "$svc" "/usr/local/bin/besu/bin/besu" ;;
+    Erigon)     get_systemd_exec_path "$svc" "/usr/local/bin/erigon" ;;
+    Geth)       get_systemd_exec_path "$svc" "/usr/local/bin/geth" ;;
+    Reth)       get_systemd_exec_path "$svc" "/usr/local/bin/reth" ;;
+    Ethrex)     get_systemd_exec_path "$svc" "/usr/local/bin/ethrex" ;;
     *)          echo "" ;;
   esac
 }
@@ -394,39 +395,41 @@ PY
 # (from getClient: CL when present, otherwise VC).
 getClVcCurrentVersion(){
     local client="${1:-$CLIENT}"
+    local consensus_svc="${CONSENSUS_SERVICE_FILE:-/etc/systemd/system/consensus.service}"
+    local validator_svc="${VALIDATOR_SERVICE_FILE:-/etc/systemd/system/validator.service}"
     VERSION="NotInstalled"
     case "$client" in
       Lighthouse)
-        LH_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lighthouse")
-        test -f "$LH_BIN" || LH_BIN=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/lighthouse")
+        LH_BIN=$(get_systemd_exec_path "$consensus_svc" "/usr/local/bin/lighthouse")
+        test -f "$LH_BIN" || LH_BIN=$(get_systemd_exec_path "$validator_svc" "/usr/local/bin/lighthouse")
         VERSION=$("$LH_BIN" --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
       Lodestar)
-        LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar")
-        test -f "$LODESTAR_BIN" || LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/lodestar")
+        LODESTAR_BIN=$(get_systemd_exec_path "$consensus_svc" "/usr/local/bin/lodestar")
+        test -f "$LODESTAR_BIN" || LODESTAR_BIN=$(get_systemd_exec_path "$validator_svc" "/usr/local/bin/lodestar")
         VERSION=$("$LODESTAR_BIN" --version | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
       Teku)
-        TEKU_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/teku/bin/teku")
-        test -f "$TEKU_BIN" || TEKU_BIN=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/teku/bin/teku")
+        TEKU_BIN=$(get_systemd_exec_path "$consensus_svc" "/usr/local/bin/teku/bin/teku")
+        test -f "$TEKU_BIN" || TEKU_BIN=$(get_systemd_exec_path "$validator_svc" "/usr/local/bin/teku/bin/teku")
         VERSION=$("$TEKU_BIN" --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
       Nimbus)
-        NIMBUS_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/nimbus_beacon_node")
-        test -f "$NIMBUS_BIN" || NIMBUS_BIN=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/nimbus_validator_client")
+        NIMBUS_BIN=$(get_systemd_exec_path "$consensus_svc" "/usr/local/bin/nimbus_beacon_node")
+        test -f "$NIMBUS_BIN" || NIMBUS_BIN=$(get_systemd_exec_path "$validator_svc" "/usr/local/bin/nimbus_validator_client")
         VERSION=$("$NIMBUS_BIN" --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
       Grandine)
-        GRANDINE_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/grandine")
+        GRANDINE_BIN=$(get_systemd_exec_path "$consensus_svc" "/usr/local/bin/grandine")
         VERSION=$("$GRANDINE_BIN" --version | head -1 | grep -oE "v?[0-9]+\.[0-9]+\.[0-9]+")
         if [[ $VERSION != v* ]]; then VERSION="v$VERSION"; fi
         ;;
       Prysm)
-        PRYSM_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/prysm-beacon-chain")
+        PRYSM_BIN=$(get_systemd_exec_path "$consensus_svc" "/usr/local/bin/prysm-beacon-chain")
         if [[ -f "$PRYSM_BIN" ]]; then
             VERSION=$("$PRYSM_BIN" --version | head -1 | grep -oE "v[0-9]+\.[0-9]+\.[0-9]+")
         else
-            PRYSM_BIN=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/prysm-validator")
+            PRYSM_BIN=$(get_systemd_exec_path "$validator_svc" "/usr/local/bin/prysm-validator")
             VERSION=$("$PRYSM_BIN" --version | head -1 | grep -oE "v[0-9]+\.[0-9]+\.[0-9]+")
         fi
         ;;

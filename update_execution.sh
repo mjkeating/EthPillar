@@ -25,17 +25,6 @@ source "$BASE_DIR"/functions.sh
 _platform=$(get_platform)
 _arch=$(get_arch)
 
-function getCurrentVersion(){
-  EL_INSTALLED=$(curl -s -X POST -H "Content-Type: application/json" \
-    --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":2}' \
-    "${EL_RPC_ENDPOINT}" | jq -r '.result // empty')
-  if [[ -z "$EL_INSTALLED" ]]; then
-    VERSION="Client not running or still starting up. Unable to query version."
-    return
-  fi
-  VERSION=$(sed -E 's/.*[v\/]([0-9]+\.[0-9]+\.[0-9]+).*/\1/' <<< "$EL_INSTALLED")
-}
-
 function getClient(){
     EL=$(cat /etc/systemd/system/execution.service | grep Description= | awk -F'=' '{print $2}' | awk '{print $1}')
     # Handle integrated ELs i.e. Erigon-Caplin
@@ -270,7 +259,7 @@ if [[ "${1:-}" == "--auto" ]]; then
     updateClient "LATEST"
 else
     getClient
-    getCurrentVersion
+    getExecutionCurrentVersion "$EL"
     getLatestVersion
     promptYesNo
 fi

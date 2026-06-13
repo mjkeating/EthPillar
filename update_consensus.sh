@@ -297,7 +297,7 @@ if [[ "${1:-}" == "--auto" ]]; then
     updateClient "LATEST"
 else
     getClient
-    getCurrentVersion
+    getClVcCurrentVersion
     getLatestVersion
     promptYesNo
 fi

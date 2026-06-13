@@ -52,6 +52,72 @@ get_systemd_exec_path() {
   echo "$default_path"
 }
 
+# Default execution-client binary path (overridden by ExecStart when present).
+get_execution_binary_path() {
+  local el="$1"
+  case "$el" in
+    Nethermind) get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/nethermind/nethermind" ;;
+    Besu)       get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/besu/bin/besu" ;;
+    Erigon)     get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/erigon" ;;
+    Geth)       get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/geth" ;;
+    Reth)       get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/reth" ;;
+    Ethrex)     get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/ethrex" ;;
+    *)          echo "" ;;
+  esac
+}
+
+# Run the client-specific version command and capture stdout/stderr.
+get_execution_version_output() {
+  local bin="$1"
+  local el="$2"
+  case "$el" in
+    Geth) "$bin" version 2>&1 ;;
+    *)    "$bin" --version 2>&1 ;;
+  esac
+}
+
+# Extract x.y.z only when it follows the client name (avoids rustc/JDK semver noise).
+parse_execution_client_version() {
+  local el="$1"
+  local output="$2"
+  local prefix line parsed=""
+  case "$el" in
+    Geth)       prefix='[Gg]eth[^0-9]*' ;;
+    Besu)       prefix='[Bb]esu[^0-9]*' ;;
+    Nethermind) prefix='[Nn]ethermind[^0-9]*' ;;
+    Erigon)     prefix='[Ee]rigon[^0-9]*' ;;
+    Reth)       prefix='[Rr]eth[^0-9]*' ;;
+    Ethrex)     prefix='[Ee]threx[^0-9]*' ;;
+    *)          echo ""; return 1 ;;
+  esac
+  while IFS= read -r line; do
+    parsed=$(sed -nE "s/.*${prefix}v?([0-9]+\\.[0-9]+\\.[0-9]+).*/\\1/p" <<< "$line" | head -1)
+    if [[ -n "$parsed" ]]; then
+      echo "$parsed"
+      return 0
+    fi
+  done <<< "$output"
+  echo ""
+}
+
+# Sets VERSION from the installed execution client binary (not RPC).
+getExecutionCurrentVersion() {
+  local el="${1:-$EL}"
+  local bin output
+  VERSION=""
+  bin=$(get_execution_binary_path "$el")
+  if [[ -z "$bin" || ! -x "$bin" ]]; then
+    VERSION="Unable to query ${el:-execution client} version from binary."
+    return 1
+  fi
+  output=$(get_execution_version_output "$bin" "$el")
+  VERSION=$(parse_execution_client_version "$el" "$output")
+  if [[ -z "$VERSION" ]]; then
+    VERSION="Unable to query ${el} version from binary."
+    return 1
+  fi
+}
+
 getNetworkConfig() {
     ip_current=$( hostname --all-ip-address | awk '{print $1}')
     interface_current=$(ip route | grep default | head -1 | sed 's/.*dev \([^ ]*\) .*/\1/')
@@ -324,20 +390,25 @@ sys.exit(0 if ensure_java_available(int(sys.argv[1])) else 1)
 PY
 }
 
-# Gets software version from binary
-getCurrentVersion(){
+# Gets installed CL or VC version from binary. Optional arg overrides CLIENT
+# (from getClient: CL when present, otherwise VC).
+getClVcCurrentVersion(){
+    local client="${1:-$CLIENT}"
     VERSION="NotInstalled"
-    case "$CLIENT" in
+    case "$client" in
       Lighthouse)
         LH_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lighthouse")
+        test -f "$LH_BIN" || LH_BIN=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/lighthouse")
         VERSION=$("$LH_BIN" --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
       Lodestar)
         LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar")
+        test -f "$LODESTAR_BIN" || LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/lodestar")
         VERSION=$("$LODESTAR_BIN" --version | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
       Teku)
         TEKU_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/teku/bin/teku")
+        test -f "$TEKU_BIN" || TEKU_BIN=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/teku/bin/teku")
         VERSION=$("$TEKU_BIN" --version | head -1 | grep -oE "v[0-9]+.[0-9]+.[0-9]+")
         ;;
       Nimbus)

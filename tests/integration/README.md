@@ -50,7 +50,7 @@ The `Dockerfile.test` uses `ubuntu:24.04` and sets systemd as the `CMD`. The tes
 
 ## Project Structure
 
-- `Dockerfile.test`: Ubuntu 24.04 with systemd as PID 1. EthPillar runtime Python deps are not pre-installed; only test-harness tools (`pytest`, `pyyaml`) are.
+- `Dockerfile.test`: Ubuntu 24.04 with systemd as PID 1. Only container infrastructure is pre-installed (systemd, sudo, python3, bats). EthPillar runtime apt packages are installed by `setup_node()` during deploy.
 - `run_docker_tests.py`: Main orchestrator — builds the image, runs the test matrix with live UI, and generates HTML reports.
 - `run_docker_tests.ps1`: (Windows) Thin WSL wrapper that invokes `run_docker_tests.sh`.
 - `run_docker_tests.sh`: (Linux/WSL) Ensures host `rich` is installed, then invokes `run_docker_tests.py`.

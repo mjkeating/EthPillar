@@ -15,11 +15,14 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install systemd and remove units that fail in containers
-RUN apt-get update && apt-get install -y \
+# Container infrastructure only. Runtime tools (curl, jq, wget, chrony, …) are
+# installed by deploy setup_node() so tests verify EthPillar pulls its own deps.
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     systemd systemd-sysv \
-    python3 python3-pip python3-venv \
-    sudo curl git bats whiptail bc jq iproute2 kmod nano wget unzip \
+    sudo \
+    python3 \
+    bats \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -34,10 +37,6 @@ RUN find /lib/systemd/system/sysinit.target.wants/ -name "*.service" ! -name "sy
     && rm -f /lib/systemd/system/anaconda.target.wants/*
 
 ENV TERM=xterm
-
-# Test harness only — EthPillar runtime deps are NOT pre-installed here.
-# Unit/integration tests install them via functions.sh bootstrap scripts.
-RUN pip3 install --break-system-packages pytest pyyaml
 
 WORKDIR /ethpillar
 

@@ -28,6 +28,7 @@ from deploy.common import (
     write_service_file,
     setup_node,
     setup_client_user_and_dir,
+    NODE_RUNTIME_PACKAGES,
 )
 
 
@@ -226,15 +227,21 @@ class TestSetupNode:
         mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'upgrade'], check=True)
 
     @patch('subprocess.run')
-    def test_always_installs_chrony(self, mock_run):
+    def test_always_installs_runtime_packages(self, mock_run):
         setup_node('/secrets/jwtsecret', validator_only=False)
-        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'], check=True)
+        mock_run.assert_any_call(
+            ['sudo', 'apt', '-y', '-qq', 'install', *NODE_RUNTIME_PACKAGES],
+            check=True,
+        )
 
     @patch('subprocess.run')
     def test_validator_only_still_runs_apt_commands(self, mock_run):
         setup_node('/secrets/jwtsecret', validator_only=True)
         mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'update'], check=True)
-        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'], check=True)
+        mock_run.assert_any_call(
+            ['sudo', 'apt', '-y', '-qq', 'install', *NODE_RUNTIME_PACKAGES],
+            check=True,
+        )
 
     @patch('subprocess.run')
     def test_full_node_call_count(self, mock_run):

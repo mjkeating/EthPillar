@@ -28,7 +28,7 @@ if [[ -f /ethpillar/tests/integration/checkpoint_cache/manifest.json && -n "${NE
     python3 /ethpillar/tests/integration/checkpoint_proxy.py --network "${NETWORK}" &
     CHECKPOINT_PROXY_PID=$!
     for _ in $(seq 1 40); do
-        if curl -fsS "http://127.0.0.1:19595/eth/v1/node/version" >/dev/null 2>&1; then
+        if python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:19595/eth/v1/node/version', timeout=1)" 2>/dev/null; then
             echo "[checkpoint] Local cache proxy ready for ${NETWORK}"
             break
         fi

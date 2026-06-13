@@ -14,6 +14,19 @@ INSTALL_DIR = "/usr/local/bin"
 DOWNLOAD_DIR = "/tmp"
 BASE_DATA_DIR = "/var/lib"
 
+# Apt packages installed during node setup (deploy + update scripts + health checks).
+# Overlaps install-node.sh linux_install_pre; kept here so deploy-node.py is self-contained.
+NODE_RUNTIME_PACKAGES = (
+    'chrony',
+    'curl',
+    'git',
+    'jq',
+    'bc',
+    'wget',
+    'iproute2',
+    'unzip',
+)
+
 
 def install_system_binary(src_path: str, dest: str) -> str:
     """Move or install a binary and enforce secure perms/ownership.
@@ -430,8 +443,10 @@ def setup_node(jwt_secret_path: str, validator_only: bool = False) -> None:
     # Autoremove packages
     subprocess.run(['sudo', 'apt', '-y', '-qq' , 'autoremove'], check=True)
 
-    # Chrony timesync package
-    subprocess.run(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'], check=True)
+    subprocess.run(
+        ['sudo', 'apt', '-y', '-qq', 'install', *NODE_RUNTIME_PACKAGES],
+        check=True,
+    )
 
 def write_service_file(content: str, target_path: str, temp_filename: str = 'temp.service') -> None:
     """Write service content to a target path using a temporary file.

@@ -218,23 +218,23 @@ class TestSetupNode:
     @patch('subprocess.run')
     def test_always_runs_apt_update(self, mock_run):
         setup_node('/secrets/jwtsecret', validator_only=False)
-        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'update'])
+        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'update'], check=True)
 
     @patch('subprocess.run')
     def test_always_runs_apt_upgrade(self, mock_run):
         setup_node('/secrets/jwtsecret', validator_only=False)
-        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'upgrade'])
+        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'upgrade'], check=True)
 
     @patch('subprocess.run')
     def test_always_installs_chrony(self, mock_run):
         setup_node('/secrets/jwtsecret', validator_only=False)
-        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'])
+        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'], check=True)
 
     @patch('subprocess.run')
     def test_validator_only_still_runs_apt_commands(self, mock_run):
         setup_node('/secrets/jwtsecret', validator_only=True)
-        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'update'])
-        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'])
+        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'update'], check=True)
+        mock_run.assert_any_call(['sudo', 'apt', '-y', '-qq', 'install', 'chrony'], check=True)
 
     @patch('subprocess.run')
     def test_full_node_call_count(self, mock_run):

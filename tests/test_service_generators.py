@@ -18,6 +18,7 @@ from deploy.service_generators import (
     generate_mevboost_service,
     generate_besu_service,
     generate_geth_service,
+    generate_ethrex_service,
     generate_nethermind_service,
     generate_reth_service,
     generate_erigon_service,
@@ -244,6 +245,63 @@ class TestGethService:
         assert "--state.scheme=path \\" in result
         assert "--metrics \\" in result
         assert "--pprof \\" in result
+
+
+# ═══════════════════════════════════════════════
+# Ethrex service tests
+# ═══════════════════════════════════════════════
+
+class TestEthrexService:
+    """Test Ethrex execution client service file generation."""
+
+    def test_mainnet_service(self):
+        result = generate_ethrex_service(
+            "mainnet", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH
+        )
+        assert "Description=Ethrex Execution Layer Client service for MAINNET" in result
+        assert "--network mainnet \\" in result
+        assert f"--p2p.port {EL_P2P_PORT} \\" in result
+        assert f"--discovery.port {EL_P2P_PORT} \\" in result
+        assert f"--http.port {EL_RPC_PORT} \\" in result
+        assert f"--p2p.target-peers {EL_MAX_PEER_COUNT}" in result
+        assert f"--authrpc.jwtsecret {JWTSECRET_PATH} \\" in result
+        assert "--syncmode snap \\" in result
+        assert "User=execution" in result
+
+    def test_ephemery_custom_network(self):
+        """Ephemery uses custom genesis file via network_override."""
+        custom_network = '--network /opt/ethpillar/testnet/genesis.json'
+        result = generate_ethrex_service(
+            "ephemery", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT,
+            JWTSECRET_PATH, network_override=custom_network
+        )
+        assert "Description=Ethrex Execution Layer Client service for EPHEMERY" in result
+        assert "--network /opt/ethpillar/testnet/genesis.json \\" in result
+        assert "--network mainnet \\" not in result
+
+    def test_service_structure(self):
+        """Verify overall service file structure and key Ethrex-specific flags."""
+        result = generate_ethrex_service(
+            "mainnet", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH
+        )
+        assert result.startswith("[Unit]")
+        assert "[Service]" in result
+        assert "[Install]" in result
+        assert "WantedBy=multi-user.target" in result
+        assert "User=execution" in result
+        assert "Group=execution" in result
+        assert "Restart=on-failure" in result
+        assert "KillSignal=SIGINT" in result
+        assert "TimeoutStopSec=900" in result
+        assert "Environment=RUST_LOG=info" in result
+        # Ethrex-specific flags
+        assert "--http.addr 0.0.0.0 \\" in result
+        assert "--authrpc.port 8551 \\" in result
+        assert "--ws.enabled \\" in result
+        assert "--ws.port 8546 \\" in result
+        assert "--metrics \\" in result
+        assert "--metrics.port 6060 \\" in result
+
 
 
 # ═══════════════════════════════════════════════

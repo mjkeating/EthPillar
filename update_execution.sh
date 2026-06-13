@@ -59,6 +59,9 @@ function selectCustomTag(){
 	  Reth)
 	    _repo="paradigmxyz/reth"
 	    ;;
+	  Ethrex)
+	    _repo="lambdaclass/ethrex"
+	    ;;
 	  *)
 	    error "❌ Unsupported or unknown client '$EL'."
 	    ;;
@@ -126,6 +129,7 @@ function getLatestVersion(){
 	  Erigon)     CHANGES_URL="https://github.com/erigontech/erigon/releases" ;;
 	  Geth)       CHANGES_URL="https://github.com/ethereum/go-ethereum/releases" ;;
 	  Reth)       CHANGES_URL="https://github.com/paradigmxyz/reth/releases" ;;
+	  Ethrex)     CHANGES_URL="https://github.com/lambdaclass/ethrex/releases" ;;
 	  *)          CHANGES_URL="" ;;
 	esac
 }
@@ -241,6 +245,21 @@ function updateClient(){
 		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${RETH_BIN}', '${EXEC_PATH}')"
 		sudo systemctl start execution
 		rm -rf "$EXTRACTED_DIR"
+	    ;;
+	  Ethrex)
+		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')
+		FILENAME=$(echo "$RELEASE_DATA" | jq -r '.filenames[0]')
+		info "✅ Downloading URL: $BINARIES_URL"
+		cd "$HOME" || true
+		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
+		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/ethrex")
+		sudo systemctl stop execution
+		sudo rm -f "$EXEC_PATH"
+		sudo mkdir -p "$(dirname "$EXEC_PATH")"
+		# install_system_binary will move and configure the binary at the full exec path
+		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${FILENAME}', '${EXEC_PATH}')"
+		sudo systemctl start execution
+		rm -f "$FILENAME"
 	    ;;
 	esac
 }

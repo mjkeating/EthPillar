@@ -327,6 +327,64 @@ def generate_geth_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
     )
 
 
+def generate_ethrex_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
+                            el_max_peer_count: str, jwtsecret_path: str,
+                            network_override: Optional[str] = None) -> str:
+    """Generate Ethrex execution client systemd service file content.
+
+    Args:
+        eth_network: Network name
+        el_p2p_port: EL P2P port
+        el_rpc_port: EL RPC port
+        el_max_peer_count: Max peer count
+        jwtsecret_path: Path to JWT secret file
+        network_override: Optional network flag override (for ephemery custom config)
+
+    Returns:
+        Service file content as a string
+    """
+    if network_override:
+        _network = network_override
+    else:
+        _network = f'--network {eth_network}'
+
+    _args = [
+        f"{INSTALL_DIR}/ethrex",
+        f"--datadir {BASE_DATA_DIR}/ethrex",
+        _network,
+        f"--p2p.port {el_p2p_port}",
+        f"--discovery.port {el_p2p_port}",
+        "--http.addr 0.0.0.0",
+        f"--http.port {el_rpc_port}",
+        "--ws.enabled",
+        "--ws.addr 0.0.0.0",
+        "--ws.port 8546",
+        "--metrics",
+        "--metrics.addr 0.0.0.0",
+        "--metrics.port 6060",
+        f"--authrpc.jwtsecret {jwtsecret_path}",
+        "--authrpc.addr 0.0.0.0",
+        "--authrpc.port 8551",
+        "--syncmode snap"
+    ]
+    
+    if el_max_peer_count:
+        _args.append(f"--p2p.target-peers {el_max_peer_count}")
+
+    _exec_start = form_exec_start(_args)
+
+    return _generate_systemd_template(
+        description=f"Ethrex Execution Layer Client service for {eth_network.upper()}",
+        user="execution",
+        exec_start=_exec_start,
+        extra_env=['RUST_LOG=info'],
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
+
+
+
 def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
                             el_max_peer_count: str, jwtsecret_path: str,
                             cl_p2p_port: str, cl_rest_port: str, cl_max_peer_count: str,

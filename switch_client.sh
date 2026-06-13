@@ -84,6 +84,7 @@ function switchClient(){
             getExecutionDatadir
             DATADIR=${DATADIR:-${BASE_DATA_DIR}/reth}
             ;;
+        Ethrex) DATADIR="${BASE_DATA_DIR}/ethrex" ;;
         Lighthouse) DATADIR="${BASE_DATA_DIR}/lighthouse" ;;
         Nimbus) DATADIR="${BASE_DATA_DIR}/nimbus" ;;
         Teku) DATADIR="${BASE_DATA_DIR}/teku" ;;

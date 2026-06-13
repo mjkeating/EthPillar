@@ -5,6 +5,7 @@ import deploy.nethermind as nethermind
 import deploy.reth as reth
 import deploy.erigon as erigon
 import deploy.geth as geth
+import deploy.ethrex as ethrex
 import deploy.lighthouse as lighthouse
 import deploy.nimbus as nimbus
 import deploy.teku as teku
@@ -23,7 +24,7 @@ VALID_ROLES = [
     'Custom Setup'
 ]
 
-EXECUTION_CLIENTS = ['Besu', 'Nethermind', 'Reth', 'Erigon', 'Geth']
+EXECUTION_CLIENTS = ['Besu', 'Nethermind', 'Reth', 'Erigon', 'Geth', 'Ethrex']
 CONSENSUS_CLIENTS = ['Lighthouse', 'Nimbus', 'Teku', 'Lodestar', 'Grandine', 'Prysm']
 
 PREDEFINED_COMBOS = {
@@ -125,7 +126,7 @@ def is_valid_combination(ec: str, cc: str) -> bool:
         return True
     if ec == 'Erigon' and cc in CONSENSUS_CLIENTS:
         return True # Erigon standalone
-    if ec in ['Besu', 'Nethermind', 'Reth', 'Geth'] and cc in CONSENSUS_CLIENTS:
+    if ec in ['Besu', 'Nethermind', 'Reth', 'Geth', 'Ethrex'] and cc in CONSENSUS_CLIENTS:
         return True
     return False
 
@@ -187,6 +188,8 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
                 )
         elif ec_name == 'Geth':
             el_ver, el_path = geth.download_and_install_geth(network, str(el_p2p_port), str(el_rpc_port), str(el_max_peers), jwtsecret_path)
+        elif ec_name == 'Ethrex':
+            el_ver, el_path = ethrex.download_and_install_ethrex(network, str(el_p2p_port), str(el_rpc_port), str(el_max_peers), jwtsecret_path)
 
     cl_ver, cl_path = "", ""
     if not flags['validator_only'] and cc_name and cc_name not in ['Caplin', 'Caplin (integrated)']:

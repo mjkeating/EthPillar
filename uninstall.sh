@@ -148,6 +148,10 @@ function uninstallEL(){
 		sudo rm -rf /usr/local/bin/reth
 		sudo rm -rf /var/lib/reth
 
+		#Ethrex
+		sudo rm -rf /usr/local/bin/ethrex
+		sudo rm -rf /var/lib/ethrex
+
 		sudo userdel execution
 	fi
 }

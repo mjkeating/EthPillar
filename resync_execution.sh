@@ -57,6 +57,11 @@ function resyncClient(){
 		sudo rm -rf /var/lib/erigon/*
 		sudo systemctl restart execution
 	    ;;
+	  Ethrex)
+		sudo systemctl stop execution
+		sudo rm -rf /var/lib/ethrex/*
+		sudo systemctl restart execution
+	    ;;
   	  Reth)
 		getNetwork
 		getExecutionDatadir

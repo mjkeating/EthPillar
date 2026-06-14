@@ -295,6 +295,8 @@ def generate_html_report(tasks, results_dir, total_duration, timestamp, commit):
     passed = len([t for t in tasks if t.status == "PASS"])
     failed = len([t for t in tasks if t.status == "FAIL"])
     skipped = len([t for t in tasks if t.status == "SKIPPED"])
+    overall_result = "PASS" if failed == 0 else "FAIL"
+    overall_class = "status-pass" if overall_result == "PASS" else "status-fail"
     
     html = f"""<!DOCTYPE html>
 <html>
@@ -333,6 +335,7 @@ def generate_html_report(tasks, results_dir, total_duration, timestamp, commit):
     <div class="container">
         <h1>Integration Test Report</h1>
         <div class="summary">
+            Overall Result: <span class="{overall_class}">{overall_result}</span> <br>
             Run Time: {timestamp} <br>
             Commit: <code>{commit}</code> <br>
             Total Duration: {total_duration}s <br>

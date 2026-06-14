@@ -76,6 +76,24 @@ ohai() {
   printf "${tty_blue}==>${tty_bold} %s${tty_reset}\n" "$(shell_join "$@")"
 }
 
+# Resolve repo location: use this checkout when install.sh is run from a clone,
+# otherwise default to ~/git/ethpillar (curl | bash one-liner).
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+
+if [[ -f "$SCRIPT_DIR/ethpillar.sh" ]]; then
+  # running from a cloned repo, use that as the source location
+  REPO="$SCRIPT_DIR"
+else
+  # running from a curl one-liner, use the default location
+  REPO="$HOME/git/ethpillar"
+fi
+
 requirements_check() {
   # Check CPU architecture
   if ! [[ $(lscpu | grep -oE 'x86') || $(lscpu | grep -oE 'aarch64') ]]; then
@@ -99,27 +117,30 @@ linux_install_pre() {
 }
 
 linux_install_python_deps() {
-    local _repo="$HOME/git/ethpillar"
     ohai "Installing Python runtime dependencies"
-    export BASE_DIR="${_repo}"
-    cd "${_repo}" || exit_on_error $?
+    export BASE_DIR="${REPO}"
+    cd "${REPO}" || exit_on_error $?
     # shellcheck source=functions.sh
-    source "${_repo}/functions.sh"
+    source "${REPO}/functions.sh"
     exit_on_error $?
 }
 
 linux_install_installer() {
-    ohai "Cloning EthPillar into ~/git/ethpillar"
-    mkdir -p ~/git/ethpillar
-    # Updated to use this maintained fork
-    git clone https://github.com/mjkeating/EthPillar.git ~/git/ethpillar/ 2> /dev/null || \
-      (cd ~/git/ethpillar ; git fetch origin main ; git checkout main ; git pull)
-    chmod +x ~/git/ethpillar/*.sh
+    if [[ -f "$SCRIPT_DIR/ethpillar.sh" ]]; then
+        ohai "Installing ethpillar from ${REPO}"
+    else
+        ohai "Cloning EthPillar into ${REPO}"
+        mkdir -p "${REPO}"
+        # Updated to use this maintained fork
+        git clone https://github.com/mjkeating/EthPillar.git "${REPO}/" 2> /dev/null || \
+          (cd "${REPO}" ; git fetch origin main ; git checkout main ; git pull)
+    fi
+    chmod +x "${REPO}"/*.sh
     ohai "Installing ethpillar"
-    if [ -f /usr/local/bin/ethpillar ]; then 
+    if [ -f /usr/local/bin/ethpillar ]; then
       sudo rm /usr/local/bin/ethpillar
     fi
-    sudo ln -s ~/git/ethpillar/ethpillar.sh /usr/local/bin/ethpillar
+    sudo ln -s "${REPO}/ethpillar.sh" /usr/local/bin/ethpillar
     exit_on_error $?
 }
 

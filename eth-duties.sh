@@ -8,10 +8,10 @@
 # Made for home and solo stakers 🏠🥩
 
 # Base directory with scripts
-BASE_DIR=$HOME/git/ethpillar
+BASE_DIR="${BASE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 
 # Load functions
-source $BASE_DIR/functions.sh
+source "$BASE_DIR/functions.sh"
 
 # Get machine info
 _arch=$(get_arch)

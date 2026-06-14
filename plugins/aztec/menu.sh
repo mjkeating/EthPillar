@@ -6,6 +6,8 @@
 #
 # Made for home and solo stakers 🏠🥩
 
+BASE_DIR="${BASE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
 # Colors
 g="\033[32m" # Green
 r="\033[31m" # Red
@@ -462,8 +464,7 @@ while true; do
         ;;
       🗑️)
         # shellcheck disable=SC2164
-        cd ~/git/ethpillar
-        exec ./plugins/aztec/plugin_aztec.sh -r
+        exec "$BASE_DIR/plugins/aztec/plugin_aztec.sh" -r
         ;;
       🛡️)
         healthChecks

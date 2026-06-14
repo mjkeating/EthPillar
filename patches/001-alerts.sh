@@ -11,6 +11,8 @@
 # If you installed ethpillar before v1.7.0, run this to enable alerts
 ######################################################################
 
+BASE_DIR="${BASE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
 # Step 1: Backup and then update prometheus.yml file
 sudo mv /etc/prometheus/prometheus.yml /etc/prometheus/prometheus.yml.backup
 sudo bash -c "cat << 'EOF' > /etc/prometheus/prometheus.yml
@@ -32,7 +34,7 @@ scrape_configs:
 EOF"
 
 # Step 2: Install default alert rules and restart prometheus
-sudo cp ~/git/ethpillar/alert.rules.yml /etc/prometheus
+sudo cp "$BASE_DIR/alert.rules.yml" /etc/prometheus
 sudo systemctl restart prometheus
 
 # Step 3: Show instructions

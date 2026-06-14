@@ -14,9 +14,9 @@ DEPOSIT_CLI_PATH=$STAKING_DEPOSIT_CLI_DIR/ethstaker_deposit-cli
 OFFLINE_MODE=false
 isLido=""
 # Base directory with scripts
-BASE_DIR=$HOME/git/ethpillar
+BASE_DIR="${BASE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 # Load functions
-source "$BASE_DIR"/functions.sh
+source "$BASE_DIR/functions.sh"
 # Load Lido CSM withdrawal address and fee recipient
 source "$BASE_DIR"/env
 

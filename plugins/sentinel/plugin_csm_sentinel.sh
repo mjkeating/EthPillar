@@ -8,7 +8,7 @@
 # Made for home and solo stakers 🏠🥩
 
 # Base directory with scripts
-BASE_DIR=$HOME/git/ethpillar
+BASE_DIR="${BASE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 # Variables
 #GITHUB_URL=https://api.github.com/repos/skhomuti/csm-sentinel/releases/latest

@@ -16,25 +16,4 @@ concurrency:
 
 jobs:
   unit-and-bats:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Build test image
-        run: docker build -t ethpillar-test -f tests/integration/Dockerfile.test .
-
-      - name: Unit tests
-        run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/ethpillar" \
-            ethpillar-test \
-            bash /ethpillar/tests/run_unit_tests.sh tests/ -v
-
-      - name: Bats tests
-        run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/ethpillar" \
-            ethpillar-test \
-            bats tests/
+    uses: ./.github/workflows/unit-bats-tests.yml

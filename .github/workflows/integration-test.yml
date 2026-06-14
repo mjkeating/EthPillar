@@ -1,0 +1,58 @@
+name: Integration Test
+
+on:
+  workflow_call:
+    inputs:
+      artifact_name_prefix:
+        description: Prefix for the uploaded integration report artifact
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ETHPILLAR_CHECKPOINT_CACHE_DIR: ${{ github.workspace }}/tests/integration/checkpoint_cache
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Restore binary download cache
+        uses: actions/cache@v5
+        with:
+          path: tests/integration/cache
+          # Static key: one accumulating snapshot (bump v1 to invalidate). save-always uploads new downloads each run.
+          key: binary-cache-${{ runner.os }}-v1
+          restore-keys: |
+            binary-cache-${{ runner.os }}-
+          save-always: true
+
+      - name: Restore checkpoint cache
+        uses: actions/cache@v5
+        with:
+          path: tests/integration/checkpoint_cache
+          key: checkpoint-${{ runner.os }}-${{ hashFiles('tests/integration/checkpoint_cache/manifest.json') }}
+          restore-keys: |
+            checkpoint-${{ runner.os }}-
+
+      - name: Prepare cache directories
+        run: |
+          mkdir -p tests/integration/cache tests/integration/checkpoint_cache
+
+      - name: Run integration matrix
+        run: bash tests/integration/run_docker_tests.sh
+
+      - name: Upload integration report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_name_prefix }}-${{ github.run_id }}
+          path: tests/integration/results/
+          retention-days: 90
+          if-no-files-found: ignore

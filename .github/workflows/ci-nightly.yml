@@ -16,88 +16,14 @@ concurrency:
 
 jobs:
   unit-and-bats:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Build test image
-        run: docker build -t ethpillar-test -f tests/integration/Dockerfile.test .
-
-      - name: Unit tests
-        run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/ethpillar" \
-            ethpillar-test \
-            bash /ethpillar/tests/run_unit_tests.sh tests/ -v
-
-      - name: Bats tests
-        run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/ethpillar" \
-            ethpillar-test \
-            bats tests/
+    uses: ./.github/workflows/unit-bats-tests.yml
 
   live-release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Build test image
-        run: docker build -t ethpillar-test -f tests/integration/Dockerfile.test .
-
-      - name: Live release tests
-        run: |
-          docker run --rm \
-            -e GITHUB_TOKEN \
-            -v "${{ github.workspace }}:/ethpillar" \
-            ethpillar-test \
-            bash /ethpillar/tests/run_live_release_tests.sh
+    uses: ./.github/workflows/live-release-test.yml
+    secrets: inherit
 
   integration:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      ETHPILLAR_CHECKPOINT_CACHE_DIR: ${{ github.workspace }}/tests/integration/checkpoint_cache
-      CI: true
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Restore binary download cache
-        uses: actions/cache@v5
-        with:
-          path: tests/integration/cache
-          key: binary-cache-${{ runner.os }}-${{ hashFiles('tests/integration/cache/**') }}
-          restore-keys: |
-            binary-cache-${{ runner.os }}-
-
-      - name: Restore checkpoint cache
-        uses: actions/cache@v5
-        with:
-          path: tests/integration/checkpoint_cache
-          key: checkpoint-${{ runner.os }}-${{ hashFiles('tests/integration/checkpoint_cache/manifest.json') }}
-          restore-keys: |
-            checkpoint-${{ runner.os }}-
-
-      - name: Prepare cache directories
-        run: |
-          mkdir -p tests/integration/cache tests/integration/checkpoint_cache
-
-      - name: Run integration matrix
-        run: bash tests/integration/run_docker_tests.sh
-
-      - name: Upload integration report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: nightly-integration-${{ github.run_id }}
-          path: tests/integration/results/
-          retention-days: 90
-          if-no-files-found: ignore
+    uses: ./.github/workflows/integration-test.yml
+    secrets: inherit
+    with:
+      artifact_name_prefix: nightly-integration

@@ -28,9 +28,11 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tests/integration/cache
-          key: binary-cache-${{ runner.os }}-${{ hashFiles('tests/integration/cache/**') }}
+          # Static key: one accumulating snapshot (bump v1 to invalidate). save-always uploads new downloads each run.
+          key: binary-cache-${{ runner.os }}-v1
           restore-keys: |
             binary-cache-${{ runner.os }}-
+          save-always: true
 
       - name: Restore checkpoint cache
         uses: actions/cache@v5

@@ -244,7 +244,7 @@ def _activate_java(version: int) -> None:
     print(f">> Set default java -> {java_bin}")
 
 
-def ensure_java_available(min_version: int = 21) -> bool:
+def ensure_java_available(min_version: int = 25) -> bool:
     """Ensure a Java runtime of at least ``min_version`` is the default on PATH.
 
     JVM-based clients ship binaries compiled for a specific Java release (e.g.

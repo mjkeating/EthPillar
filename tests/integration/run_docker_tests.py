@@ -52,8 +52,8 @@ custom_tests = [
     ("Geth-Lighthouse-Custom-Setup-SEPOLIA", f"{RUN_TEST} deploy/deploy-node.py --ec Geth --cc Lighthouse --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup'"),
     ("Nethermind-Grandine-Custom-Setup-SEPOLIA", f"{RUN_TEST} deploy/deploy-node.py --ec Nethermind --cc Grandine --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup'"),
     ("Prysm-Reth-Custom-Setup-SEPOLIA", f"{RUN_TEST} deploy/deploy-node.py --ec Reth --cc Prysm --vc Prysm --network SEPOLIA --mev --config 'Custom Setup'"),
-    ("Ethrex-Lighthouse-Custom-Setup-SEPOLIA", f"{RUN_TEST} deploy/deploy-node.py --ec Ethrex --cc Lighthouse --vc Lighthouse --network SEPOLIA --mev --config 'Custom Setup'"),
-    ("Teku-Besu-VC-Only-HOODI", f"{RUN_TEST} deploy/deploy-node.py --combo Teku-Besu --network HOODI --config 'Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052"),
+    ("Ethrex-Teku-Custom-Setup-SEPOLIA", f"{RUN_TEST} deploy/deploy-node.py --ec Ethrex --cc Teku --network SEPOLIA --config 'Custom Setup'"),
+    ("Teku-VC-Only-HOODI", f"{RUN_TEST} deploy/deploy-node.py --combo Teku-Besu --network HOODI --config 'Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052"),
 ]
 
 upgrade_tests = [
@@ -66,7 +66,7 @@ upgrade_tests = [
 ]
 
 switch_tests = [
-    ("Switch-Reth-Lighthouse-to-Besu-Teku", f"{RUN_TEST} deploy/deploy-node.py --ec Reth --cc Lighthouse --network SEPOLIA --config 'Full Node Only' --test-switching"),
+    ("Switch-Reth-Lighthouse-to-Besu-Nimbus", f"{RUN_TEST} deploy/deploy-node.py --ec Reth --cc Lighthouse --network SEPOLIA --config 'Full Node Only' --test-switching"),
 ]
 
 class TestTask:

@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: read
+  # integration-test.yml uses gh cache delete/save (actions/cache/save); caller must grant write permission
+  actions: write
 
 concurrency:
   group: ci-integration

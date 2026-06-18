@@ -65,6 +65,24 @@ You can run the full integration test suite directly:
 bash tests/integration/run_docker_tests.sh
 ```
 
+## 5. Local CI smoke (act)
+
+Simulate GitHub Actions workflows locally with [act](https://github.com/nektos/act). Requires Docker Desktop and `winget install nektos.act`.
+
+**Cache permission smoke** exercises the integration cache restore/save path using tiny fixtures in `tests/integration/act-smoke/` (never touches your real `tests/integration/cache` or `checkpoint_cache`).
+
+```powershell
+# PowerShell (Bypass required on Windows default execution policy)
+pwsh -ExecutionPolicy Bypass -File .\tests\integration\act-smoke\run-act-integration.ps1 -Run -Job cache-smoke
+```
+
+```bash
+# Linux / macOS (pwsh) — Bypass not needed
+pwsh -File ./tests/integration/act-smoke/run-act-integration.ps1 -Run -Job cache-smoke
+```
+
+Optional: set `$env:GITHUB_TOKEN` to avoid API rate limits when running the full integration matrix (`-Job integration`).
+
 ## Test Structure
 
 - `tests/test_orchestrator.py`: Logic for role flags and CSM overrides.

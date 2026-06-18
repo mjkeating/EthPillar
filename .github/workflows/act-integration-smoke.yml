@@ -1,5 +1,8 @@
 # Local-only smoke test for act: exercises cache restore/save without the full matrix.
-# Not triggered on GitHub (workflow_dispatch only). Run via tests/scripts/run-act-integration.ps1.
+# Not triggered on GitHub (workflow_dispatch only). See tests/README.md — act smoke section.
+#
+# Uses isolated tests/integration/act-smoke/ dirs — never touches the real integration
+# cache trees used for local test runs.
 name: Act — Integration cache smoke
 
 on:
@@ -13,49 +16,58 @@ jobs:
   cache-smoke:
     runs-on: ubuntu-latest
     env:
-      ETHPILLAR_CHECKPOINT_CACHE_DIR: ${{ github.workspace }}/tests/integration/checkpoint_cache
+      ACT_SMOKE_BINARY_CACHE_DIR: ${{ github.workspace }}/tests/integration/act-smoke/cache
+      ACT_SMOKE_CHECKPOINT_CACHE_DIR: ${{ github.workspace }}/tests/integration/act-smoke/checkpoint_cache
+      ETHPILLAR_CHECKPOINT_CACHE_DIR: ${{ github.workspace }}/tests/integration/act-smoke/checkpoint_cache
+      CI: true
     steps:
       - uses: actions/checkout@v6
 
+      - name: Ensure runner user exists (act)
+        run: |
+          # catthehacker/act images may run steps as root; GHA uses user "runner".
+          if ! id runner &>/dev/null; then
+            useradd -m -s /bin/bash runner
+          fi
+
       - name: Prepare cache directories
         run: |
-          mkdir -p tests/integration/cache tests/integration/checkpoint_cache
+          mkdir -p tests/integration/act-smoke/cache tests/integration/act-smoke/checkpoint_cache
 
       - name: Restore binary download cache
         uses: actions/cache/restore@v5
         with:
-          path: tests/integration/cache
-          key: binary-cache-${{ runner.os }}-v1
+          path: tests/integration/act-smoke/cache
+          key: binary-cache-act-smoke-${{ runner.os }}-v1
           restore-keys: |
-            binary-cache-${{ runner.os }}-
+            binary-cache-act-smoke-${{ runner.os }}-
 
       - name: Restore checkpoint cache
         uses: actions/cache/restore@v5
         with:
-          path: tests/integration/checkpoint_cache
-          key: checkpoint-${{ runner.os }}-v1
+          path: tests/integration/act-smoke/checkpoint_cache
+          key: checkpoint-act-smoke-${{ runner.os }}-v1
           restore-keys: |
-            checkpoint-${{ runner.os }}-
+            checkpoint-act-smoke-${{ runner.os }}-
 
-      - name: Seed dummy cache entries
-        run: |
-          echo "cached-binary" > tests/integration/cache/smoke.txt
-          mkdir -p tests/integration/checkpoint_cache/SEPOLIA/entries
-          echo '{"networks":{"SEPOLIA":{"warmed_at":0,"entries":{}}}' > tests/integration/checkpoint_cache/manifest.json
+      - name: Populate caches via Docker (as integration does)
+        run: bash tests/integration/act-smoke/act-cache-fixture.sh
+
+      - name: Verify runner cannot save caches before chmod
+        run: bash tests/integration/act-smoke/verify-cache-runner-access.sh deny
 
       - name: Fix cache permissions for Actions save
         if: always()
-        run: |
-          # Docker tests write both cache dirs as root on the host bind mount.
-          # The runner user needs read+traverse to tar them for actions/cache/save.
-          # chmod (not chown) is enough — we only widen permissions, not ownership.
-          sudo chmod -R a+rX tests/integration/cache tests/integration/checkpoint_cache 2>/dev/null || true
+        run: bash tests/integration/act-smoke/fix-cache-permissions.sh
+
+      - name: Verify runner can save caches after chmod
+        run: bash tests/integration/act-smoke/verify-cache-runner-access.sh allow
 
       - name: Delete previous binary caches
         if: always()
         run: |
           set +e
-          gh cache list --key "binary-cache-${{ runner.os }}-" --limit 100 --json id \
+          gh cache list --key "binary-cache-act-smoke-${{ runner.os }}-" --limit 100 --json id \
             --jq '.[].id' | while read -r cache_id; do
             echo "Deleting cache ${cache_id}"
             gh cache delete "${cache_id}"
@@ -67,14 +79,14 @@ jobs:
       - name: Save binary download cache
         uses: actions/cache/save@v5
         with:
-          path: tests/integration/cache
-          key: binary-cache-${{ runner.os }}-v1
+          path: tests/integration/act-smoke/cache
+          key: binary-cache-act-smoke-${{ runner.os }}-v1
 
       - name: Delete previous checkpoint caches
         if: always()
         run: |
           set +e
-          gh cache list --key "checkpoint-${{ runner.os }}-" --limit 100 --json id \
+          gh cache list --key "checkpoint-act-smoke-${{ runner.os }}-" --limit 100 --json id \
             --jq '.[].id' | while read -r cache_id; do
             echo "Deleting cache ${cache_id}"
             gh cache delete "${cache_id}"
@@ -86,11 +98,20 @@ jobs:
       - name: Save checkpoint cache
         uses: actions/cache/save@v5
         with:
-          path: tests/integration/checkpoint_cache
-          key: checkpoint-${{ runner.os }}-v1
+          path: tests/integration/act-smoke/checkpoint_cache
+          key: checkpoint-act-smoke-${{ runner.os }}-v1
 
       - name: Verify cache paths exist
         run: |
-          test -f tests/integration/cache/smoke.txt
-          test -f tests/integration/checkpoint_cache/manifest.json
+          if [[ "${ACT:-}" == "true" ]]; then
+            # Fixtures are written via Docker bind mount (//c/...); act's /mnt/c volume may not see them.
+            REPO_BIND="$(bash -c 'source tests/integration/act-smoke/lib/act-bind-mount.sh; host_bind_source "$(pwd)"')"
+            docker run --rm -v "${REPO_BIND}:/ethpillar" ethpillar-rebuild \
+              test -f /ethpillar/tests/integration/act-smoke/cache/fixture_act_smoke.bin
+            docker run --rm -v "${REPO_BIND}:/ethpillar" ethpillar-rebuild \
+              test -f /ethpillar/tests/integration/act-smoke/checkpoint_cache/manifest.json
+          else
+            test -f tests/integration/act-smoke/cache/fixture_act_smoke.bin
+            test -f tests/integration/act-smoke/checkpoint_cache/manifest.json
+          fi
           echo "Cache smoke OK"

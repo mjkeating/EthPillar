@@ -17,7 +17,9 @@ if os.environ.get("ENABLE_EP_CACHE") == "1":
 
         import requests
 
-        CACHE_DIR = "/ethpillar/tests/integration/cache"
+        from binary_cache_common import default_cache_dir, record_cache_access
+
+        CACHE_DIR = default_cache_dir()
         LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
         original_get: Callable = requests.get
@@ -125,6 +127,7 @@ if os.environ.get("ENABLE_EP_CACHE") == "1":
                         temp_file.close()
                         os.rename(temp_path, cache_file)
                         _chmod_cache_file(cache_file)
+                        record_cache_access(cache_file, CACHE_DIR)
 
                 response.iter_content = tee_iter_content
                 return
@@ -134,6 +137,7 @@ if os.environ.get("ENABLE_EP_CACHE") == "1":
                 temp_name = handle.name
             os.rename(temp_name, cache_file)
             _chmod_cache_file(cache_file)
+            record_cache_access(cache_file, CACHE_DIR)
 
         def cached_get(url: str, *args: Any, **kwargs: Any) -> Any:
             """Intercept requests.get; only binary release assets may be served from cache."""
@@ -149,6 +153,7 @@ if os.environ.get("ENABLE_EP_CACHE") == "1":
 
             if validate_binary_cache(url, cache_file):
                 print(f"[CACHE] Hit for {url}")
+                record_cache_access(cache_file, CACHE_DIR)
                 return read_cached_response(cache_file)
 
             print(f"[CACHE] Miss for {url}, downloading...")

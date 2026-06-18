@@ -27,6 +27,10 @@ RUN_TEST = "bash /ethpillar/tests/integration/run_test.sh"
 _INTEGRATION_DIR = os.path.dirname(os.path.abspath(__file__))
 if _INTEGRATION_DIR not in sys.path:
     sys.path.insert(0, _INTEGRATION_DIR)
+from binary_cache_common import (  # noqa: E402
+    prune_unaccessed_binary_cache,
+    reset_access_log,
+)
 from checkpoint_cache_common import (  # noqa: E402
     CONTAINER_CACHE_PATH,
     ensure_cache_root,
@@ -415,13 +419,18 @@ async def main():
     else:
         print("GITHUB_TOKEN is set — GitHub API calls will be authenticated.")
 
+    cwd = os.getcwd()
+    binary_cache_dir = os.path.join(cwd, "tests", "integration", "cache")
+    os.makedirs(binary_cache_dir, exist_ok=True)
+    reset_access_log(binary_cache_dir)
+    print(f"Binary cache access log reset ({binary_cache_dir})")
+
     print("Rebuilding Docker image...")
     res = subprocess.run("docker build -t ethpillar-rebuild -f tests/integration/Dockerfile.test .", shell=True)
     if res.returncode != 0:
         print("Failed to build Docker image.")
         sys.exit(1)
 
-    cwd = os.getcwd()
     cache_dir = ensure_cache_root()
     print(f"Warming checkpoint cache at {cache_dir} ...")
     warm_cmd = (
@@ -449,6 +458,7 @@ async def main():
     
     total_duration = int(time.time() - start_time)
 
+    prune_unaccessed_binary_cache(binary_cache_dir)
     fix_cache_permissions_for_ci()
     
     html_path = generate_html_report(tasks, results_dir, total_duration, timestamp, get_git_commit())

@@ -11,7 +11,13 @@ import subprocess
 import sys
 from typing import List, Optional
 
-CACHE_DIR = "/ethpillar/tests/integration/cache"
+_INTEGRATION_DIR = os.path.dirname(os.path.abspath(__file__))
+if _INTEGRATION_DIR not in sys.path:
+    sys.path.insert(0, _INTEGRATION_DIR)
+
+from binary_cache_common import default_cache_dir, record_cache_access
+
+CACHE_DIR = default_cache_dir()
 
 TAR_ARCHIVE_SUFFIXES = (".tar.gz", ".tar.xz", ".tar.zst", ".tgz")
 ZIP_ARCHIVE_SUFFIX = ".zip"
@@ -157,6 +163,7 @@ def write_selective_cache(
         os.rename(temp_tar, cache_tar)
         # Same root-ownership story as sitecustomize.py — runner must read extracted_*.tar.
         os.chmod(cache_tar, 0o644)
+        record_cache_access(cache_tar, CACHE_DIR)
     except OSError:
         subprocess.run(["/usr/bin/sudo", "/usr/bin/rm", "-f", temp_tar], check=False)
 
@@ -187,6 +194,7 @@ def main() -> None:
 
     if os.path.exists(cache_tar) and os.path.getsize(cache_tar) > 0:
         print(f"[EXTRACT CACHE] Hit for {os.path.basename(archive_path)}")
+        record_cache_access(cache_tar, CACHE_DIR)
         os.makedirs(dest_dir, exist_ok=True)
         result = subprocess.run(
             ["/usr/bin/sudo", "/usr/bin/tar", "xf", cache_tar, "-C", dest_dir],

@@ -115,6 +115,12 @@ Test results are saved in the `results/` directory. Each run creates a timestamp
 
 Release **binaries** may be served from `cache/` after a live `HEAD` check confirms the URL is still valid and the file size matches. API/metadata requests are never cached, so release URL resolution is exercised on every run. Delete `cache/` to force a full re-download of all binaries.
 
+After each integration matrix run, ``run_docker_tests.py`` prunes ``*.bin`` and
+``extracted_*.tar`` files that were **not** read or written during that run (tracked
+in ``cache/.accessed_this_run.log``). Old client releases fall out of the cache
+automatically when the matrix moves on. Set ``ETHPILLAR_SKIP_BINARY_CACHE_PRUNE=1``
+to keep everything.
+
 ### Checkpoint sync (SEPOLIA + HOODI)
 
 Before the test matrix runs, `warm_checkpoint_cache.py` prefetches Beacon checkpoint API

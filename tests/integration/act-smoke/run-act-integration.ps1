@@ -1,4 +1,4 @@
-# Run act workflows locally via act.
+# Run act workflow locally via act
 #
 # Prerequisites:
 #   - Docker Desktop running

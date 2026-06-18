@@ -43,7 +43,9 @@ def access_log_path(cache_dir: str | None = None) -> str:
 
 def reset_access_log(cache_dir: str | None = None) -> None:
     """Start a fresh access log for the current integration run."""
-    path = access_log_path(cache_dir)
+    directory = cache_dir or default_cache_dir()
+    os.makedirs(directory, exist_ok=True)
+    path = access_log_path(directory)
     try:
         os.remove(path)
     except FileNotFoundError:
@@ -57,9 +59,13 @@ def record_cache_access(filename: str, cache_dir: str | None = None) -> None:
         return
     directory = cache_dir or default_cache_dir()
     os.makedirs(directory, exist_ok=True)
-    log_path = os.path.join(directory, ACCESS_LOG_NAME)
+    log_path = access_log_path(directory)
     with open(log_path, "a", encoding="utf-8") as handle:
         handle.write(f"{basename}\n")
+    try:
+        os.chmod(log_path, 0o644)
+    except OSError:
+        pass
 
 
 def load_accessed_basenames(cache_dir: str | None = None) -> set[str]:

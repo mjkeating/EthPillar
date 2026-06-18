@@ -117,9 +117,10 @@ Release **binaries** may be served from `cache/` after a live `HEAD` check confi
 
 After each integration matrix run, ``run_docker_tests.py`` prunes ``*.bin`` and
 ``extracted_*.tar`` files that were **not** read or written during that run (tracked
-in ``cache/.accessed_this_run.log``). Old client releases fall out of the cache
-automatically when the matrix moves on. Set ``ETHPILLAR_SKIP_BINARY_CACHE_PRUNE=1``
-to keep everything.
+in ``cache/.accessed_this_run.log``). Reset and prune run inside a short Docker
+container as root so WSL hosts never need ``sudo`` for root-owned cache files.
+Old client releases fall out of the cache automatically when the matrix moves on.
+Set ``ETHPILLAR_SKIP_BINARY_CACHE_PRUNE=1`` to keep everything.
 
 ### Checkpoint sync (SEPOLIA + HOODI)
 

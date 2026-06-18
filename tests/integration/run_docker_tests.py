@@ -27,10 +27,6 @@ RUN_TEST = "bash /ethpillar/tests/integration/run_test.sh"
 _INTEGRATION_DIR = os.path.dirname(os.path.abspath(__file__))
 if _INTEGRATION_DIR not in sys.path:
     sys.path.insert(0, _INTEGRATION_DIR)
-from binary_cache_common import (  # noqa: E402
-    prune_unaccessed_binary_cache,
-    reset_access_log,
-)
 from checkpoint_cache_common import (  # noqa: E402
     CONTAINER_CACHE_PATH,
     ensure_cache_root,
@@ -378,6 +374,29 @@ def generate_html_report(tasks, results_dir, total_duration, timestamp, commit):
         f.write(html)
     return html_path
 
+def _docker_repo_mount(cwd: str) -> str:
+    return f"-v {shlex.quote(cwd)}:/ethpillar -e PYTHONPATH=/ethpillar/tests/integration"
+
+
+def docker_reset_binary_cache_access_log(cwd: str) -> None:
+    """Clear the access log as root inside Docker (avoids host sudo on WSL)."""
+    cmd = (
+        f"docker run --rm {_docker_repo_mount(cwd)} ethpillar-rebuild "
+        "python3 -c \"from binary_cache_common import reset_access_log; reset_access_log()\""
+    )
+    subprocess.run(cmd, shell=True, check=True)
+
+
+def docker_prune_binary_cache(cwd: str) -> None:
+    """Prune stale cache entries as root inside Docker (same bind mount as tests)."""
+    cmd = (
+        f"docker run --rm {_docker_repo_mount(cwd)} ethpillar-rebuild "
+        "python3 -c \"from binary_cache_common import prune_unaccessed_binary_cache; "
+        "prune_unaccessed_binary_cache()\""
+    )
+    subprocess.run(cmd, shell=True, check=False)
+
+
 def fix_cache_permissions_for_ci() -> None:
     """Broaden read access on host cache dirs after Docker integration tests.
 
@@ -422,14 +441,15 @@ async def main():
     cwd = os.getcwd()
     binary_cache_dir = os.path.join(cwd, "tests", "integration", "cache")
     os.makedirs(binary_cache_dir, exist_ok=True)
-    reset_access_log(binary_cache_dir)
-    print(f"Binary cache access log reset ({binary_cache_dir})")
 
     print("Rebuilding Docker image...")
     res = subprocess.run("docker build -t ethpillar-rebuild -f tests/integration/Dockerfile.test .", shell=True)
     if res.returncode != 0:
         print("Failed to build Docker image.")
         sys.exit(1)
+
+    docker_reset_binary_cache_access_log(cwd)
+    print(f"Binary cache access log reset ({binary_cache_dir})")
 
     cache_dir = ensure_cache_root()
     print(f"Warming checkpoint cache at {cache_dir} ...")
@@ -458,7 +478,7 @@ async def main():
     
     total_duration = int(time.time() - start_time)
 
-    prune_unaccessed_binary_cache(binary_cache_dir)
+    docker_prune_binary_cache(cwd)
     fix_cache_permissions_for_ci()
     
     html_path = generate_html_report(tasks, results_dir, total_duration, timestamp, get_git_commit())

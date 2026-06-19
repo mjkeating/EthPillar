@@ -1,14 +1,16 @@
-# Run the integration reusable workflow locally via act.
+# Run act workflow locally via act
 #
 # Prerequisites:
 #   - Docker Desktop running
 #   - act: winget install nektos.act
 #   - Optional: $env:GITHUB_TOKEN for API rate limits during the test matrix
 #
-# Usage:
-#   .\scripts\run-act-integration.ps1              # dry-run (list steps)
-#   .\scripts\run-act-integration.ps1 -Run         # execute workflow
-#   .\scripts\run-act-integration.ps1 -Run -Job cache-smoke  # cache restore/save smoke test
+# cache-smoke runs Docker-in-Docker with the same bind mounts as integration tests.
+# On Windows, act translates /mnt/c/... paths for Docker Desktop automatically.
+#
+# Usage (from repo root; on Windows use Bypass — same as run_docker_tests.ps1):
+#   pwsh -ExecutionPolicy Bypass -File .\tests\integration\act-smoke\run-act-integration.ps1 -Run -Job cache-smoke
+#   pwsh -ExecutionPolicy Bypass -File .\tests\integration\act-smoke\run-act-integration.ps1 -Run -Job integration
 
 [CmdletBinding()]
 param(
@@ -20,7 +22,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-Set-Location (Join-Path $PSScriptRoot "..")
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+Set-Location $RepoRoot
 
 $act = Get-Command act -ErrorAction SilentlyContinue
 if (-not $act) {

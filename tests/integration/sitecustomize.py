@@ -17,7 +17,9 @@ if os.environ.get("ENABLE_EP_CACHE") == "1":
 
         import requests
 
-        CACHE_DIR = "/ethpillar/tests/integration/cache"
+        from binary_cache_common import default_cache_dir, record_cache_access
+
+        CACHE_DIR = default_cache_dir()
         LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
         original_get: Callable = requests.get
@@ -100,6 +102,15 @@ if os.environ.get("ENABLE_EP_CACHE") == "1":
             size = os.path.getsize(cache_file)
             return MockStreamResponse(cache_file, size)
 
+        def _chmod_cache_file(path: str) -> None:
+            # Tests run inside Docker as root; cache files bind-mount to the host
+            # still owned by root. chmod 644 lets the CI runner (non-root) read them
+            # when actions/cache/save tars tests/integration/cache — no chown needed.
+            try:
+                os.chmod(path, 0o644)
+            except OSError:
+                pass
+
         def write_cached_response(response: Any, cache_file: str, stream: bool) -> None:
             """Persist a network response to *cache_file* (streaming or buffered)."""
             if stream:
@@ -115,6 +126,8 @@ if os.environ.get("ENABLE_EP_CACHE") == "1":
                     finally:
                         temp_file.close()
                         os.rename(temp_path, cache_file)
+                        _chmod_cache_file(cache_file)
+                        record_cache_access(cache_file, CACHE_DIR)
 
                 response.iter_content = tee_iter_content
                 return
@@ -123,6 +136,8 @@ if os.environ.get("ENABLE_EP_CACHE") == "1":
                 handle.write(response.content)
                 temp_name = handle.name
             os.rename(temp_name, cache_file)
+            _chmod_cache_file(cache_file)
+            record_cache_access(cache_file, CACHE_DIR)
 
         def cached_get(url: str, *args: Any, **kwargs: Any) -> Any:
             """Intercept requests.get; only binary release assets may be served from cache."""
@@ -138,6 +153,7 @@ if os.environ.get("ENABLE_EP_CACHE") == "1":
 
             if validate_binary_cache(url, cache_file):
                 print(f"[CACHE] Hit for {url}")
+                record_cache_access(cache_file, CACHE_DIR)
                 return read_cached_response(cache_file)
 
             print(f"[CACHE] Miss for {url}, downloading...")

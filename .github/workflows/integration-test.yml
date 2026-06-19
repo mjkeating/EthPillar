@@ -39,15 +39,24 @@ jobs:
             binary-cache-${{ runner.os }}-
 
       - name: Restore checkpoint cache
-        uses: actions/cache@v5
+        id: checkpoint-cache-restore
+        uses: actions/cache/restore@v5
         with:
           path: tests/integration/checkpoint_cache
-          key: checkpoint-${{ runner.os }}-${{ hashFiles('tests/integration/checkpoint_cache/manifest.json') }}
+          key: checkpoint-${{ runner.os }}-v1
           restore-keys: |
             checkpoint-${{ runner.os }}-
 
       - name: Run integration matrix
         run: bash tests/integration/run_docker_tests.sh
+
+      - name: Fix cache permissions for Actions save
+        if: always()
+        run: |
+          # Docker tests write both cache dirs as root on the host bind mount.
+          # The runner user needs read+traverse to tar them for actions/cache/save.
+          # chmod (not chown) is enough — we only widen permissions, not ownership.
+          sudo chmod -R a+rX tests/integration/cache tests/integration/checkpoint_cache 2>/dev/null || true
 
       - name: Delete previous binary caches
         if: always()
@@ -70,6 +79,26 @@ jobs:
         with:
           path: tests/integration/cache
           key: binary-cache-${{ runner.os }}-v1
+
+      - name: Delete previous checkpoint caches
+        if: always()
+        run: |
+          set +e
+          gh cache list --key "checkpoint-${{ runner.os }}-" --limit 100 --json id \
+            --jq '.[].id' | while read -r cache_id; do
+            echo "Deleting cache ${cache_id}"
+            gh cache delete "${cache_id}"
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+
+      - name: Save checkpoint cache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: tests/integration/checkpoint_cache
+          key: checkpoint-${{ runner.os }}-v1
 
       - name: Upload integration report
         if: always()

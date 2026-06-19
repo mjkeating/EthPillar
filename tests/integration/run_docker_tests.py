@@ -374,6 +374,45 @@ def generate_html_report(tasks, results_dir, total_duration, timestamp, commit):
         f.write(html)
     return html_path
 
+def _docker_repo_mount(cwd: str) -> str:
+    return f"-v {shlex.quote(cwd)}:/ethpillar -e PYTHONPATH=/ethpillar/tests/integration"
+
+
+def docker_reset_binary_cache_access_log(cwd: str) -> None:
+    """Clear the access log as root inside Docker (avoids host sudo on WSL)."""
+    cmd = (
+        f"docker run --rm {_docker_repo_mount(cwd)} ethpillar-rebuild "
+        "python3 -c \"from binary_cache_common import reset_access_log; reset_access_log()\""
+    )
+    subprocess.run(cmd, shell=True, check=True)
+
+
+def docker_prune_binary_cache(cwd: str) -> None:
+    """Prune stale cache entries as root inside Docker (same bind mount as tests)."""
+    cmd = (
+        f"docker run --rm {_docker_repo_mount(cwd)} ethpillar-rebuild "
+        "python3 -c \"from binary_cache_common import prune_unaccessed_binary_cache; "
+        "prune_unaccessed_binary_cache()\""
+    )
+    subprocess.run(cmd, shell=True, check=False)
+
+
+def fix_cache_permissions_for_ci() -> None:
+    """Broaden read access on host cache dirs after Docker integration tests.
+
+    Containers run as root, so bind-mounted cache files arrive on the host as
+    root-owned. Per-file chmod 644 at write time helps, but directories and any
+    missed files still block the non-root CI runner from tarring caches for
+    actions/cache/save. sudo chmod -R a+rX fixes the whole tree without chown.
+    """
+    if os.environ.get("CI") != "true":
+        return
+    for name in ("cache", "checkpoint_cache"):
+        path = os.path.join(os.getcwd(), "tests", "integration", name)
+        if os.path.isdir(path):
+            subprocess.run(["sudo", "chmod", "-R", "a+rX", path], check=False)
+
+
 async def main():
     """Entry point: build image, warm caches, run matrix, emit report, set exit code."""
     parser = argparse.ArgumentParser()
@@ -399,13 +438,19 @@ async def main():
     else:
         print("GITHUB_TOKEN is set — GitHub API calls will be authenticated.")
 
+    cwd = os.getcwd()
+    binary_cache_dir = os.path.join(cwd, "tests", "integration", "cache")
+    os.makedirs(binary_cache_dir, exist_ok=True)
+
     print("Rebuilding Docker image...")
     res = subprocess.run("docker build -t ethpillar-rebuild -f tests/integration/Dockerfile.test .", shell=True)
     if res.returncode != 0:
         print("Failed to build Docker image.")
         sys.exit(1)
 
-    cwd = os.getcwd()
+    docker_reset_binary_cache_access_log(cwd)
+    print(f"Binary cache access log reset ({binary_cache_dir})")
+
     cache_dir = ensure_cache_root()
     print(f"Warming checkpoint cache at {cache_dir} ...")
     warm_cmd = (
@@ -432,6 +477,9 @@ async def main():
         await headless_monitor(tasks, exec_coros)
     
     total_duration = int(time.time() - start_time)
+
+    docker_prune_binary_cache(cwd)
+    fix_cache_permissions_for_ci()
     
     html_path = generate_html_report(tasks, results_dir, total_duration, timestamp, get_git_commit())
     print(f"\n✅ Report generated: {html_path}")

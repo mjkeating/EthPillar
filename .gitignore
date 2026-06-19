@@ -9,3 +9,5 @@ __pycache__/
 tests/integration/results/
 tests/integration/cache/
 tests/integration/checkpoint_cache/
+tests/integration/act-smoke/cache/
+tests/integration/act-smoke/checkpoint_cache/

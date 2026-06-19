@@ -455,6 +455,11 @@ while true; do
         exposeRpcCL
         ;;
       9)
+        if [[ "$(getValidatorMode)" == "separate" ]]; then
+          whiptail --title "Separate Validator Client" --msgbox \
+            "A separate validator client is installed.\n\nDuring the consensus client switch, its beacon endpoint will be updated automatically." \
+            10 78
+        fi
         runScript switch_client.sh consensus
         ;;
       10)
@@ -467,6 +472,12 @@ done
 submenuValidator(){
 while true; do
     getBackTitle
+    getValidatorClient
+    local _validator_mode _vc_menu_title
+    _validator_mode=$(getValidatorMode)
+    _vc_menu_title="${VALIDATOR_CLIENT:-$VC}"
+    [[ "$_validator_mode" == "integrated_grandine" ]] && _vc_menu_title="Grandine (integrated)"
+
     # Define the options for the submenu
     SUBOPTIONS=(
       1 "View logs"
@@ -475,7 +486,9 @@ while true; do
       4 "Restart validator"
       5 "Edit configuration"
       )
-    [[ ${NODE_MODE} =~ "Validator Client Only" || ! -f /etc/systemd/system/consensus.service ]] && SUBOPTIONS+=(6 "Update to latest release")
+    if [[ "$_validator_mode" == "separate" || "$_validator_mode" == "integrated_grandine" ]]; then
+      SUBOPTIONS+=(6 "Update validator client")
+    fi
     SUBOPTIONS+=(
       - ""
       10 "Generate / Import Validator Keys"
@@ -495,7 +508,7 @@ while true; do
     # Display the submenu and get the user's choice
     SUBCHOICE=$(whiptail --clear --cancel-button "Back" \
       --backtitle "$BACKTITLE" \
-      --title "Validator | ${VC}" \
+      --title "Validator | ${_vc_menu_title}" \
       --menu "Choose one of the following options:" \
       0 0 0 \
       "${SUBOPTIONS[@]}" \
@@ -508,7 +521,11 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       1)
-        sudo bash -c 'journalctl -fu validator | ccze -A'
+        if [[ "$_validator_mode" == "integrated_grandine" ]]; then
+          sudo bash -c 'journalctl -fu consensus | ccze -A'
+        else
+          sudo bash -c 'journalctl -fu validator | ccze -A'
+        fi
         ;;
       2)
         sudo service validator start
@@ -526,7 +543,7 @@ while true; do
         fi
         ;;
       6)
-        runScript update_consensus.sh
+        runScript update_validator.sh
         ;;
       10)
         runScript manage_validator_keys.sh

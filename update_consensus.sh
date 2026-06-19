@@ -225,49 +225,38 @@ function updateClient(){
 		tar -xzvf "$FILENAME" -C "$EXTRACT_DIR" || error "❌ Unable to untar file"
 		rm "$FILENAME"
 		BN_BIN=$(find "$EXTRACT_DIR" -type f -name "nimbus_beacon_node" | head -n 1)
-		VC_BIN=$(find "$EXTRACT_DIR" -type f -name "nimbus_validator_client" | head -n 1)
-		if [ -z "$BN_BIN" ] || [ -z "$VC_BIN" ]; then
-			error "❌ Could not find the extracted nimbus binaries"
+		if [ -z "$BN_BIN" ]; then
+			error "❌ Could not find the extracted nimbus_beacon_node binary"
 		fi
 		BN_EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/nimbus_beacon_node")
-		VC_EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/nimbus_validator_client")
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm -f "$BN_EXEC_PATH" "$VC_EXEC_PATH"
-		sudo mkdir -p "$(dirname "$BN_EXEC_PATH")" "$(dirname "$VC_EXEC_PATH")"
-		# install_system_binary will move and configure the binaries at their exec paths
+		sudo rm -f "$BN_EXEC_PATH"
+		sudo mkdir -p "$(dirname "$BN_EXEC_PATH")"
 		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${BN_BIN}', '${BN_EXEC_PATH}')"
-		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${VC_BIN}', '${VC_EXEC_PATH}')"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
 		rm -rf "$EXTRACT_DIR"
 	    ;;
   	  Prysm)
 		cd "$HOME" || true
-		local _bn_url _vc_url _bn_file _vc_file
+		local _bn_url
 		_bn_url=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')
-		_vc_url=$(echo "$RELEASE_DATA" | jq -r '.download_urls[1]')
-		_bn_file=$(echo "$RELEASE_DATA" | jq -r '.filenames[0]')
-		_vc_file=$(echo "$RELEASE_DATA" | jq -r '.filenames[1]')
 
 		local _prysmctl_url
 		_prysmctl_url="${_bn_url/beacon-chain/prysmctl}"
 
 		curl -L -f "${_bn_url}" -o beacon-chain || error "❌ Unable to download beacon-chain"
-		curl -L -f "${_vc_url}" -o validator || error "❌ Unable to download validator"
 		curl -L -f "${_prysmctl_url}" -o prysmctl || error "❌ Unable to download prysmctl"
 		
-		chmod +x beacon-chain validator prysmctl
+		chmod +x beacon-chain prysmctl
 		BN_EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/prysm-beacon-chain")
-		VC_EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/prysm-validator")
 		PRYSMCTL_EXEC_PATH="$(dirname "$BN_EXEC_PATH")/prysmctl"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm -f "$BN_EXEC_PATH" "$VC_EXEC_PATH" "$PRYSMCTL_EXEC_PATH"
-		sudo mkdir -p "$(dirname "$BN_EXEC_PATH")" "$(dirname "$VC_EXEC_PATH")"
-		# install_system_binary will move and configure the binaries at their exec paths
+		sudo rm -f "$BN_EXEC_PATH" "$PRYSMCTL_EXEC_PATH"
+		sudo mkdir -p "$(dirname "$BN_EXEC_PATH")"
 		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('$(pwd)/beacon-chain', '${BN_EXEC_PATH}')"
-		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('$(pwd)/validator', '${VC_EXEC_PATH}')"
 		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('$(pwd)/prysmctl', '${PRYSMCTL_EXEC_PATH}')"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo systemctl start validator

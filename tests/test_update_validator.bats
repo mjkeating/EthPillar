@@ -17,7 +17,7 @@ teardown() {
 @test "update_validator none mode fails when no validator is installed" {
   rm -f "$CONSENSUS_SERVICE_FILE"
   export CONSENSUS_SERVICE_FILE="/nonexistent/consensus.service"
-  run bash ./update_validator.sh
+  run bash -c 'whiptail() { return 0; }; export -f whiptail; ./update_validator.sh'
   [ "$status" -ne 0 ]
   [[ "$output" == *"No validator client"* ]]
 }

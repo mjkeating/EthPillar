@@ -29,8 +29,9 @@ _validator_mode=$(getValidatorMode)
 if [[ "$_validator_mode" == "integrated_grandine" ]]; then
     exec bash "$BASE_DIR/update_consensus.sh" "$@"
 fi
+
 if [[ "$_validator_mode" == "none" ]]; then
-    if command -v whiptail >/dev/null 2>&1; then
+    if command -v whiptail >/dev/null 2>&1 && [[ -t 1 ]]; then
         whiptail --title "No Validator Client" --msgbox "No validator client is installed on this node." 8 78
     fi
     error "❌ No validator client installed."

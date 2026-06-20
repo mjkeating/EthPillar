@@ -100,7 +100,11 @@ def patch_beacon_endpoint(
     Args:
         service_path: Path to validator.service.
         vc_name: Validator client name (e.g. Prysm, Lighthouse).
-        new_endpoint: Full beacon REST URL (e.g. http://127.0.0.1:5052).
+        new_endpoint: Full beacon REST URL.
+            Common defaults:
+              - Lighthouse/Nimbus/Teku: http://127.0.0.1:5052
+              - Prysm:                  http://127.0.0.1:3500
+              - Lodestar:               http://127.0.0.1:9596
 
     Returns:
         True if the file was updated.

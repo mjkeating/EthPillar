@@ -1,9 +1,66 @@
 import os
 import subprocess
-from deploy.service_generators import generate_reth_service
-from deploy.common import install_system_binary, write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture
+from deploy.common import install_system_binary, write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, BASE_DATA_DIR
 from client_requirements import validate_version_for_network
 from typing import Tuple, Optional
+from deploy.service_generators import form_exec_start, generate_systemd_template
+
+def generate_reth_service(eth_network: str, el_p2p_port: str, el_p2p_port_2: str,
+                          el_rpc_port: str, el_max_peer_count: str, jwtsecret_path: str,
+                          network_override: Optional[str] = None, sync_parameters: str = '') -> str:
+    """Generate Reth execution client systemd service file content.
+
+    Args:
+        eth_network: Network name
+        el_p2p_port: EL P2P port
+        el_p2p_port_2: EL secondary P2P port (discv5)
+        el_rpc_port: EL RPC port
+        el_max_peer_count: Max peer count (already halved for reth)
+        jwtsecret_path: Path to JWT secret file
+        network_override: Optional network flag override (for ephemery)
+        sync_parameters: Optional sync/prune parameters
+
+    Returns:
+        Service file content as a string
+    """
+    if network_override:
+        _network = network_override
+    else:
+        _network = f'--chain {eth_network}'
+
+    _args = [
+        f"{INSTALL_DIR}/reth node",
+        _network,
+        "--full",
+        f"--datadir={BASE_DATA_DIR}/reth",
+        f"--log.file.directory={BASE_DATA_DIR}/reth/logs",
+        "--metrics 127.0.0.1:6060",
+        f"--port {el_p2p_port}",
+        f"--discovery.port {el_p2p_port}",
+        "--enable-discv5-discovery",
+        f"--discovery.v5.port {el_p2p_port_2}",
+        f"--max-outbound-peers {el_max_peer_count}",
+        f"--max-inbound-peers {el_max_peer_count}",
+        "--http",
+        f"--http.port {el_rpc_port}",
+        "--http.api=\"rpc,eth,web3,net,debug\"",
+        f"--authrpc.jwtsecret {jwtsecret_path}"
+    ]
+    if sync_parameters:
+        _args.append(sync_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
+    return generate_systemd_template(
+        description=f"Reth Execution Layer Client service for {eth_network.upper()}",
+        user="execution",
+        exec_start=_exec_start,
+        extra_env=['RUST_LOG=info'],
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
+
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     """Get Reth release version, download URL, and filename.

@@ -23,7 +23,7 @@ graph TD
     E -- "Validator Client" --> H[vc_name.py]
     E -- "MEV-Boost" --> I[mevboost.py]
 
-    F & G & H & I -- "Generate Systemd" --> J[service_generators.py]
+    F & G & H & I -- "Generate Systemd" --> J[client modules + service_generators.py]
     J -- "Write Units" --> K[/etc/systemd/system/]
 
     K -- "Finalize Setup" --> L[common.py]

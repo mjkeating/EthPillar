@@ -1,8 +1,78 @@
 import os
 import subprocess
-from deploy.service_generators import generate_grandine_bn_service
-from deploy.common import install_system_binary, write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file
+from deploy.common import install_system_binary, write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, BASE_DATA_DIR
 from client_requirements import validate_version_for_network
+from typing import Optional
+from deploy.service_generators import form_exec_start, generate_systemd_template
+
+def generate_grandine_bn_service(eth_network: str, sync_url: str, jwtsecret_path: str,
+                                 cl_rest_port: str, cl_p2p_port: str, cl_p2p_port_2: str, cl_max_peer_count: str,
+                                 fee_parameters: str = '', mev_parameters: str = '',
+                                 network_override: Optional[str] = None, is_integrated_vc: bool = False) -> str:
+    """Generate Grandine beacon node systemd service file content.
+
+    Args:
+        eth_network: Network name
+        sync_url: Checkpoint sync URL
+        jwtsecret_path: Path to JWT secret file
+        cl_rest_port: CL REST port
+        cl_p2p_port: CL P2P port
+        cl_p2p_port_2: CL secondary P2P port
+        cl_max_peer_count: CL max peer count
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+        network_override: Optional network flag override
+        is_integrated_vc: Whether the validator is integrated
+
+    Returns:
+        Service file content as a string
+    """
+    if network_override:
+        _network = network_override
+    else:
+        _network = f'--network={eth_network}'
+
+    _keystore_args = ""
+    if is_integrated_vc:
+        _keystore_args = f"--keystore-dir={BASE_DATA_DIR}/grandine/validator_keys --keystore-password-dir={BASE_DATA_DIR}/grandine/validator_keys"
+
+    _args = [
+        f"{INSTALL_DIR}/grandine",
+        _network,
+        f"--data-dir={BASE_DATA_DIR}/grandine",
+        f"--libp2p-port={cl_p2p_port}",
+        f"--discovery-port={cl_p2p_port}",
+        f"--quic-port={cl_p2p_port_2}",
+        f"--target-peers={cl_max_peer_count}",
+        "--http-address=127.0.0.1",
+        f"--http-port={cl_rest_port}",
+        f"--checkpoint-sync-url={sync_url}",
+        "--eth1-rpc-urls=http://127.0.0.1:8551",
+        "--metrics",
+        "--metrics-address=127.0.0.1",
+        "--metrics-port=8008",
+        f"--jwt-secret={jwtsecret_path}"
+    ]
+
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+    if _keystore_args:
+        _args.append(_keystore_args.strip())
+
+    _exec_start = form_exec_start(_args)
+
+    return generate_systemd_template(
+        description=f"Grandine Consensus Client service for {eth_network.upper()}",
+        user="consensus",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
+
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     """Get Grandine release version, download URL, and filename.

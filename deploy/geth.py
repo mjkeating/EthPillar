@@ -1,9 +1,68 @@
 import os
 import subprocess
 from typing import Tuple, Optional
-from deploy.service_generators import generate_geth_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_binary
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_binary, BASE_DATA_DIR
 from client_requirements import validate_version_for_network
+from deploy.service_generators import form_exec_start, generate_systemd_template
+
+def generate_geth_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
+                          el_max_peer_count: str, jwtsecret_path: str,
+                          network_override: Optional[str] = None) -> str:
+    """Generate Geth execution client systemd service file content.
+
+    Args:
+        eth_network: Network name
+        el_p2p_port: EL P2P port
+        el_rpc_port: EL RPC port
+        el_max_peer_count: Max peer count
+        jwtsecret_path: Path to JWT secret file
+        network_override: Optional network flag override (for ephemery custom config)
+
+    Returns:
+        Service file content as a string
+    """
+    if network_override:
+        _network = network_override
+    else:
+        if eth_network.lower() == "mainnet":
+            _network = "--mainnet"
+        elif eth_network.lower() == "sepolia":
+            _network = "--sepolia"
+        elif eth_network.lower() == "holesky":
+            _network = "--holesky"
+        else:
+            _network = f"--{eth_network.lower()}"
+
+    _args = [
+        f"{INSTALL_DIR}/geth",
+        _network,
+        "--cache 8192",
+        f"--port {el_p2p_port}",
+        f"--http.port {el_rpc_port}",
+        "--authrpc.port 8551",
+        f"--maxpeers {el_max_peer_count}",
+        "--metrics",
+        "--http",
+        f"--datadir={BASE_DATA_DIR}/geth",
+        "--pprof",
+        "--state.scheme=path",
+        f"--authrpc.jwtsecret={jwtsecret_path}",
+        "--ws",
+        "--ws.port 8546",
+        "--ws.api eth,net,web3"
+    ]
+    _exec_start = form_exec_start(_args)
+
+    return generate_systemd_template(
+        description=f"Geth Execution Layer Client service for {eth_network.upper()}",
+        user="execution",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
+
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     """Get Geth release version, download URL, and filename.

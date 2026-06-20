@@ -1,8 +1,119 @@
 import os
 import subprocess
-from deploy.service_generators import generate_lighthouse_bn_service, generate_lighthouse_vc_service
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, install_system_binary
+from typing import Optional
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, install_system_binary, BASE_DATA_DIR
 from client_requirements import validate_version_for_network
+from deploy.service_generators import form_exec_start, generate_systemd_template
+
+def generate_lighthouse_bn_service(eth_network: str, sync_url: str, jwtsecret_path: str,
+                                   cl_rest_port: str, cl_p2p_port: str, cl_p2p_port_2: str,
+                                   cl_max_peer_count: str,
+                                   fee_parameters: str = '', mev_parameters: str = '',
+                                   network_override: Optional[str] = None) -> str:
+    """Generate Lighthouse beacon node systemd service file content.
+
+    Args:
+        eth_network: Network name
+        sync_url: Checkpoint sync URL
+        jwtsecret_path: Path to JWT secret file
+        cl_rest_port: CL REST port
+        cl_p2p_port: CL P2P port
+        cl_p2p_port_2: CL secondary P2P port
+        cl_max_peer_count: CL max peer count
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+        network_override: Optional network flag override
+
+    Returns:
+        Service file content as a string
+    """
+    if network_override:
+        _network = network_override
+    else:
+        _network = f'--network={eth_network}'
+
+    _args = [
+        f"{INSTALL_DIR}/lighthouse bn",
+        _network,
+        f"--datadir={BASE_DATA_DIR}/lighthouse",
+        "--gui",
+        f"--port={cl_p2p_port}",
+        f"--quic-port={cl_p2p_port_2}",
+        f"--target-peers={cl_max_peer_count}",
+        f"--http-port={cl_rest_port}",
+        "--staking",
+        "--validator-monitor-auto",
+        f"--checkpoint-sync-url={sync_url}",
+        "--execution-endpoint=http://127.0.0.1:8551",
+        "--metrics",
+        "--metrics-address=127.0.0.1",
+        "--metrics-port=8008",
+        f"--execution-jwt={jwtsecret_path}"
+    ]
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
+    return generate_systemd_template(
+        description=f"Lighthouse Consensus Client service for {eth_network.upper()}",
+        user="consensus",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
+
+def generate_lighthouse_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
+                                   fee_parameters: str = '', mev_parameters: str = '',
+                                   network_override: Optional[str] = None) -> str:
+    """Generate Lighthouse validator client systemd service file content.
+
+    Args:
+        eth_network: Network name
+        graffiti: Graffiti string
+        beacon_node_address: Beacon node address
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+        network_override: Optional network flag override
+
+    Returns:
+        Service file content as a string
+    """
+    if network_override:
+        _network = network_override
+    else:
+        _network = f'--network={eth_network}'
+
+    _args = [
+        f"{INSTALL_DIR}/lighthouse vc",
+        _network,
+        f"--datadir={BASE_DATA_DIR}/lighthouse_validator",
+        "--http",
+        "--metrics",
+        "--metrics-address=127.0.0.1",
+        "--metrics-port=8009",
+        f"--graffiti={graffiti}",
+        beacon_node_address
+    ]
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
+    return generate_systemd_template(
+        description=f"Lighthouse Validator Client service for {eth_network.upper()}",
+        user="validator",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=65536
+    )
+
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     """Get Lighthouse release version, download URL, and filename.

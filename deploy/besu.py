@@ -1,9 +1,58 @@
 import os
 import subprocess
 from typing import Tuple, Optional
-from deploy.service_generators import generate_besu_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory, ensure_java_available
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory, ensure_java_available, BASE_DATA_DIR
 from client_requirements import validate_version_for_network
+from deploy.service_generators import form_exec_start, generate_systemd_template
+
+def generate_besu_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
+                          el_max_peer_count: str, jwtsecret_path: str,
+                          network_override: Optional[str] = None) -> str:
+    """Generate Besu execution client systemd service file content.
+
+    Args:
+        eth_network: Network name
+        el_p2p_port: EL P2P port
+        el_rpc_port: EL RPC port
+        el_max_peer_count: Max peer count
+        jwtsecret_path: Path to JWT secret file
+        network_override: Optional network flag override (for ephemery custom config)
+
+    Returns:
+        Service file content as a string
+    """
+    if network_override:
+        _network = network_override
+    else:
+        _network = f'--network={eth_network}'
+
+    _args = [
+        f"{INSTALL_DIR}/besu/bin/besu",
+        _network,
+        f"--p2p-port={el_p2p_port}",
+        f"--rpc-http-port={el_rpc_port}",
+        "--engine-rpc-port=8551",
+        f"--max-peers={el_max_peer_count}",
+        "--metrics-enabled=true",
+        "--metrics-port=6060",
+        "--rpc-http-enabled=true",
+        "--sync-mode=SNAP",
+        "--data-storage-format=BONSAI",
+        f"--data-path=\"{BASE_DATA_DIR}/besu\"",
+        f"--engine-jwt-secret={jwtsecret_path}"
+    ]
+    _exec_start = form_exec_start(_args)
+
+    return generate_systemd_template(
+        description=f"Besu Execution Layer Client service for {eth_network.upper()}",
+        user="execution",
+        exec_start=_exec_start,
+        extra_env=['"JAVA_OPTS=-Xmx5g"'],
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
+
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     """Get Besu release version, download URL, and filename.

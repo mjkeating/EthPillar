@@ -1,5 +1,5 @@
 """
-Tests for deploy/service_generators.py
+Tests for client module systemd service generators.
 
 Tier 1 — Pure function tests using golden-string comparisons.
 These verify that each generator produces the exact service file content
@@ -14,25 +14,19 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from deploy.common import BASE_DATA_DIR, INSTALL_DIR
-from deploy.service_generators import (
-    generate_mevboost_service,
-    generate_besu_service,
-    generate_geth_service,
-    generate_ethrex_service,
-    generate_nethermind_service,
-    generate_reth_service,
-    generate_erigon_service,
-    generate_erigon_standalone_service,
-    generate_teku_bn_service,
-    generate_teku_vc_service,
-    generate_lodestar_bn_service,
-    generate_lodestar_vc_service,
-    generate_nimbus_bn_service,
-    generate_nimbus_vc_service,
-    generate_lighthouse_bn_service,
-    generate_lighthouse_vc_service,
-    generate_grandine_bn_service,
-)
+from deploy.mevboost import generate_mevboost_service
+from deploy.besu import generate_besu_service
+from deploy.geth import generate_geth_service
+from deploy.ethrex import generate_ethrex_service
+from deploy.nethermind import generate_nethermind_service
+from deploy.reth import generate_reth_service
+from deploy.erigon import generate_erigon_service, generate_erigon_standalone_service
+from deploy.teku import generate_teku_bn_service, generate_teku_vc_service
+from deploy.lodestar import generate_lodestar_bn_service, generate_lodestar_vc_service
+from deploy.nimbus import generate_nimbus_bn_service, generate_nimbus_vc_service
+from deploy.lighthouse import generate_lighthouse_bn_service, generate_lighthouse_vc_service
+from deploy.grandine import generate_grandine_bn_service
+from deploy.prysm import generate_prysm_bn_service, generate_prysm_vc_service
 from config import (
     mainnet_relay_options,
     hoodi_relay_options,
@@ -804,7 +798,7 @@ class TestPrysmService:
     def test_bn_mainnet_with_mev(self):
         fee_params = f'--suggested-fee-recipient={FEE_RECIPIENT_ADDRESS}'
         mev_params = '--http-mev-relay=http://127.0.0.1:18550'
-        from deploy.service_generators import generate_prysm_bn_service
+        from deploy.prysm import generate_prysm_bn_service
         result = generate_prysm_bn_service(
             "mainnet", SYNC_URL, JWTSECRET_PATH,
             CL_REST_PORT, CL_P2P_PORT, CL_P2P_PORT_2, CL_MAX_PEER_COUNT,
@@ -823,7 +817,7 @@ class TestPrysmService:
         assert "User=consensus" in result
 
     def test_bn_no_mev(self):
-        from deploy.service_generators import generate_prysm_bn_service
+        from deploy.prysm import generate_prysm_bn_service
         result = generate_prysm_bn_service(
             "mainnet", SYNC_URL, JWTSECRET_PATH,
             CL_REST_PORT, CL_P2P_PORT, CL_P2P_PORT_2, CL_MAX_PEER_COUNT
@@ -834,7 +828,7 @@ class TestPrysmService:
         fee_params = f'--suggested-fee-recipient={FEE_RECIPIENT_ADDRESS}'
         mev_params = '--enable-builder'
         bn_addr = f'--beacon-rest-api-provider=http://{CL_IP_ADDRESS}:{CL_REST_PORT}'
-        from deploy.service_generators import generate_prysm_vc_service
+        from deploy.prysm import generate_prysm_vc_service
         result = generate_prysm_vc_service(
             "mainnet", GRAFFITI, bn_addr,
             fee_parameters=fee_params, mev_parameters=mev_params

@@ -1,9 +1,9 @@
 import os
 import subprocess
-from deploy.service_generators import generate_teku_bn_service, generate_teku_vc_service
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory, ensure_java_available
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory, ensure_java_available, BASE_DATA_DIR
 from client_requirements import validate_version_for_network
 from typing import Optional
+from deploy.service_generators import form_exec_start, generate_systemd_template
 
 def _teku_download_from_release(data: dict) -> tuple[str, str]:
     """Resolve Teku binary URL from GitHub assets or release notes."""
@@ -31,6 +31,98 @@ def _teku_download_from_release(data: dict) -> tuple[str, str]:
 
     download_url = match.group(0)
     return download_url.rsplit("/", 1)[-1], download_url
+
+
+def generate_teku_bn_service(eth_network: str, sync_url: str, jwtsecret_path: str,
+                             cl_rest_port: str, cl_p2p_port: str, cl_max_peer_count: str,
+                             fee_parameters: str = '', mev_parameters: str = '') -> str:
+    """Generate Teku beacon node systemd service file content.
+
+    Args:
+        eth_network: Network name
+        sync_url: Checkpoint sync URL
+        jwtsecret_path: Path to JWT secret file
+        cl_rest_port: CL REST port
+        cl_p2p_port: CL P2P port
+        cl_max_peer_count: CL max peer count
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+
+    Returns:
+        Service file content as a string
+    """
+    _args = [
+        f"{INSTALL_DIR}/teku/bin/teku",
+        f"--network={eth_network}",
+        f"--data-path={BASE_DATA_DIR}/teku",
+        "--data-storage-mode=minimal",
+        f"--checkpoint-sync-url={sync_url}",
+        "--ee-endpoint=http://127.0.0.1:8551",
+        f"--ee-jwt-secret-file={jwtsecret_path}",
+        "--rest-api-enabled=true",
+        f"--rest-api-port={cl_rest_port}",
+        f"--p2p-port={cl_p2p_port}",
+        f"--p2p-peer-upper-bound={cl_max_peer_count}",
+        "--metrics-enabled=true",
+        "--metrics-port=8008"
+    ]
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
+    return generate_systemd_template(
+        description=f"Teku Beacon Node Consensus Client service for {eth_network.upper()}",
+        user="consensus",
+        exec_start=_exec_start,
+        extra_env=['JAVA_OPTS=-Xmx6g', 'TEKU_OPTS=-XX:-HeapDumpOnOutOfMemoryError'],
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
+
+def generate_teku_vc_service(eth_network: str, graffiti: str, beacon_node_address: str,
+                             fee_parameters: str = '', mev_parameters: str = '') -> str:
+    """Generate Teku validator client systemd service file content.
+
+    Args:
+        eth_network: Network name
+        graffiti: Graffiti string
+        beacon_node_address: Beacon node address
+        fee_parameters: Optional fee recipient parameters
+        mev_parameters: Optional MEV relay parameters
+
+    Returns:
+        Service file content as a string
+    """
+    _args = [
+        f"{INSTALL_DIR}/teku/bin/teku validator-client",
+        f"--network={eth_network}",
+        f"--data-path={BASE_DATA_DIR}/teku_validator",
+        f"--validator-keys={BASE_DATA_DIR}/teku_validator/validator_keys:{BASE_DATA_DIR}/teku_validator/validator_keys",
+        "--metrics-enabled=true",
+        "--metrics-port=8009",
+        f"--validators-graffiti={graffiti}",
+        beacon_node_address
+    ]
+    if fee_parameters:
+        _args.append(fee_parameters.strip())
+    if mev_parameters:
+        _args.append(mev_parameters.strip())
+
+    _exec_start = form_exec_start(_args)
+
+    return generate_systemd_template(
+        description=f"Teku Validator Client service for {eth_network.upper()}",
+        user="validator",
+        exec_start=_exec_start,
+        extra_env=None,
+        working_dir=None,
+        timeout_stop_sec=900,
+        limit_nofile=65536
+    )
 
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:

@@ -1,9 +1,62 @@
 import os
 import subprocess
 from typing import Tuple, Optional
-from deploy.service_generators import generate_nethermind_service
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, install_system_directory
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, install_system_directory, BASE_DATA_DIR
 from client_requirements import validate_version_for_network
+from deploy.service_generators import form_exec_start, generate_systemd_template
+
+def generate_nethermind_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
+                                el_max_peer_count: str, jwtsecret_path: str,
+                                network_override: Optional[str] = None, sync_parameters: str = '') -> str:
+    """Generate Nethermind execution client systemd service file content.
+
+    Args:
+        eth_network: Network name
+        el_p2p_port: EL P2P port
+        el_rpc_port: EL RPC port
+        el_max_peer_count: Max peer count
+        jwtsecret_path: Path to JWT secret file
+        network_override: Optional network config override (for ephemery)
+        sync_parameters: Optional sync barrier parameters
+
+    Returns:
+        Service file content as a string
+    """
+    if network_override:
+        _network = network_override
+    else:
+        _network = f'--config {eth_network}'
+
+    _args = [
+        f"{INSTALL_DIR}/nethermind/nethermind",
+        _network,
+        f"--datadir=\"{BASE_DATA_DIR}/nethermind\"",
+        f"--Network.DiscoveryPort {el_p2p_port}",
+        f"--Network.P2PPort {el_p2p_port}",
+        f"--Network.MaxActivePeers {el_max_peer_count}",
+        f"--JsonRpc.Port {el_rpc_port}",
+        "--Metrics.Enabled true",
+        "--Metrics.ExposePort 6060",
+        f"--JsonRpc.JwtSecretFile {jwtsecret_path}",
+        "--Pruning.Mode=Hybrid",
+        "--Pruning.FullPruningTrigger=VolumeFreeSpace",
+        "--Pruning.FullPruningThresholdMb=300000"
+    ]
+    if sync_parameters:
+        _args.append(sync_parameters.strip())
+    
+    _exec_start = form_exec_start(_args)
+
+    return generate_systemd_template(
+        description=f"Nethermind Execution Layer Client service for {eth_network.upper()}",
+        user="execution",
+        exec_start=_exec_start,
+        extra_env=[f'"DOTNET_BUNDLE_EXTRACT_BASE_DIR={BASE_DATA_DIR}/nethermind/bundle-extract"'],
+        working_dir=f"{BASE_DATA_DIR}/nethermind",
+        timeout_stop_sec=900,
+        limit_nofile=None
+    )
+
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     """Get Nethermind release version, download URL, and filename.

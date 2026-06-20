@@ -11,10 +11,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from deploy.service_generators import (
-    generate_mevboost_service,
-    generate_besu_service,
-)
+from deploy.mevboost import generate_mevboost_service
+from deploy.besu import generate_besu_service
 from deploy.common import INSTALL_DIR, BASE_DATA_DIR
 from config import mainnet_relay_options
 

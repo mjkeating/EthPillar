@@ -1,8 +1,52 @@
 import os
 import subprocess
 from typing import List, Dict, Tuple
-from deploy.service_generators import generate_mevboost_service
 from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, download_file, get_machine_architecture, install_system_binary
+
+def generate_mevboost_service(eth_network: str, mev_min_bid: str, relay_options: List[Dict[str, str]]) -> str:
+    """Generate MEV-Boost systemd service file content.
+
+    Args:
+        eth_network: Network name (e.g. 'mainnet', 'hoodi')
+        mev_min_bid: Minimum bid value string (e.g. '0.006')
+        relay_options: List of dicts with 'name' and 'url' keys
+
+    Returns:
+        Service file content as a string
+    """
+    lines = [
+        '[Unit]',
+        f'Description=MEV-Boost Service for {eth_network.upper()}',
+        'After=network-online.target',
+        'Wants=network-online.target',
+        'Documentation=https://docs.coincashew.com',
+        '',
+        '[Service]',
+        'User=mevboost',
+        'Group=mevboost',
+        'Type=simple',
+        'Restart=always',
+        'RestartSec=5',
+        f'ExecStart={INSTALL_DIR}/mev-boost \\',
+        f'    -{eth_network} \\',
+        f'    -min-bid {mev_min_bid} \\',
+        '    -relay-check \\',
+    ]
+
+    for relay in relay_options:
+        relay_line = f'    -relay {relay["url"]} \\'
+        lines.append(relay_line)
+
+    # Remove the trailing '\' from the last relay line
+    lines[-1] = lines[-1].rstrip(' \\')
+
+    lines.extend([
+        '',
+        '[Install]',
+        'WantedBy=multi-user.target',
+    ])
+    return '\n'.join(lines)
+
 
 def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
     """Get MEV-Boost release version, download URL, and filename.

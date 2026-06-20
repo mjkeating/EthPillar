@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   integration:
@@ -23,30 +24,81 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Restore binary download cache
-        uses: actions/cache@v5
-        with:
-          path: tests/integration/cache
-          # Static key: one accumulating snapshot (bump v1 to invalidate). save-always uploads new downloads each run.
-          key: binary-cache-${{ runner.os }}-v1
-          restore-keys: |
-            binary-cache-${{ runner.os }}-
-          save-always: true
-
-      - name: Restore checkpoint cache
-        uses: actions/cache@v5
-        with:
-          path: tests/integration/checkpoint_cache
-          key: checkpoint-${{ runner.os }}-${{ hashFiles('tests/integration/checkpoint_cache/manifest.json') }}
-          restore-keys: |
-            checkpoint-${{ runner.os }}-
-
       - name: Prepare cache directories
         run: |
           mkdir -p tests/integration/cache tests/integration/checkpoint_cache
 
+      - name: Restore binary download cache
+        id: binary-cache-restore
+        uses: actions/cache/restore@v5
+        with:
+          path: tests/integration/cache
+          # Stable key; prior snapshot is deleted before save (keys are immutable).
+          key: binary-cache-${{ runner.os }}-v1
+          restore-keys: |
+            binary-cache-${{ runner.os }}-
+
+      - name: Restore checkpoint cache
+        id: checkpoint-cache-restore
+        uses: actions/cache/restore@v5
+        with:
+          path: tests/integration/checkpoint_cache
+          key: checkpoint-${{ runner.os }}-v1
+          restore-keys: |
+            checkpoint-${{ runner.os }}-
+
       - name: Run integration matrix
         run: bash tests/integration/run_docker_tests.sh
+
+      - name: Fix cache permissions for Actions save
+        if: always()
+        run: |
+          # Docker tests write both cache dirs as root on the host bind mount.
+          # The runner user needs read+traverse to tar them for actions/cache/save.
+          # chmod (not chown) is enough — we only widen permissions, not ownership.
+          sudo chmod -R a+rX tests/integration/cache tests/integration/checkpoint_cache 2>/dev/null || true
+
+      - name: Delete previous binary caches
+        if: always()
+        run: |
+          set +e
+          # GitHub cache keys are immutable; delete old entries so save can publish
+          # one updated snapshot (restored files remain on disk).
+          gh cache list --key "binary-cache-${{ runner.os }}-" --limit 100 --json id \
+            --jq '.[].id' | while read -r cache_id; do
+            echo "Deleting cache ${cache_id}"
+            gh cache delete "${cache_id}"
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+
+      - name: Save binary download cache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: tests/integration/cache
+          key: binary-cache-${{ runner.os }}-v1
+
+      - name: Delete previous checkpoint caches
+        if: always()
+        run: |
+          set +e
+          gh cache list --key "checkpoint-${{ runner.os }}-" --limit 100 --json id \
+            --jq '.[].id' | while read -r cache_id; do
+            echo "Deleting cache ${cache_id}"
+            gh cache delete "${cache_id}"
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+
+      - name: Save checkpoint cache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: tests/integration/checkpoint_cache
+          key: checkpoint-${{ runner.os }}-v1
 
       - name: Upload integration report
         if: always()

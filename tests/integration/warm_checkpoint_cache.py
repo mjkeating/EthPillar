@@ -90,6 +90,10 @@ def _store_entry(
         handle.write("\n")
     with open(paths["body"], "wb") as handle:
         handle.write(body)
+    # Docker warm runs as root; 644 keeps files world-readable on the host mount so
+    # the CI runner can restore/save tests/integration/checkpoint_cache.
+    os.chmod(paths["meta"], 0o644)
+    os.chmod(paths["body"], 0o644)
     return key
 
 

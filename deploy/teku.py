@@ -73,10 +73,13 @@ def download_teku(eth_network: str) -> str:
     # Download the latest release binary
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Teku")
-    # Ensure a suitable Java runtime is available before replacing the binary;
-    # abort otherwise so a working Teku is never swapped for one that cannot run.
-    if not ensure_java_available():
-        print("❌ A Java runtime could not be installed. Aborting Teku install.")
+
+    # Teku 26.6.0+ is compiled for JDK 25; an older runtime fails to start with
+    # UnsupportedClassVersionError. Abort before installing anything if JDK 25
+    # is not available (e.g. Ubuntu too old).
+    # NOTE: keep this version in sync with the `updateJRE 25` call in update_execution.sh.
+    if not ensure_java_available(25):
+        print("❌ JDK 25 is required by Teku but could not be installed. Aborting Teku install.")
         exit(1)
 
     # Extract to a temporary directory then install and harden

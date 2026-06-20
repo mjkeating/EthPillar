@@ -161,6 +161,8 @@ def save_manifest(manifest: dict[str, Any]) -> None:
     with open(manifest_path, "w", encoding="utf-8") as handle:
         json.dump(manifest, handle, indent=2)
         handle.write("\n")
+    # Manifest is written from Docker as root; 644 so the host runner can hash/read it.
+    os.chmod(manifest_path, 0o644)
 
 
 def network_needs_refresh(network: str, manifest: Optional[dict[str, Any]] = None) -> bool:

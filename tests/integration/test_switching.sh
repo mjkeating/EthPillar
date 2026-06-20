@@ -20,17 +20,19 @@ elif [ "$EL" == "Geth" ]; then NEW_EL="Nethermind"
 elif [ "$EL" == "Nethermind" ]; then NEW_EL="Erigon"
 elif [ "$EL" == "Erigon" ]; then NEW_EL="Ethrex"
 elif [ "$EL" == "Ethrex" ]; then NEW_EL="Reth"
-else NEW_EL="Besu"; fi
+else NEW_EL="Reth"; fi
 
-# Pick new consensus client
-if [ "$CL" == "Lighthouse" ]; then NEW_CL="Teku"
-elif [ "$CL" == "Teku" ]; then NEW_CL="Nimbus"
-elif [ "$CL" == "Nimbus" ]; then NEW_CL="Lodestar"
+# Pick new consensus client (Teku is intentionally at
+# a different position in the rotation than Besu so that
+# their JDK depencies can be independently verified)
+if [ "$CL" == "Lighthouse" ]; then NEW_CL="Nimbus"
+elif [ "$CL" == "Nimbus" ]; then NEW_CL="Teku"
+elif [ "$CL" == "Teku" ]; then NEW_CL="Lodestar"
 elif [ "$CL" == "Lodestar" ]; then NEW_CL="Prysm"
 elif [ "$CL" == "Prysm" ]; then NEW_CL="Grandine"
 elif [ "$CL" == "Grandine" ]; then NEW_CL="Caplin"
 elif [ "$CL" == "Caplin" ]; then NEW_CL="Lighthouse"
-else NEW_CL="Teku"; fi
+else NEW_CL="Lighthouse"; fi
 
 echo "========================================="
 echo " Starting Client Switching Integration Test"

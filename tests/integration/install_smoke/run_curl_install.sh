@@ -10,5 +10,5 @@ export ETHPILLAR_INSTALL_COPY_FROM="${ETHPILLAR_INSTALL_COPY_FROM:-/ethpillar}"
 cd /tmp
 bash < /ethpillar/install.sh
 
-/ethpillar/tests/integration/install_smoke/verify_install.sh \
+bash /ethpillar/tests/integration/install_smoke/verify_install.sh \
   --expected-repo "${HOME}/git/ethpillar"

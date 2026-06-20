@@ -11,6 +11,6 @@ cp -a /ethpillar "${CUSTOM_REPO}"
 
 bash "${CUSTOM_REPO}/install.sh"
 
-/ethpillar/tests/integration/install_smoke/verify_install.sh \
+bash /ethpillar/tests/integration/install_smoke/verify_install.sh \
   --expected-repo "${CUSTOM_REPO}" \
   --forbid-repo "${HOME}/git/ethpillar"

@@ -129,6 +129,17 @@ linux_install_python_deps() {
     exit_on_error $?
 }
 
+linux_install_motd() {
+    # Keep login MOTD in sync with the installed repo (replace legacy ~/git/ethpillar paths)
+    local motd_line="cat \"${REPO}/motd\""
+    if [[ -f ~/.profile ]] && grep -q "cat.*motd" ~/.profile 2>/dev/null; then
+        grep -v 'cat.*motd' ~/.profile > ~/.profile.tmp && mv ~/.profile.tmp ~/.profile
+    fi
+    if ! grep -q "cat.*motd" ~/.profile 2>/dev/null; then
+        echo "$motd_line" >> ~/.profile
+    fi
+}
+
 linux_install_installer() {
     if [[ -f "$SCRIPT_DIR/ethpillar.sh" ]]; then
         # install from manually cloned repo (user defined location)
@@ -188,6 +199,7 @@ if [[ "$OS" == "Linux" ]]; then
     linux_install_pre
     linux_install_installer
     linux_install_python_deps
+    linux_install_motd
 
     echo ""
     echo ""

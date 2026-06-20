@@ -8,13 +8,13 @@
 # Made for home and solo stakers 🏠🥩
 
 # Base directory with scripts
-BASE_DIR=$HOME/git/ethpillar
+BASE_DIR="${BASE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 # Load functions
-source $BASE_DIR/functions.sh
+source "$BASE_DIR/functions.sh"
 
 # Load environment variables, Lido CSM withdrawal address and fee recipient
-source $BASE_DIR/env
+source "$BASE_DIR/env"
 
 # Get machine info
 _platform=$(get_platform)

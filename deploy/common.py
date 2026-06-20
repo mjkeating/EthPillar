@@ -527,7 +527,7 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
 
     if validator_only and bn_address:
         print(f'Beacon Node Address: {bn_address}\n')
-        target_dir = os.path.expanduser("~/git/ethpillar")
+        target_dir = os.environ.get('BASE_DIR') or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         if os.path.exists(target_dir):
             os.chdir(target_dir)
             subprocess.run(['cp', '.env.overrides.example', '.env.overrides'], check=True)

@@ -1679,8 +1679,12 @@ function installNode(){
 # Ask to apply patches
 function applyPatches(){
   # Add motd to login message
-  if ! grep -q "cat.*motd" ~/.profile; then
-      echo "cat ~/git/ethpillar/motd" >> ~/.profile
+  local motd_line="cat \"${BASE_DIR}/motd\""
+  if [[ -f ~/.profile ]] && grep -q "cat.*motd" ~/.profile 2>/dev/null; then
+      grep -v 'cat.*motd' ~/.profile > ~/.profile.tmp && mv ~/.profile.tmp ~/.profile
+  fi
+  if ! grep -q "cat.*motd" ~/.profile 2>/dev/null; then
+      echo "$motd_line" >> ~/.profile
   fi
   # Fix terminal formatting with locale
   current_locale=$(locale | grep '^LANG=' | awk -F= '{print $2}')

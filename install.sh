@@ -76,6 +76,28 @@ ohai() {
   printf "${tty_blue}==>${tty_bold} %s${tty_reset}\n" "$(shell_join "$@")"
 }
 
+# Resolve repo location: use this checkout when install.sh is run from a clone,
+# otherwise default to ~/git/ethpillar (curl | bash one-liner).
+SOURCE="${BASH_SOURCE[0]:-${0:-}}"
+while [ -h "$SOURCE" ]; do
+  DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+# Piped installs (curl | bash) expose $0 as "bash" or "-"; treat as outside the repo.
+if [[ "$SOURCE" == "bash" || "$SOURCE" == "-" || "$SOURCE" == */bash ]]; then
+  SCRIPT_DIR="$(pwd)"
+fi
+
+if [[ -f "$SCRIPT_DIR/ethpillar.sh" ]]; then
+  # running from a cloned repo, use that as the source location
+  REPO="$SCRIPT_DIR"
+else
+  # running from a curl one-liner, use the default location
+  REPO="$HOME/git/ethpillar"
+fi
+
 requirements_check() {
   # Check CPU architecture
   if ! [[ $(lscpu | grep -oE 'x86') || $(lscpu | grep -oE 'aarch64') ]]; then
@@ -99,27 +121,56 @@ linux_install_pre() {
 }
 
 linux_install_python_deps() {
-    local _repo="$HOME/git/ethpillar"
     ohai "Installing Python runtime dependencies"
-    export BASE_DIR="${_repo}"
-    cd "${_repo}" || exit_on_error $?
+    export BASE_DIR="${REPO}"
+    cd "${REPO}" || exit_on_error $?
     # shellcheck source=functions.sh
-    source "${_repo}/functions.sh"
+    source "${REPO}/functions.sh"
     exit_on_error $?
 }
 
+linux_install_motd() {
+    # Keep login MOTD in sync with the installed repo (replace legacy ~/git/ethpillar paths)
+    local motd_line="cat \"${REPO}/motd\""
+    if [[ -f ~/.profile ]] && grep -q "cat.*motd" ~/.profile 2>/dev/null; then
+        grep -v 'cat.*motd' ~/.profile > ~/.profile.tmp && mv ~/.profile.tmp ~/.profile
+    fi
+    if ! grep -q "cat.*motd" ~/.profile 2>/dev/null; then
+        echo "$motd_line" >> ~/.profile
+    fi
+}
+
 linux_install_installer() {
-    ohai "Cloning EthPillar into ~/git/ethpillar"
-    mkdir -p ~/git/ethpillar
-    # Updated to use this maintained fork
-    git clone https://github.com/mjkeating/EthPillar.git ~/git/ethpillar/ 2> /dev/null || \
-      (cd ~/git/ethpillar ; git fetch origin main ; git checkout main ; git pull)
-    chmod +x ~/git/ethpillar/*.sh
+    if [[ -f "$SCRIPT_DIR/ethpillar.sh" ]]; then
+        # install from manually cloned repo (user defined location)
+        ohai "Installing ethpillar from ${REPO}"
+    else
+        # Curl | bash one-liner; REPO is ~/git/ethpillar default location
+        ohai "Cloning EthPillar into ${REPO}"
+        INSTALL_GIT_URL="${ETHPILLAR_INSTALL_GIT_URL:-https://github.com/mjkeating/EthPillar.git}"
+        if [[ -n "${ETHPILLAR_INSTALL_COPY_FROM:-}" && -f "${ETHPILLAR_INSTALL_COPY_FROM}/ethpillar.sh" ]]; then
+            # Install smoke test only - copy files instead of cloning
+            # (see tests/integration/install_smoke/)
+            rm -rf "${REPO}"
+            mkdir -p "${REPO}"
+            cp -a "${ETHPILLAR_INSTALL_COPY_FROM}/." "${REPO}/"
+        elif [[ -d "${REPO}/.git" ]]; then
+            # Re-run: default path already cloned - fetch latest code
+            (cd "${REPO}" ; git fetch origin main ; git checkout main ; git pull)
+        else
+            # First-time curl | bash install - clone repo
+            rm -rf "${REPO}"
+            mkdir -p "$(dirname "${REPO}")"
+            git clone "${INSTALL_GIT_URL}" "${REPO}" 2> /dev/null || \
+              (cd "${REPO}" ; git fetch origin main ; git checkout main ; git pull)
+        fi
+    fi
+    chmod +x "${REPO}"/*.sh
     ohai "Installing ethpillar"
-    if [ -f /usr/local/bin/ethpillar ]; then 
+    if [ -f /usr/local/bin/ethpillar ]; then
       sudo rm /usr/local/bin/ethpillar
     fi
-    sudo ln -s ~/git/ethpillar/ethpillar.sh /usr/local/bin/ethpillar
+    sudo ln -s "${REPO}/ethpillar.sh" /usr/local/bin/ethpillar
     exit_on_error $?
 }
 
@@ -142,10 +193,13 @@ if [[ "$OS" == "Linux" ]]; then
     """
     ohai "This script will install a node management tool called 'ethpillar'"
 
-    wait_for_user
+    if [[ -t 0 && -z "${ETHPILLAR_INSTALL_NONINTERACTIVE:-}" ]]; then
+      wait_for_user
+    fi
     linux_install_pre
     linux_install_installer
     linux_install_python_deps
+    linux_install_motd
 
     echo ""
     echo ""

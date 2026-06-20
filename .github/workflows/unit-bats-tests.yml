@@ -9,7 +9,7 @@ permissions:
 jobs:
   unit-and-bats:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -30,3 +30,6 @@ jobs:
             -v "${{ github.workspace }}:/ethpillar" \
             ethpillar-test \
             bats tests/
+
+      - name: Install smoke tests
+        run: bash tests/integration/run_install_smoke_tests.sh

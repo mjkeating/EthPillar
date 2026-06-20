@@ -73,6 +73,35 @@ The `Dockerfile.test` uses `ubuntu:24.04` and sets systemd as the `CMD`. The tes
 ./run_docker_tests.sh
 ```
 
+## Install smoke tests
+
+Lightweight checks for `install.sh` — separate from the full client deployment matrix.
+Two isolated `docker run --rm` containers (no systemd required):
+
+| Case | How it is simulated | Expected install root |
+|------|----------------------|------------------------|
+| Curl one-liner | `bash < /ethpillar/install.sh` from `/tmp` | `~/git/ethpillar` |
+| Clone then install | copy repo to `/opt/ethpillar-custom`, run `install.sh` | `/opt/ethpillar-custom` |
+
+Both use the bind-mounted workspace as the install source
+(`ETHPILLAR_INSTALL_COPY_FROM=/ethpillar` on the curl path) so PR branches are tested
+without pulling from GitHub.
+
+```bash
+bash tests/integration/run_install_smoke_tests.sh
+```
+
+`install_smoke/verify_install.sh` asserts:
+
+- `/usr/local/bin/ethpillar` symlink targets the expected `ethpillar.sh`
+- `ethpillar` is on `PATH`
+- `.venv` exists with runtime Python deps (`dotenv`, `requests`, `tqdm`)
+- `functions.sh` resolves `BASE_DIR` to the expected repo
+- clone-path test: symlink must **not** point at `~/git/ethpillar`
+
+Non-interactive installs skip the “Press RETURN” prompt when stdin is not a TTY or
+`ETHPILLAR_INSTALL_NONINTERACTIVE=1` is set.
+
 ## Manual Testing in the Docker Container
 
 To manually test inside the container (e.g. to debug a service file):

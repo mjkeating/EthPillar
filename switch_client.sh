@@ -49,6 +49,10 @@ function switchClient(){
 
     local SYSTEMD_DIR=${SYSTEMD_DIR:-/etc/systemd/system}
     local BASE_DATA_DIR=${BASE_DATA_DIR:-/var/lib}
+    # Allow validator helpers to respect test overrides (see tests/test_switch_client.bats).
+    export CONSENSUS_SERVICE_FILE="${SYSTEMD_DIR}/consensus.service"
+    export VALIDATOR_SERVICE_FILE="${SYSTEMD_DIR}/validator.service"
+    local VALIDATOR_MODE="none"
 
     # Safety check: if switching away from Grandine while using the integrated VC,
     # the new consensus client will NOT have a validator configured. Warn the user.
@@ -59,6 +63,19 @@ function switchClient(){
         elif ! whiptail --title "⚠️ Grandine Integrated Validator Warning" --yesno \
             "Your current Grandine consensus.service has an INTEGRATED VALIDATOR CLIENT.\n\nSwitching the consensus client will leave your validators INACTIVE until you manually reconfigure the new client with your keystore files.\n\nProceed anyway?" 12 78; then
             exit 0
+        fi
+    fi
+
+    # Separate VC: inform user and stop validator before consensus work begins.
+    if [ "$TARGET_CLIENT" == "consensus" ]; then
+        VALIDATOR_MODE=$(getValidatorMode)
+        if [ "$VALIDATOR_MODE" == "separate" ]; then
+            if [ "$AUTO" != true ]; then
+                whiptail --title "Separate Validator Client" --msgbox \
+                    "A separate validator client is installed on this node.\n\nDuring the consensus client switch:\n• Your validator will be stopped temporarily\n• Validator keys will not be changed\n• The beacon endpoint in validator.service will be updated automatically\n• The validator will be restarted when the switch completes" \
+                    14 78
+            fi
+            stopValidatorService
         fi
     fi
 
@@ -151,6 +168,20 @@ function switchClient(){
         runScript deploy/install-node.sh deploy/deploy-node.py --switch_client execution --cc "$CL" $NETWORK_ARG $AUTO_ARGS
     elif [ "$TARGET_CLIENT" == "consensus" ]; then
         runScript deploy/install-node.sh deploy/deploy-node.py --switch_client consensus --ec "$EL" $MEVBOOST_FLAG $NETWORK_ARG $AUTO_ARGS
+
+        # Reconnect separate VC to the new beacon node after BN install.
+        if [ "$VALIDATOR_MODE" == "separate" ]; then
+            if ! patchValidatorBeaconEndpoint; then
+                echo "ERROR: Failed to update validator beacon endpoint." >&2
+                exit 1
+            fi
+            if [ "$AUTO" = true ]; then
+                # Non-interactive install skips finish_install service start prompts.
+                sudo systemctl daemon-reload
+                sudo systemctl start consensus
+            fi
+            startValidatorService
+        fi
     fi
 }
 

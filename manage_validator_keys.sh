@@ -242,6 +242,19 @@ function _setKeystorePassword(){
     done
 }
 
+function promptForKeystorePasswordForImport(){
+    while true; do
+        _KEYSTOREPASSWORD=$(whiptail --title "Keystore Password" --inputbox "Enter your keystore password" 10 78 --ok-button "Submit" 3>&1 1>&2 2>&3)
+        local VERIFY_PASS
+        VERIFY_PASS=$(whiptail --title "Verify Password" --inputbox "Confirm your keystore password" 10 78 --ok-button "Submit" 3>&1 1>&2 2>&3)
+        if [[ "${_KEYSTOREPASSWORD}" = "${VERIFY_PASS}" ]]; then
+            ohai "Password confirmed."
+            break
+        else
+            whiptail --title "Error" --msgbox "Passwords do not match. Try again." 8 78
+        fi
+    done
+}
 function setConfig(){
     case $NETWORK in
           mainnet)
@@ -308,7 +321,6 @@ function loadKeys(){
        default)
         getClientVC
         if [[ "$VC" == "Grandine" ]]; then
-            # VC is integrated into Grandine BN. So stop the consensus client.
             sudo systemctl stop consensus
         else
             sudo systemctl stop validator
@@ -323,8 +335,10 @@ function loadKeys(){
         sudo systemctl stop ${__SERVICE_NAME}
         ;;
    esac
+
    ohai "Loading PubKeys into $VC Validator"
    ohai "Stopping validator to import keys"
+
    case $VC in
       Lighthouse)
         [[ -d /var/lib/lighthouse_validator ]] && vc_path="/var/lib/lighthouse_validator" || vc_path="/var/lib/lighthouse/validators"
@@ -336,42 +350,43 @@ function loadKeys(){
         sudo chown -R validator:validator "$vc_path"
         sudo chmod 700 "$vc_path"
       ;;
+
      Lodestar)
+        promptForKeystorePasswordForImport
+        echo "$_KEYSTOREPASSWORD" > "$HOME"/validators-password.txt
+
         [[ -d /var/lib/lodestar_validator ]] && vc_path="/var/lib/lodestar_validator" || vc_path="/var/lib/lodestar/validators"
         LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar")
+
         sudo "$LODESTAR_BIN" validator import \
-          --dataDir="$vc_path" \
-          --keystore="$KEYFOLDER"
+            --dataDir="$vc_path" \
+            --keystore="$KEYFOLDER" \
+            --passphraseFile="$HOME/validators-password.txt"
+
         sudo chown -R validator:validator "$vc_path"
         sudo chmod 700 "$vc_path"
+        rm -f "$HOME"/validators-password.txt
       ;;
+
      Teku)
-        if [[ -z $_KEYSTOREPASSWORD ]]; then
-            while true; do
-                # Get keystore password
-                _KEYSTOREPASSWORD=$(whiptail --title "Teku Keystore Password" --inputbox "Enter your keystore password" 10 78 --ok-button "Submit" 3>&1 1>&2 2>&3)
-                VERIFY_PASS=$(whiptail --title "Verify Password" --inputbox "Confirm your keystore password" 10 78 --ok-button "Submit" 3>&1 1>&2 2>&3)
-                if [[ "${_KEYSTOREPASSWORD}" = "${VERIFY_PASS}" ]]; then
-                    ohai "Password is same."
-                    break
-                else
-                    whiptail --title "Error" --msgbox "Passwords not the same. Try again." 8 78
-                fi
-            done
-        fi
+        promptForKeystorePasswordForImport
         echo "$_KEYSTOREPASSWORD" > "$HOME"/validators-password.txt
-        # Create password file for each keystore
-        for f in "$KEYFOLDER"/keystore*.json; do sudo cp "$HOME"/validators-password.txt "$KEYFOLDER"/"$(basename "$f" .json)".txt; done
+
+        for f in "$KEYFOLDER"/keystore*.json; do
+            sudo cp "$HOME"/validators-password.txt "$KEYFOLDER"/"$(basename "$f" .json)".txt
+        done
+
         sudo mkdir -p /var/lib/teku_validator/validator_keys
         sudo cp "$KEYFOLDER"/keystore* /var/lib/teku_validator/validator_keys
         sudo chown -R validator:validator /var/lib/teku_validator
         sudo chmod -R 700 /var/lib/teku_validator
-        rm "$HOME"/validators-password.txt
+        rm -f "$HOME"/validators-password.txt
       ;;
+
      Nimbus)
         if [[ "$1" = "plugin_csm_validator" ]]; then
             sudo "${__BINARY_PATH}"/nimbus_beacon_node deposits import \
-            --data-dir="${__DATA_DIR}" "$KEYFOLDER"
+                --data-dir="${__DATA_DIR}" "$KEYFOLDER"
             sudo chown -R "${__SERVICE_USER}":"${__SERVICE_USER}" "${__DATA_DIR}"
             sudo chmod -R 700 "${__DATA_DIR}"
         else
@@ -382,6 +397,7 @@ function loadKeys(){
             sudo chmod -R 700 /var/lib/nimbus_validator
         fi
       ;;
+
      Prysm)
         PRYSM_VC=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/prysm-validator")
         sudo "$PRYSM_VC" accounts import \
@@ -391,45 +407,40 @@ function loadKeys(){
         sudo chown -R validator:validator /var/lib/prysm_validator
         sudo chmod -R 700 /var/lib/prysm_validator
       ;;
+
      Grandine)
-        if [[ -z $_KEYSTOREPASSWORD ]]; then
-            while true; do
-                _KEYSTOREPASSWORD=$(whiptail --title "Grandine Keystore Password" --inputbox "Enter your keystore password" 10 78 --ok-button "Submit" 3>&1 1>&2 2>&3)
-                VERIFY_PASS=$(whiptail --title "Verify Password" --inputbox "Confirm your keystore password" 10 78 --ok-button "Submit" 3>&1 1>&2 2>&3)
-                if [[ "${_KEYSTOREPASSWORD}" = "${VERIFY_PASS}" ]]; then
-                    ohai "Password is same."
-                    break
-                else
-                    whiptail --title "Error" --msgbox "Passwords not the same. Try again." 8 78
-                fi
-            done
-        fi
+        promptForKeystorePasswordForImport
         echo "$_KEYSTOREPASSWORD" > "$HOME"/validators-password.txt
-        # Create password file for each keystore
-        for f in "$KEYFOLDER"/keystore*.json; do sudo cp "$HOME"/validators-password.txt "$KEYFOLDER"/"$(basename "$f" .json)".txt; done
+
+        for f in "$KEYFOLDER"/keystore*.json; do
+            sudo cp "$HOME"/validators-password.txt "$KEYFOLDER"/"$(basename "$f" .json)".txt
+        done
+
         sudo mkdir -p /var/lib/grandine/validator_keys
         sudo cp "$KEYFOLDER"/keystore* /var/lib/grandine/validator_keys
         sudo chown -R consensus:consensus /var/lib/grandine/validator_keys
         sudo chmod -R 700 /var/lib/grandine/validator_keys
-        rm "$HOME"/validators-password.txt
+        rm -f "$HOME"/validators-password.txt
       ;;
-     esac
-     ohai "Starting validator"
-     if [[ $1 == "default" ]]; then
+   esac
+
+   ohai "Starting validator"
+   if [[ $1 == "default" ]]; then
         if [[ "$VC" == "Grandine" ]]; then
-            # VC is integrated into Grandine BN. So start the consensus client.
             sudo systemctl start consensus
         else
             sudo systemctl start validator
         fi
-     fi
-     [[ $1 == "plugin_csm_validator" ]] && sudo systemctl start "${__SERVICE_NAME}"
-     queryEntryQueue
-     setLaunchPadMessage
-     whiptail --title "Next Steps: Upload JSON Deposit Data File" --msgbox "$MSG_LAUNCHPAD" 25 95
-     whiptail --title "Tips: Things to Know" --msgbox "$MSG_TIPS" 24 78
-     ohai "Finished loading keys"
-     promptViewLogs "$1"
+   fi
+
+   [[ $1 == "plugin_csm_validator" ]] && sudo systemctl start "${__SERVICE_NAME}"
+
+   queryEntryQueue
+   setLaunchPadMessage
+   whiptail --title "Next Steps: Upload JSON Deposit Data File" --msgbox "$MSG_LAUNCHPAD" 25 95
+   whiptail --title "Tips: Things to Know" --msgbox "$MSG_TIPS" 24 78
+   ohai "Finished loading keys"
+   promptViewLogs "$1"
 }
 
 function setLaunchPadMessage(){

@@ -476,6 +476,132 @@ getClient(){
     fi
 }
 
+# ── Validator mode helpers (used by CC switch, update_validator.sh, TUI) ──
+
+# Classify how this node runs validator duties.
+# Returns: none | separate | integrated_grandine
+getValidatorMode(){
+    local consensus_svc="${CONSENSUS_SERVICE_FILE:-/etc/systemd/system/consensus.service}"
+    local validator_svc="${VALIDATOR_SERVICE_FILE:-/etc/systemd/system/validator.service}"
+
+    if [[ -f "$consensus_svc" ]] && grep -q 'keystore-dir' "$consensus_svc" 2>/dev/null; then
+        echo "integrated_grandine"
+    elif [[ -f "$validator_svc" ]]; then
+        echo "separate"
+    else
+        echo "none"
+    fi
+}
+
+# Resolve the effective validator client name.
+# Sets VALIDATOR_CLIENT and VC (for backward compatibility).
+getValidatorClient(){
+    local consensus_svc="${CONSENSUS_SERVICE_FILE:-/etc/systemd/system/consensus.service}"
+    local validator_svc="${VALIDATOR_SERVICE_FILE:-/etc/systemd/system/validator.service}"
+
+    VALIDATOR_CLIENT=""
+
+    if [[ -f "$validator_svc" ]]; then
+        VALIDATOR_CLIENT=$(grep -m1 '^Description=' "$validator_svc" 2>/dev/null | awk -F'=' '{print $2}' | awk '{print $1}')
+    elif [[ -f "$consensus_svc" ]] && grep -q 'keystore-dir' "$consensus_svc" 2>/dev/null; then
+        VALIDATOR_CLIENT="Grandine"
+    fi
+
+    VC="$VALIDATOR_CLIENT"
+    echo "$VALIDATOR_CLIENT"
+}
+
+# Build the beacon node REST URL that a separate VC should target.
+# Prefers environment variables, then falls back to scraping the consensus.service.
+# Sets BEACON_NODE_ENDPOINT.
+getBeaconNodeEndpoint(){
+    local consensus_svc="${CONSENSUS_SERVICE_FILE:-/etc/systemd/system/consensus.service}"
+    local cl_ip="${CL_IP_ADDRESS:-127.0.0.1}"
+    local cl_port="${CL_REST_PORT:-}"
+
+    if [[ -f "$consensus_svc" ]]; then
+        # Try to scrape port from common flags if not set via env
+        if [[ -z "$cl_port" ]]; then
+            cl_port=$(grep -oE '(--http-port=|--rest-port=|--rest-api-port=|--rest\.port=)[0-9]+' \
+                "$consensus_svc" 2>/dev/null | head -1 | grep -oE '[0-9]+' || true)
+        fi
+
+        # Try to scrape IP address
+        local scraped_ip
+        scraped_ip=$(grep -oE '(--http-address=)[^ ]+' "$consensus_svc" 2>/dev/null | head -1 | cut -d= -f2- || true)
+        [[ -n "$scraped_ip" ]] && cl_ip="$scraped_ip"
+    fi
+
+    cl_port="${cl_port:-5052}"
+    BEACON_NODE_ENDPOINT="http://${cl_ip}:${cl_port}"
+    echo "$BEACON_NODE_ENDPOINT"
+}
+
+# Stop validator duties based on current mode.
+stopValidatorService(){
+    local mode
+    mode=$(getValidatorMode)
+
+    case "$mode" in
+        separate)
+            if [[ -f "${VALIDATOR_SERVICE_FILE:-/etc/systemd/system/validator.service}" ]]; then
+                sudo systemctl stop validator
+            fi
+            ;;
+        integrated_grandine)
+            if [[ -f "${CONSENSUS_SERVICE_FILE:-/etc/systemd/system/consensus.service}" ]]; then
+                sudo systemctl stop consensus
+            fi
+            ;;
+    esac
+}
+
+# Start validator duties based on current mode.
+# Includes daemon-reload when starting a separate validator (useful after patching).
+startValidatorService(){
+    local mode
+    mode=$(getValidatorMode)
+
+    case "$mode" in
+        separate)
+            if [[ -f "${VALIDATOR_SERVICE_FILE:-/etc/systemd/system/validator.service}" ]]; then
+                sudo systemctl daemon-reload
+                sudo systemctl start validator
+            fi
+            ;;
+        integrated_grandine)
+            if [[ -f "${CONSENSUS_SERVICE_FILE:-/etc/systemd/system/consensus.service}" ]]; then
+                sudo systemctl start consensus
+            fi
+            ;;
+    esac
+}
+
+# Update the beacon-node flag in validator.service after a consensus client switch.
+# No-op unless validator mode is separate.
+patchValidatorBeaconEndpoint(){
+    local validator_svc="${VALIDATOR_SERVICE_FILE:-/etc/systemd/system/validator.service}"
+    local mode
+    mode=$(getValidatorMode)
+
+    if [[ "$mode" != "separate" ]]; then
+        return 0
+    fi
+
+    getValidatorClient
+    getBeaconNodeEndpoint
+
+    if [[ -z "$VALIDATOR_CLIENT" ]]; then
+        echo "WARNING: Could not determine validator client for beacon endpoint patch." >&2
+        return 1
+    fi
+
+    PYTHONPATH="${BASE_DIR}" python3 -m deploy.vc_service patch \
+        --vc "$VALIDATOR_CLIENT" \
+        --endpoint "$BEACON_NODE_ENDPOINT" \
+        --service-path "$validator_svc"
+}
+
 # Get execution client datadir from systemd config (for reth)
 getExecutionDatadir(){
     local svc_file=${EXEC_SERVICE_FILE:-/etc/systemd/system/execution.service}
@@ -490,59 +616,88 @@ getExecutionStaticFiles(){
 
 # Get list of validator public keys
 getPubKeys(){
-   TEMP=""
-   local ARGUMENT=${1:-"default"}
-   case $VC in
-      Lighthouse)
-         [[ -d /var/lib/lighthouse_validator ]] && vc_path="/var/lib/lighthouse_validator" || vc_path="/var/lib/lighthouse"
-         LH_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lighthouse")
-         TEMP=$(sudo -u validator "$LH_BIN" account validator list --datadir "$vc_path" | grep -Eo '0x[a-fA-F0-9]{96}')
-         convertLIST
-      ;;
-      Lodestar)
-         [[ -d /var/lib/lodestar_validator ]] && vc_path="/var/lib/lodestar_validator" || vc_path="/var/lib/lodestar/validators"
-         LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar")
-         TEMP=$(sudo -u validator "$LODESTAR_BIN" validator list --dataDir "$vc_path" --force | grep -Eo '0x[a-fA-F0-9]{96}')
-         convertLIST
-      ;;
-      Teku)
-         _teku=()
-         # Command if combined CL+VC
-         teku_cmd="ls /var/lib/teku/validator_keys/*.json"
-         # Command if standalone VC
-         test -f /etc/systemd/system/validator.service && teku_cmd="ls /var/lib/teku_validator/validator_keys/*.json"
-         for json in $(sudo -u validator bash -c "$teku_cmd")
-         do
-            _teku+=(0x$(sudo -u validator bash -c "cat $json | jq -r '.pubkey'"))
-         done
-         # Convert to string
-         TEMP="${_teku[@]}"
-         convertLIST
-      ;;
-      Nimbus)
-        case "$ARGUMENT" in
-            plugin_csm_validator)
-                # Command if standalone VC
-                test -f ${SERVICE_FILE} && nimbus_cmd="ls ${DATA_DIR}/validators | grep -Eo '0x[a-fA-F0-9]{96}'"
-                TEMP=$(sudo -u "${SERVICE_ACCOUNT}" bash -c "$nimbus_cmd")
-                convertLIST
-                ;;
-            default)
-                # Command if combined CL+VC
-                nimbus_cmd="ls /var/lib/nimbus/validators | grep -Eo '0x[a-fA-F0-9]{96}'"
-                # Command if standalone VC
-                test -f /etc/systemd/system/validator.service && nimbus_cmd="ls /var/lib/nimbus_validator/validators | grep -Eo '0x[a-fA-F0-9]{96}'"
-                TEMP=$(sudo -u validator bash -c "$nimbus_cmd")
-                convertLIST
-                ;;
-        esac
-      ;;
-      Prysm)
-         PRYSM_VC=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/prysm-validator")
-         TEMP=$(sudo -u validator "$PRYSM_VC" accounts list --wallet-dir=/var/lib/prysm/validators | grep -Eo '0x[a-fA-F0-9]{96}')
-         convertLIST
-      ;;
-   esac
+    TEMP=""
+    local ARGUMENT=${1:-"default"}
+
+    # Use modern client detection first
+    getValidatorClient
+    local client="${VALIDATOR_CLIENT:-$VC}"
+
+    case "$client" in
+        Lighthouse)
+            local vc_path
+            if [[ -d /var/lib/lighthouse_validator ]]; then
+                vc_path="/var/lib/lighthouse_validator"
+            else
+                vc_path="/var/lib/lighthouse"
+            fi
+            local LH_BIN
+            LH_BIN=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/lighthouse")
+            TEMP=$(sudo -u validator "$LH_BIN" account validator list --datadir "$vc_path" 2>/dev/null | grep -Eo '0x[a-fA-F0-9]{96}' || true)
+            convertLIST
+            ;;
+
+        Lodestar)
+            local vc_path
+            if [[ -d /var/lib/lodestar_validator ]]; then
+                vc_path="/var/lib/lodestar_validator"
+            else
+                vc_path="/var/lib/lodestar/validators"
+            fi
+            local LODESTAR_BIN
+            LODESTAR_BIN=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/lodestar")
+            TEMP=$(sudo -u validator "$LODESTAR_BIN" validator list --dataDir "$vc_path" --force 2>/dev/null | grep -Eo '0x[a-fA-F0-9]{96}' || true)
+            convertLIST
+            ;;
+
+        Teku)
+            local _teku=()
+            local teku_cmd
+
+            if [[ -f /etc/systemd/system/validator.service ]]; then
+                teku_cmd="ls /var/lib/teku_validator/validator_keys/*.json 2>/dev/null"
+            else
+                teku_cmd="ls /var/lib/teku/validator_keys/*.json 2>/dev/null"
+            fi
+
+            for json in $(sudo -u validator bash -c "$teku_cmd" 2>/dev/null); do
+                local pubkey
+                pubkey=$(sudo -u validator bash -c "cat '$json' | jq -r '.pubkey' 2>/dev/null")
+                [[ -n "$pubkey" && "$pubkey" != "null" ]] && _teku+=("0x$pubkey")
+            done
+
+            TEMP="${_teku[*]}"
+            convertLIST
+            ;;
+
+        Nimbus)
+            local nimbus_cmd
+            if [[ "$ARGUMENT" == "plugin_csm_validator" ]]; then
+                nimbus_cmd="ls ${DATA_DIR}/validators 2>/dev/null | grep -Eo '0x[a-fA-F0-9]{96}'"
+            else
+                if [[ -f /etc/systemd/system/validator.service ]]; then
+                    nimbus_cmd="ls /var/lib/nimbus_validator/validators 2>/dev/null | grep -Eo '0x[a-fA-F0-9]{96}'"
+                else
+                    nimbus_cmd="ls /var/lib/nimbus/validators 2>/dev/null | grep -Eo '0x[a-fA-F0-9]{96}'"
+                fi
+            fi
+            TEMP=$(sudo -u validator bash -c "$nimbus_cmd" 2>/dev/null || true)
+            convertLIST
+            ;;
+
+        Prysm)
+            local PRYSM_VC
+            PRYSM_VC=$(get_systemd_exec_path "/etc/systemd/system/validator.service" "/usr/local/bin/prysm-validator")
+            TEMP=$(sudo -u validator "$PRYSM_VC" accounts list --wallet-dir=/var/lib/prysm/validators 2>/dev/null | grep -Eo '0x[a-fA-F0-9]{96}' || true)
+            convertLIST
+            ;;
+
+        *)
+            echo "No supported validator client detected for pubkey listing."
+            LIST=()
+            return 1
+            ;;
+    esac
 }
 
 convertLIST(){
@@ -554,50 +709,56 @@ do
 done
 }
 
-# Convert pubkeys to index
+# Convert pubkeys to validator indices using the beacon node API
 getIndices(){
-   # API URL Path for duties
-   local API_URL_DUTIES=$API_BN_ENDPOINT/eth/v1/
-   # API URL Path for indices
-   local API_URL_INDICES=$API_BN_ENDPOINT/eth/v1/beacon/states/head/validators
-   # Reset var
-   INDICES=()
+    local API_URL_INDICES="${API_BN_ENDPOINT}/eth/v1/beacon/states/head/validators"
+    INDICES=()
 
-   for PUBKEY in ${LIST[@]}
-      do
-         VALIDATOR_INDEX=$(curl -s -X GET $API_URL_INDICES/$PUBKEY | jq -r .data.index)
-         if [[ $VALIDATOR_INDEX = null ]]; then
+    for PUBKEY in "${LIST[@]}"; do
+        local response
+        response=$(curl -s --max-time 5 "${API_URL_INDICES}/${PUBKEY}")
+
+        local index
+        index=$(echo "$response" | jq -r '.data.index // empty' 2>/dev/null)
+
+        if [[ -z "$index" || "$index" == "null" ]]; then
             echo "INFO: $PUBKEY not yet activated."
-         else
-            INDICES+=($VALIDATOR_INDEX);
-         fi
-      done
+        else
+            INDICES+=("$index")
+        fi
+    done
 }
 
 # Prints list of pubkeys and indices
 viewPubkeyAndIndices(){
-   local COUNT=${#LIST[@]}
-   if [[ "$COUNT" = "0" ]]; then
-      echo "No validators keys loaded. Press ENTER to finish."
-      read
-      return
-   fi
-   ohai "==========================================="
-   ohai "Total # Validator Keys: $COUNT"
-   ohai "==========================================="
-   ohai "Pubkeys:"
-   for i in "${LIST[@]}"; do
-      echo $i
-   done
-   ohai "==========================================="
-   ohai "Indices:"
-   if [[ ! ${#INDICES[@]} = "0" ]]; then
-      echo ${INDICES[@]}
-   else
-      echo "No validators currently active. Once a validator is activated, an index is assigned."
-   fi
-   ohai "Press ENTER to finish."
-   read
+    local COUNT=${#LIST[@]}
+
+    if [[ "$COUNT" -eq 0 ]]; then
+        echo "No validator keys loaded. Press ENTER to finish."
+        read -r
+        return
+    fi
+
+    ohai "==========================================="
+    ohai "Total # Validator Keys: $COUNT"
+    ohai "==========================================="
+    ohai "Pubkeys:"
+
+    for key in "${LIST[@]}"; do
+        echo "$key"
+    done
+
+    ohai "==========================================="
+    ohai "Indices:"
+
+    if [[ ${#INDICES[@]} -gt 0 ]]; then
+        echo "${INDICES[@]}"
+    else
+        echo "No validators currently active. Once a validator is activated, an index is assigned."
+    fi
+
+    ohai "Press ENTER to finish."
+    read -r
 }
 
 # Checks for open ports. Diagnose peering/router/port-forwarding issues.
@@ -1523,6 +1684,42 @@ ensure_host_runtime_packages() {
     sudo apt-get update -qq
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${missing[@]}"
 }
+
+# Shared yes/no + version selection prompt used by all update scripts
+promptYesNo() {
+    local client_name="${1:-${CLIENT:-${EL:-Client}}}"
+    local title_client="${2:-${title_client:-$client_name}}"
+
+    if [[ "${VERSION#v}" == "${TAG#v}" ]]; then
+        whiptail --title "Already updated" --msgbox "You are already on the latest version: ${VERSION#v}" 10 78
+        if whiptail --title "Different Version of ${title_client}" --defaultno --yesno "Would you like to install a different version?" 8 78; then
+            selectCustomTag
+            updateClient "$__OTHERTAG"
+            promptViewLogs
+        fi
+        return
+    fi
+
+    __MSG="Installed Version is: ${VERSION#v}\nLatest Version is:    ${TAG#v}\n\nReminder: Always read the release notes for breaking changes: $CHANGES_URL\n\nDo you want to update ${client_name} to ${TAG#v}?"
+
+    __SELECTTAG=$(whiptail --title "🔧 Update ${title_client}" --menu \
+          "$__MSG" 18 78 2 \
+          "LATEST" "| Installs ${TAG#v}, the latest release" \
+          "OTHER " "| I will select a different version" \
+          3>&1 1>&2 2>&3)
+
+    if [ -z "$__SELECTTAG" ]; then exit; fi
+
+    if [[ $__SELECTTAG == "LATEST" ]]; then
+        updateClient "LATEST"
+        promptViewLogs
+    else
+        selectCustomTag
+        updateClient "$__OTHERTAG"
+        promptViewLogs
+    fi
+}
+
 
 # Host tools first (whiptail, curl, …), then Python venv deps.
 ensure_host_runtime_packages

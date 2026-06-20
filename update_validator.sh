@@ -64,33 +64,6 @@ function selectCustomTag(){
     done
 }
 
-function promptYesNo(){
-    if [[ "${VERSION#v}" == "${TAG#v}" ]]; then
-        whiptail --title "Already updated" --msgbox "You are already on the latest version: ${VERSION#v}" 10 78
-        if whiptail --title "Different Version of ${CLIENT}" --defaultno --yesno "Would you like to install a different version?" 8 78; then
-            selectCustomTag
-            updateClient "$__OTHERTAG"
-            promptViewLogs
-        fi
-        return
-    fi
-    __MSG="Installed Version is: ${VERSION#v}\nLatest Version is:    ${TAG#v}\n\nReminder: Always read the release notes for breaking changes: $CHANGES_URL\n\nDo you want to update $CLIENT validator to ${TAG#v}?"
-    __SELECTTAG=$(whiptail --title "🔧 Update Validator | ${CLIENT}" --menu \
-          "$__MSG" 18 78 2 \
-          "LATEST" "| Installs ${TAG#v}, the latest release" \
-          "OTHER " "| I will select a different version" \
-          3>&1 1>&2 2>&3)
-    if [ -z "$__SELECTTAG" ]; then exit; fi
-    if [[ $__SELECTTAG == "LATEST" ]]; then
-        updateClient "LATEST"
-        promptViewLogs
-    else
-        selectCustomTag
-        updateClient "$__OTHERTAG"
-        promptViewLogs
-    fi
-}
-
 function promptViewLogs(){
     if whiptail --title "Update complete" --yesno "Would you like to view validator logs and confirm everything is running properly?" 8 78; then
         sudo bash -c 'journalctl -fu validator | ccze -A'

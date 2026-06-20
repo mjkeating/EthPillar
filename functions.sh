@@ -1685,6 +1685,42 @@ ensure_host_runtime_packages() {
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${missing[@]}"
 }
 
+# Shared yes/no + version selection prompt used by all update scripts
+promptYesNo() {
+    local client_name="${1:-${CLIENT:-${EL:-Client}}}"
+    local title_client="${2:-${title_client:-$client_name}}"
+
+    if [[ "${VERSION#v}" == "${TAG#v}" ]]; then
+        whiptail --title "Already updated" --msgbox "You are already on the latest version: ${VERSION#v}" 10 78
+        if whiptail --title "Different Version of ${title_client}" --defaultno --yesno "Would you like to install a different version?" 8 78; then
+            selectCustomTag
+            updateClient "$__OTHERTAG"
+            promptViewLogs
+        fi
+        return
+    fi
+
+    __MSG="Installed Version is: ${VERSION#v}\nLatest Version is:    ${TAG#v}\n\nReminder: Always read the release notes for breaking changes: $CHANGES_URL\n\nDo you want to update ${client_name} to ${TAG#v}?"
+
+    __SELECTTAG=$(whiptail --title "🔧 Update ${title_client}" --menu \
+          "$__MSG" 18 78 2 \
+          "LATEST" "| Installs ${TAG#v}, the latest release" \
+          "OTHER " "| I will select a different version" \
+          3>&1 1>&2 2>&3)
+
+    if [ -z "$__SELECTTAG" ]; then exit; fi
+
+    if [[ $__SELECTTAG == "LATEST" ]]; then
+        updateClient "LATEST"
+        promptViewLogs
+    else
+        selectCustomTag
+        updateClient "$__OTHERTAG"
+        promptViewLogs
+    fi
+}
+
+
 # Host tools first (whiptail, curl, …), then Python venv deps.
 ensure_host_runtime_packages
 ensure_python_deps

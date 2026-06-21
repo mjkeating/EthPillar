@@ -110,5 +110,7 @@ function resyncClient(){
 	  esac
 }
 
-getClient
-promptYesNo
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  getClient
+  promptYesNo
+fi

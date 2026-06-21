@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 import sys
 from typing import AsyncIterator, Protocol, Sequence
@@ -24,8 +25,11 @@ from typing import AsyncIterator, Protocol, Sequence
 def resolve_journalctl_cmd() -> tuple[str, ...]:
     """Return journalctl argv prefix, using sudo only when unprivileged access fails."""
 
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return ("journalctl",)
+
     probe = subprocess.run(
-        ["journalctl", "-n", "0", "--quiet"],
+        ["journalctl", "-n", "1", "--quiet", "_UID=0"],
         capture_output=True,
         check=False,
     )

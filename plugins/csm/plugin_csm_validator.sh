@@ -61,7 +61,7 @@ function _promptYesNo(){
 
 function _promptViewLogs(){
   if whiptail --title "Update complete" --yesno "Would you like to view logs and confirm everything is running properly?" 8 78; then
-			sudo bash -c "journalctl -fu $SERVICE_NAME | ccze -A"
+			view_journal_logs -fu "$SERVICE_NAME"
   fi
 }
 

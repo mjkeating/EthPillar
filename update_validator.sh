@@ -66,7 +66,7 @@ function selectCustomTag(){
 
 function promptViewLogs(){
     if whiptail --title "Update complete" --yesno "Would you like to view validator logs and confirm everything is running properly?" 8 78; then
-        sudo bash -c 'journalctl -fu validator | ccze -A'
+        view_journal_logs -fu validator
     fi
 }
 

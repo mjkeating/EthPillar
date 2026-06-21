@@ -240,7 +240,7 @@ while true; do
         if [[ -d /opt/ethpillar/aztec ]] && [[ ! -f /etc/systemd/system/consensus.service ]]; then
               cd  /opt/ethpillar/aztec && docker compose logs -f --tail=233
         fi
-        sudo bash -c 'journalctl -u validator -u consensus -u execution -u mevboost -u csm_nimbusvalidator --no-hostname -f | ccze -A'
+        view_journal_logs -u validator -u consensus -u execution -u mevboost -u csm_nimbusvalidator --no-hostname -f
         ;;
       📜)
         export_logs
@@ -358,7 +358,7 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       1)
-        sudo bash -c 'journalctl -fu execution | ccze -A'
+        view_journal_logs -fu execution
         ;;
       2)
         sudo service execution start
@@ -428,7 +428,7 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       1)
-        sudo bash -c 'journalctl -fu consensus | ccze -A'
+        view_journal_logs -fu consensus
         ;;
       2)
         sudo service consensus start
@@ -522,9 +522,9 @@ while true; do
     case $SUBCHOICE in
       1)
         if [[ "$_validator_mode" == "integrated_grandine" ]]; then
-          sudo bash -c 'journalctl -fu consensus | ccze -A'
+          view_journal_logs -fu consensus
         else
-          sudo bash -c 'journalctl -fu validator | ccze -A'
+          view_journal_logs -fu validator
         fi
         ;;
       2)
@@ -618,7 +618,7 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       1)
-        sudo bash -c 'journalctl -fu mevboost | ccze -A'
+        view_journal_logs -fu mevboost
         ;;
       2)
         sudo service mevboost start
@@ -864,7 +864,7 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       1)
-        sudo bash -c 'journalctl -u grafana-server -u prometheus -u ethereum-metrics-exporter -u prometheus-node-exporter --no-hostname -f | ccze -A'
+        view_journal_logs -u grafana-server -u prometheus -u ethereum-metrics-exporter -u prometheus-node-exporter --no-hostname -f
         ;;
       2)
         sudo systemctl start grafana-server prometheus ethereum-metrics-exporter prometheus-node-exporter
@@ -1320,7 +1320,7 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       1)
-        sudo bash -c 'journalctl -fu csm_nimbusvalidator | ccze -A'
+        view_journal_logs -fu csm_nimbusvalidator
         ;;
       2)
         sudo service csm_nimbusvalidator start

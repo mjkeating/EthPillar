@@ -30,7 +30,7 @@ function promptYesNo(){
 
 function promptViewLogs(){
     if whiptail --title "Resync $EL started" --yesno "Would you like to view logs and confirm everything is running properly?" 8 78; then
-		sudo bash -c 'journalctl -fu execution | ccze -A'
+		view_journal_logs -fu execution
     fi
 }
 

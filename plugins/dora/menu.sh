@@ -43,7 +43,7 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       1)
-        sudo bash -c 'journalctl -fu dora | ccze -A'
+        view_journal_logs -fu dora
         ;;
       2)
         sudo systemctl start dora

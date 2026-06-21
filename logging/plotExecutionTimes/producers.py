@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from typing import AsyncIterator, Protocol
+from typing import AsyncIterator, Protocol, Sequence
 
 
 class LineProducer(Protocol):
@@ -42,16 +42,23 @@ class StdinProducer:
 
 
 class JournalctlProducer:
-    def __init__(self, unit: str, tail: int) -> None:
+    def __init__(
+        self,
+        unit: str,
+        tail: int,
+        journalctl_cmd: Sequence[str] | None = None,
+    ) -> None:
         """Produce lines by invoking `journalctl` for a given systemd unit.
 
         Args:
             unit: The systemd unit name to follow (without `.service`).
             tail: Number of historical lines to fetch before following.
+            journalctl_cmd: Executable plus optional prefix args (e.g. a fallback wrapper).
         """
 
         self.unit = unit
         self.tail = tail
+        self.journalctl_cmd = tuple(journalctl_cmd or ("journalctl",))
 
     async def lines(self) -> AsyncIterator[str]:
         """Yield lines from a `journalctl -f` subprocess for the configured unit.
@@ -61,7 +68,7 @@ class JournalctlProducer:
         """
 
         process = await asyncio.create_subprocess_exec(
-            "journalctl",
+            *self.journalctl_cmd,
             "-fu",
             self.unit,
             "--no-hostname",
@@ -148,7 +155,12 @@ class SystemdJournalProducer:
         reader.process()  # type: ignore[attr-defined]
 
 
-def choose_producer(source: str, unit: str, tail: int) -> LineProducer:
+def choose_producer(
+    source: str,
+    unit: str,
+    tail: int,
+    journalctl_cmd: Sequence[str] | None = None,
+) -> LineProducer:
     """Return an appropriate `LineProducer` instance for a given source.
 
     Args:
@@ -156,6 +168,7 @@ def choose_producer(source: str, unit: str, tail: int) -> LineProducer:
             the journalctl reader because it matches EthPillar's existing log flow.
         unit: The systemd unit (without .service) used for journal-based producers.
         tail: Number of historical lines to request from the source.
+        journalctl_cmd: Executable plus optional prefix args for journalctl-based producers.
 
     Returns:
         An object implementing the `LineProducer` protocol.
@@ -164,9 +177,9 @@ def choose_producer(source: str, unit: str, tail: int) -> LineProducer:
     if source == "stdin":
         return StdinProducer()
     if source == "journalctl":
-        return JournalctlProducer(unit, tail)
+        return JournalctlProducer(unit, tail, journalctl_cmd)
     if source == "systemd":
         return SystemdJournalProducer(unit, tail)
     if source == "auto":
-        return JournalctlProducer(unit, tail)
+        return JournalctlProducer(unit, tail, journalctl_cmd)
     raise ValueError(f"Unsupported source: {source}")

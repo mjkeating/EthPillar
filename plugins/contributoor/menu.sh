@@ -48,7 +48,7 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       1)
-        sudo bash -c 'journalctl -fu contributoor | ccze -A'
+        view_journal_logs -fu contributoor
         ;;
       2)
         sudo systemctl enable contributoor

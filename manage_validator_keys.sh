@@ -550,9 +550,9 @@ function promptViewLogs(){
     if whiptail --title "Validator Keys Imported - $VC" --yesno "Would you like to view logs and confirm everything is running properly?" 8 78; then
         case $1 in
             default)
-               sudo bash -c 'journalctl -fu validator | ccze -A' ;;
+               view_journal_logs -fu validator ;;
             plugin_csm_validator)
-               sudo bash -c "journalctl -fu ${SERVICE_NAME} | ccze -A" ;;
+               view_journal_logs -fu "${SERVICE_NAME}" ;;
         esac
     fi
 }

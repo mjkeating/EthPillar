@@ -56,3 +56,25 @@ def test_auto_source_uses_journalctl_reader():
     producer = plotter.choose_producer("auto", "execution", 0)
 
     assert producer.__class__.__name__ == "JournalctlProducer"
+
+
+def test_resolve_journalctl_cmd_uses_unprivileged_journalctl(monkeypatch):
+    from producers import resolve_journalctl_cmd
+
+    monkeypatch.setattr(
+        "producers.subprocess.run",
+        lambda *args, **kwargs: type("Result", (), {"returncode": 0})(),
+    )
+
+    assert resolve_journalctl_cmd() == ("journalctl",)
+
+
+def test_resolve_journalctl_cmd_falls_back_to_sudo(monkeypatch):
+    from producers import resolve_journalctl_cmd
+
+    monkeypatch.setattr(
+        "producers.subprocess.run",
+        lambda *args, **kwargs: type("Result", (), {"returncode": 1})(),
+    )
+
+    assert resolve_journalctl_cmd() == ("sudo", "journalctl")

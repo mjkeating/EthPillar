@@ -145,8 +145,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--journalctl-cmd",
         nargs="+",
-        default=("journalctl",),
-        help="journalctl executable or wrapper script (supports sudo fallback wrapper)",
+        default=None,
+        help="Override journalctl executable/prefix (defaults to auto-detect with sudo fallback)",
     )
     parser.add_argument("--refresh-per-second", type=int, default=8)
     parser.add_argument("--client-refresh-seconds", type=int, default=30)

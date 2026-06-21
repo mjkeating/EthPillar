@@ -16,8 +16,22 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import sys
 from typing import AsyncIterator, Protocol, Sequence
+
+
+def resolve_journalctl_cmd() -> tuple[str, ...]:
+    """Return journalctl argv prefix, using sudo only when unprivileged access fails."""
+
+    probe = subprocess.run(
+        ["journalctl", "-n", "0", "--quiet"],
+        capture_output=True,
+        check=False,
+    )
+    if probe.returncode == 0:
+        return ("journalctl",)
+    return ("sudo", "journalctl")
 
 
 class LineProducer(Protocol):
@@ -58,7 +72,14 @@ class JournalctlProducer:
 
         self.unit = unit
         self.tail = tail
-        self.journalctl_cmd = tuple(journalctl_cmd or ("journalctl",))
+        self._journalctl_cmd_override = (
+            tuple(journalctl_cmd) if journalctl_cmd is not None else None
+        )
+
+    def _journalctl_argv(self) -> tuple[str, ...]:
+        if self._journalctl_cmd_override is not None:
+            return self._journalctl_cmd_override
+        return resolve_journalctl_cmd()
 
     async def lines(self) -> AsyncIterator[str]:
         """Yield lines from a `journalctl -f` subprocess for the configured unit.
@@ -68,7 +89,7 @@ class JournalctlProducer:
         """
 
         process = await asyncio.create_subprocess_exec(
-            *self.journalctl_cmd,
+            *self._journalctl_argv(),
             "-fu",
             self.unit,
             "--no-hostname",

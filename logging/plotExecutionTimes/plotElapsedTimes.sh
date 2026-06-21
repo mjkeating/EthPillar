@@ -19,7 +19,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLOTTER="$SCRIPT_DIR/plotProcessingTimes.py"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-JOURNALCTL_CMD="$REPO_ROOT/helpers/journalctl-with-fallback.sh"
 
 # shellcheck source=../../functions.sh
 source "$REPO_ROOT/functions.sh"
@@ -44,4 +43,4 @@ if ! python3 -c "import rich" >/dev/null 2>&1; then
   fi
 fi
 
-python3 "$PLOTTER" --source journalctl --unit execution --journalctl-cmd "$JOURNALCTL_CMD" "$@"
+python3 "$PLOTTER" --source journalctl --unit execution "$@"

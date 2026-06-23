@@ -40,7 +40,7 @@ _platform=$(get_platform)
 _arch=$(get_arch)
 export _platform _arch
 
-initializeNetwork(){
+initializeRpcEndpoints(){
   # Defaults if not provided
   : "${CL_IP_ADDRESS:=127.0.0.1}"
   : "${CL_REST_PORT:=5052}"
@@ -68,10 +68,58 @@ initializeNetwork(){
       export EL_RPC_ENDPOINT="$execution_l1_rpc"
     fi
   fi
+}
 
-  # Initialize network variables
+initializeNetwork(){
+  initializeRpcEndpoints
   getNetworkConfig
   getNetwork
+}
+
+function printInstalledVersions() {
+  local _VC _CL _EL _MB _mb_version
+
+  if [[ -f /etc/systemd/system/validator.service ]]; then
+    getClient
+    getClVcCurrentVersion "$VC" vc
+    _VC="Validator client: $VC $VERSION"
+  fi
+  if [[ -f /etc/systemd/system/consensus.service ]]; then
+    _CL=$(curl -s -X GET "${API_BN_ENDPOINT}/eth/v1/node/version" \
+      -H "accept: application/json" \
+      | jq -r '.data.version')
+  fi
+  if [[ -f /etc/systemd/system/execution.service ]]; then
+    _EL=$(curl -s -X POST \
+      -H "Content-Type: application/json" \
+      --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":2}' \
+      "${EL_RPC_ENDPOINT}" \
+      | jq -r '.result')
+  fi
+  if [[ "${EL:-}" == "Erigon-Caplin" ]]; then
+    _CL=$(curl -s -X GET "${API_BN_ENDPOINT}/eth/v1/node/version" \
+      -H "accept: application/json" \
+      | jq -r '.data.version')
+  fi
+  if [[ -f /etc/systemd/system/mevboost.service ]]; then
+    _mb_version=$(mev-boost --version 2>&1 \
+      | sed -E 's/.*v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/' \
+      || echo 'unknown')
+    _MB="Mev-boost: ${_mb_version}"
+  else
+    _MB="Mev-boost: Not Installed"
+  fi
+  if [[ -z "${_VC:-}" ]] ; then
+    _VC="Validator client: Not installed."
+  fi
+  if [[ -z "${_CL:-}" ]] ; then
+    _CL="Not installed or still starting up."
+  fi
+  if [[ -z "${_EL:-}" ]] ; then
+    _EL="Not installed or still starting up."
+  fi
+  printf 'Consensus client: %s\nExecution client: %s\n%s\n%s\nEthPillar: %s\n' \
+    "$_CL" "$_EL" "$_VC" "$_MB" "$EP_VERSION"
 }
 
 menuMain(){
@@ -701,21 +749,7 @@ while true; do
         if whiptail --title "Shutdown" --defaultno --yesno "Are you sure you want to shutdown?" 8 78; then sudo shutdown now; fi
         ;;
       📦)
-        test -f /etc/systemd/system/validator.service && getClient && getClVcCurrentVersion "$VC" vc && _VC="Validator client: $VC $VERSION"
-        test -f /etc/systemd/system/consensus.service && _CL=$(curl -s -X GET "${API_BN_ENDPOINT}/eth/v1/node/version" -H "accept: application/json" | jq -r '.data.version')
-        test -f /etc/systemd/system/execution.service && _EL=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":2}' "${EL_RPC_ENDPOINT}" | jq -r '.result')
-        [[ $EL == "Erigon-Caplin" ]] && _CL=$(curl -s -X GET "${API_BN_ENDPOINT}/eth/v1/node/version" -H "accept: application/json" | jq -r '.data.version')
-        _MB=$(if [[ -f /etc/systemd/system/mevboost.service ]]; then printf "Mev-boost: %s" "$(mev-boost --version 2>&1 | sed -E 's/.*v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/' || echo 'unknown')"; else printf "Mev-boost: Not Installed"; fi)
-        if [[ -z "${_VC:-}" ]] ; then
-          _VC="Validator client: Not installed."
-        fi
-        if [[ -z "${_CL:-}" ]] ; then
-          _CL="Not installed or still starting up."
-        fi
-        if [[ -z "${_EL:-}" ]] ; then
-          _EL="Not installed or still starting up."
-        fi
-        whiptail --title "Installed versions" --msgbox "Consensus client: ${_CL}\nExecution client: ${_EL}\n${_VC}\n${_MB}\nEthPillar: $EP_VERSION" 12 78
+        whiptail --title "Installed versions" --msgbox "$(printInstalledVersions)" 12 78
         ;;
       📊)
         # Install btop process monitoring
@@ -1730,6 +1764,11 @@ function setNodeMode(){
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  if [[ "${1:-}" == "--version" ]]; then
+    initializeRpcEndpoints
+    printInstalledVersions
+    exit 0
+  fi
   checkV1StakingSetup
   setWhiptailColors
   installNode

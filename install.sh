@@ -199,6 +199,8 @@ if [[ "$OS" == "Linux" ]]; then
     linux_install_pre
     linux_install_installer
     linux_install_python_deps
+    ohai "Allowing user to view journalctl logs"
+    ensure_journal_access || ohai "Journal access granted; open a new terminal session before viewing logs without sudo"
     linux_install_motd
 
     echo ""

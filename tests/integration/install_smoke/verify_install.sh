@@ -4,10 +4,11 @@ set -euo pipefail
 
 EXPECTED_REPO=""
 FORBID_REPO=""
+INSTALL_USER="${EPSTAKER_USER:-epstaker}"
 
 usage() {
   cat <<'EOF'
-Usage: verify_install.sh --expected-repo PATH [--forbid-repo PATH]
+Usage: verify_install.sh --expected-repo PATH [--forbid-repo PATH] [--install-user USER]
 
 Checks:
   - ethpillar.sh exists and is executable in the expected repo
@@ -15,6 +16,7 @@ Checks:
   - `ethpillar` is on PATH
   - Python venv exists with runtime dependencies
   - functions.sh resolves BASE_DIR to the expected repo
+  - install user was granted systemd-journal access during install
   - optional: symlink must not target --forbid-repo
 EOF
 }
@@ -22,6 +24,32 @@ EOF
 die() {
   echo "FAIL: $*" >&2
   exit 1
+}
+
+verify_journal_access_for_install_user() {
+  local repo="$1"
+  local user="$2"
+  local functions_dir="/ethpillar"
+
+  if [[ ! -f "${functions_dir}/functions.sh" ]]; then
+    functions_dir="$repo"
+  fi
+
+  (
+    cd "$functions_dir"
+    # shellcheck source=/dev/null
+    source ./functions.sh
+
+    user_in_journal_group "$user" \
+      || die "${user} not in systemd-journal group after install"
+
+    if journalctl -n 1 --quiet _UID=0 >/dev/null 2>&1; then
+      user_can_read_system_journal "$user" \
+        || die "system journal probe failed for ${user} after install"
+    fi
+  )
+
+  echo "OK: journal access verified for install user ${user}"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -32,6 +60,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --forbid-repo)
       FORBID_REPO="$2"
+      shift 2
+      ;;
+    --install-user)
+      INSTALL_USER="$2"
       shift 2
       ;;
     -h|--help)
@@ -73,5 +105,7 @@ if [[ -n "$FORBID_REPO" && -f "${FORBID_REPO}/ethpillar.sh" ]]; then
   FORBID_SCRIPT="$(readlink -f "${FORBID_REPO}/ethpillar.sh")"
   [[ "$LINK" != "$FORBID_SCRIPT" ]] || die "symlink must not point at forbidden repo ${FORBID_REPO}"
 fi
+
+verify_journal_access_for_install_user "$EXPECTED_REPO" "$INSTALL_USER"
 
 echo "OK: install verified for ${EXPECTED_REPO}"

@@ -190,9 +190,9 @@ async def headless_monitor(tasks: list[TestTask], exec_coros):
     async def monitor():
         while True:
             for task in tasks:
-                if task.status in ("PASS", "FAIL") and task.label not in completed:
-                    print(f"[{task.status}] {task.label} ({task.duration}s)", flush=True)
-                    completed.add(task.label)
+                if task.status in ("PASS", "FAIL") and task.log_name not in completed:
+                    print(f"[{task.status}] {task.log_name} ({task.duration}s)", flush=True)
+                    completed.add(task.log_name)
             if all(task.status in ("PASS", "FAIL") for task in tasks):
                 break
             await asyncio.sleep(5)

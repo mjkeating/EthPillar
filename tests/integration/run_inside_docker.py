@@ -30,6 +30,7 @@ CAPLIN_POLL_ATTEMPTS = 72      # 360s — HOODI checkpoint + header sync before 
 
 # Prefer local warmed cache (see warm_checkpoint_cache.py); fall back to ethpandaops.
 from checkpoint_cache_common import checkpoint_sync_url_for_network  # noqa: E402
+from latest_snapshot import ENV_VAR as LATEST_SNAPSHOT_ENV, SNAPSHOT_PATH, write_snapshot  # noqa: E402
 
 # Import INSTALL_DIR from common so the path is maintained centrally
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -260,6 +261,7 @@ def integration_subprocess_env() -> Dict[str, str]:
     env = os.environ.copy()
     env["ENABLE_EP_CACHE"] = "1"
     env["ETHPILLAR_ENV_FILE"] = INTEGRATION_ENV_FILE
+    env[LATEST_SNAPSHOT_ENV] = SNAPSHOT_PATH
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONPATH"] = "/ethpillar/tests/integration:" + env.get("PYTHONPATH", "")
     return env
@@ -310,6 +312,7 @@ def run_install(args: Any, fee_address: str):
             print(f"  Checkpoint sync via upstream: {checkpoint_url}")
 
     try:
+        write_snapshot(SNAPSHOT_PATH)
         subprocess.run(cmd, capture_output=False, check=True, env=integration_subprocess_env())
     except subprocess.CalledProcessError as e:
         print(f"❌ Script failed with return code {e.returncode}")

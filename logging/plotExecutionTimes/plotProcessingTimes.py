@@ -142,6 +142,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--el-rpc-endpoint", default=os.environ.get("EL_RPC_ENDPOINT", "http://127.0.0.1:8545"))
     parser.add_argument("--max-points", type=int, default=DEFAULT_MAX_POINTS)
     parser.add_argument("--tail", type=int, default=DEFAULT_JOURNAL_TAIL, help="Historical journal lines to scan before following")
+    parser.add_argument(
+        "--journalctl-cmd",
+        nargs="+",
+        default=None,
+        help="Override journalctl executable/prefix (defaults to auto-detect with sudo fallback)",
+    )
     parser.add_argument("--refresh-per-second", type=int, default=8)
     parser.add_argument("--client-refresh-seconds", type=int, default=30)
     parser.add_argument("--self-test", action="store_true", help="Parse sample client logs and exit")
@@ -197,7 +203,7 @@ async def async_main(args: argparse.Namespace) -> None:
         client_version = format_manual_client_label(args.client)
 
     parser_state = ParserState(client_name)
-    producer = choose_producer(args.source, args.unit, args.tail)
+    producer = choose_producer(args.source, args.unit, args.tail, args.journalctl_cmd)
     queue: asyncio.Queue[object] = asyncio.Queue(maxsize=1000)
     plot_state = PlotState(max_points=args.max_points, machine_info=build_machine_info(client_version))
     renderer = PlotRenderer()

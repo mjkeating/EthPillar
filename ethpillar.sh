@@ -40,7 +40,7 @@ _platform=$(get_platform)
 _arch=$(get_arch)
 export _platform _arch
 
-initializeNetwork(){
+initializeRpcEndpoints(){
   # Defaults if not provided
   : "${CL_IP_ADDRESS:=127.0.0.1}"
   : "${CL_REST_PORT:=5052}"
@@ -68,10 +68,58 @@ initializeNetwork(){
       export EL_RPC_ENDPOINT="$execution_l1_rpc"
     fi
   fi
+}
 
-  # Initialize network variables
+initializeNetwork(){
+  initializeRpcEndpoints
   getNetworkConfig
   getNetwork
+}
+
+function printInstalledVersions() {
+  local _VC _CL _EL _MB _mb_version
+
+  if [[ -f /etc/systemd/system/validator.service ]]; then
+    getClient
+    getClVcCurrentVersion "$VC" vc
+    _VC="Validator client: $VC $VERSION"
+  fi
+  if [[ -f /etc/systemd/system/consensus.service ]]; then
+    _CL=$(curl -s -X GET "${API_BN_ENDPOINT}/eth/v1/node/version" \
+      -H "accept: application/json" \
+      | jq -r '.data.version')
+  fi
+  if [[ -f /etc/systemd/system/execution.service ]]; then
+    _EL=$(curl -s -X POST \
+      -H "Content-Type: application/json" \
+      --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":2}' \
+      "${EL_RPC_ENDPOINT}" \
+      | jq -r '.result')
+  fi
+  if [[ "${EL:-}" == "Erigon-Caplin" ]]; then
+    _CL=$(curl -s -X GET "${API_BN_ENDPOINT}/eth/v1/node/version" \
+      -H "accept: application/json" \
+      | jq -r '.data.version')
+  fi
+  if [[ -f /etc/systemd/system/mevboost.service ]]; then
+    _mb_version=$(mev-boost --version 2>&1 \
+      | sed -E 's/.*v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/' \
+      || echo 'unknown')
+    _MB="Mev-boost: ${_mb_version}"
+  else
+    _MB="Mev-boost: Not Installed"
+  fi
+  if [[ -z "${_VC:-}" ]] ; then
+    _VC="Validator client: Not installed."
+  fi
+  if [[ -z "${_CL:-}" ]] ; then
+    _CL="Not installed or still starting up."
+  fi
+  if [[ -z "${_EL:-}" ]] ; then
+    _EL="Not installed or still starting up."
+  fi
+  printf 'Consensus client: %s\nExecution client: %s\n%s\n%s\nEthPillar: %s\n' \
+    "$_CL" "$_EL" "$_VC" "$_MB" "$EP_VERSION"
 }
 
 menuMain(){
@@ -240,7 +288,7 @@ while true; do
         if [[ -d /opt/ethpillar/aztec ]] && [[ ! -f /etc/systemd/system/consensus.service ]]; then
               cd  /opt/ethpillar/aztec && docker compose logs -f --tail=233
         fi
-        sudo bash -c 'journalctl -u validator -u consensus -u execution -u mevboost -u csm_nimbusvalidator --no-hostname -f | ccze -A'
+        view_journal_logs -u validator -u consensus -u execution -u mevboost -u csm_nimbusvalidator --no-hostname -f
         ;;
       📜)
         export_logs
@@ -358,7 +406,7 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       1)
-        sudo bash -c 'journalctl -fu execution | ccze -A'
+        view_journal_logs -fu execution
         ;;
       2)
         sudo service execution start
@@ -428,7 +476,7 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       1)
-        sudo bash -c 'journalctl -fu consensus | ccze -A'
+        view_journal_logs -fu consensus
         ;;
       2)
         sudo service consensus start
@@ -522,9 +570,9 @@ while true; do
     case $SUBCHOICE in
       1)
         if [[ "$_validator_mode" == "integrated_grandine" ]]; then
-          sudo bash -c 'journalctl -fu consensus | ccze -A'
+          view_journal_logs -fu consensus
         else
-          sudo bash -c 'journalctl -fu validator | ccze -A'
+          view_journal_logs -fu validator
         fi
         ;;
       2)
@@ -618,7 +666,7 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       1)
-        sudo bash -c 'journalctl -fu mevboost | ccze -A'
+        view_journal_logs -fu mevboost
         ;;
       2)
         sudo service mevboost start
@@ -701,21 +749,7 @@ while true; do
         if whiptail --title "Shutdown" --defaultno --yesno "Are you sure you want to shutdown?" 8 78; then sudo shutdown now; fi
         ;;
       📦)
-        test -f /etc/systemd/system/validator.service && getClient && getClVcCurrentVersion "$VC" vc && _VC="Validator client: $VC $VERSION"
-        test -f /etc/systemd/system/consensus.service && _CL=$(curl -s -X GET "${API_BN_ENDPOINT}/eth/v1/node/version" -H "accept: application/json" | jq -r '.data.version')
-        test -f /etc/systemd/system/execution.service && _EL=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":2}' "${EL_RPC_ENDPOINT}" | jq -r '.result')
-        [[ $EL == "Erigon-Caplin" ]] && _CL=$(curl -s -X GET "${API_BN_ENDPOINT}/eth/v1/node/version" -H "accept: application/json" | jq -r '.data.version')
-        _MB=$(if [[ -f /etc/systemd/system/mevboost.service ]]; then printf "Mev-boost: %s" "$(mev-boost --version 2>&1 | sed -E 's/.*v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/' || echo 'unknown')"; else printf "Mev-boost: Not Installed"; fi)
-        if [[ -z "${_VC:-}" ]] ; then
-          _VC="Validator client: Not installed."
-        fi
-        if [[ -z "${_CL:-}" ]] ; then
-          _CL="Not installed or still starting up."
-        fi
-        if [[ -z "${_EL:-}" ]] ; then
-          _EL="Not installed or still starting up."
-        fi
-        whiptail --title "Installed versions" --msgbox "Consensus client: ${_CL}\nExecution client: ${_EL}\n${_VC}\n${_MB}\nEthPillar: $EP_VERSION" 12 78
+        whiptail --title "Installed versions" --msgbox "$(printInstalledVersions)" 12 78
         ;;
       📊)
         # Install btop process monitoring
@@ -864,7 +898,7 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       1)
-        sudo bash -c 'journalctl -u grafana-server -u prometheus -u ethereum-metrics-exporter -u prometheus-node-exporter --no-hostname -f | ccze -A'
+        view_journal_logs -u grafana-server -u prometheus -u ethereum-metrics-exporter -u prometheus-node-exporter --no-hostname -f
         ;;
       2)
         sudo systemctl start grafana-server prometheus ethereum-metrics-exporter prometheus-node-exporter
@@ -1320,7 +1354,7 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       1)
-        sudo bash -c 'journalctl -fu csm_nimbusvalidator | ccze -A'
+        view_journal_logs -fu csm_nimbusvalidator
         ;;
       2)
         sudo service csm_nimbusvalidator start
@@ -1730,6 +1764,11 @@ function setNodeMode(){
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  if [[ "${1:-}" == "--version" ]]; then
+    initializeRpcEndpoints
+    printInstalledVersions
+    exit 0
+  fi
   checkV1StakingSetup
   setWhiptailColors
   installNode

@@ -175,7 +175,7 @@ linux_install_validator-install() {
         $python "${ETHPILLAR_DIR}/${install_file}"
     fi
     ohai "Allowing user to view journalctl logs"
-    sudo usermod -a -G systemd-journal ${USER:-root}
+    ensure_journal_access || ohai "Journal access granted; open a new terminal session before viewing logs without sudo"
     ohai "Install complete!"
     exit_on_error $?
 

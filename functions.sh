@@ -1594,6 +1594,99 @@ Actions: $VA_URL
     whiptail --title "Validator Actions: New features since Pectra Upgrade" --msgbox "$MSG" 18 78
 }
 
+# Return 0 when the current user can read system journal entries without sudo.
+can_read_journal() {
+    if [[ "$(id -u)" -eq 0 ]]; then
+        return 0
+    fi
+    # Per-user journals succeed without systemd-journal membership; probe system logs.
+    journalctl -n 1 --quiet _UID=0 >/dev/null 2>&1
+}
+
+# Return 0 when the named user appears in systemd-journal.
+user_in_journal_group() {
+    local user="${1:-$(whoami)}"
+    getent group systemd-journal 2>/dev/null | grep -qE -o -- "$user"
+}
+
+# Return 0 when the user can read system journal entries without sudo.
+user_can_read_system_journal() {
+    local user="${1:-$(whoami)}"
+
+    if [[ "$user" == "$(whoami)" ]]; then
+        can_read_journal && return 0
+        if user_in_journal_group "$user"; then
+            sg systemd-journal -c 'journalctl -n 1 --quiet _UID=0 >/dev/null' 2>/dev/null && return 0
+        fi
+        return 1
+    fi
+
+    if su - "$user" -c 'journalctl -n 1 --quiet _UID=0 >/dev/null 2>&1'; then
+        return 0
+    fi
+    if user_in_journal_group "$user"; then
+        su - "$user" -c "sg systemd-journal -c 'journalctl -n 1 --quiet _UID=0 >/dev/null'" && return 0
+    fi
+    return 1
+}
+
+# Add the current user to systemd-journal when needed. Returns 0 when journal
+# access works in this session, 1 when a new login is required.
+ensure_journal_access() {
+    local current_user
+    current_user=$(whoami)
+
+    if [[ "$(id -u)" -eq 0 ]]; then
+        return 0
+    fi
+
+    if ! user_in_journal_group "$current_user"; then
+        sudo usermod -aG systemd-journal "$current_user"
+    fi
+
+    can_read_journal
+}
+
+_journal_log_colorizer() {
+    if command -v ccze >/dev/null 2>&1; then
+        ccze -A
+    else
+        cat
+    fi
+}
+
+# Run journalctl with sudo only when unprivileged access is unavailable.
+journalctl_run() {
+    if can_read_journal; then
+        journalctl "$@"
+        return $?
+    fi
+
+    ensure_journal_access || true
+    if can_read_journal; then
+        journalctl "$@"
+        return $?
+    fi
+
+    sudo journalctl "$@"
+}
+
+# Follow/colorize journal logs; falls back to sudo when journal access is unavailable.
+view_journal_logs() {
+    if can_read_journal; then
+        journalctl "$@" | _journal_log_colorizer
+        return $?
+    fi
+
+    ensure_journal_access || true
+    if can_read_journal; then
+        journalctl "$@" | _journal_log_colorizer
+        return $?
+    fi
+
+    sudo journalctl "$@" | _journal_log_colorizer
+}
+
 # Function to display log dialog and return the selected option
 function get_user_input() {
     local OPTIONS=()
@@ -1665,7 +1758,7 @@ function export_logs() {
     output_file=$(whiptail --title "Output File Name" --inputbox "Enter the output file name:" 10 60 "ethpillar_logs_${service}.txt" 3>&1 1>&2 2>&3)
 
     # Generate journalctl command based on user input and save to a log file
-    sudo journalctl --since "$start_time" --until "$end_time" -u "$service" | tee "$HOME"/"$output_file"
+    journalctl_run --since "$start_time" --until "$end_time" -u "$service" | tee "$HOME"/"$output_file"
 
     whiptail --title "Export Complete" --msgbox "Logs have been exported to $HOME/$output_file" 10 60
 }

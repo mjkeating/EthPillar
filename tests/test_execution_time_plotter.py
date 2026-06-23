@@ -86,6 +86,29 @@ def test_auto_source_uses_journalctl_reader():
     assert producer.__class__.__name__ == "JournalctlProducer"
 
 
+def test_resolve_journalctl_cmd_uses_unprivileged_journalctl(monkeypatch):
+    from producers import resolve_journalctl_cmd
+
+    monkeypatch.setattr(
+        "producers.subprocess.run",
+        lambda *args, **kwargs: type("Result", (), {"returncode": 0})(),
+    )
+
+    assert resolve_journalctl_cmd() == ("journalctl",)
+
+
+def test_resolve_journalctl_cmd_falls_back_to_sudo(monkeypatch):
+    from producers import resolve_journalctl_cmd
+
+    monkeypatch.setattr("producers.os.geteuid", lambda: 1000)
+    monkeypatch.setattr(
+        "producers.subprocess.run",
+        lambda *args, **kwargs: type("Result", (), {"returncode": 1})(),
+    )
+
+    assert resolve_journalctl_cmd() == ("sudo", "journalctl")
+
+
 def test_parse_execution_client_version_strips_ethrex_rpc_noise():
     raw = (
         "ethrex:v17.0.0-HEAD-d7492778060776019f49dad9b5b2acff82a0a007/"

@@ -80,8 +80,8 @@ Two isolated `docker run --rm` containers (no systemd required):
 
 | Case | How it is simulated | Expected install root |
 |------|----------------------|------------------------|
-| Curl one-liner | `bash < /ethpillar/install.sh` from `/tmp` | `~/git/ethpillar` |
-| Clone then install | copy repo to `/opt/ethpillar-custom`, run `install.sh` | `/opt/ethpillar-custom` |
+| Curl one-liner | `bash < /ethpillar/install.sh` from `/tmp` as `epstaker` | `~/git/ethpillar` under epstaker's home |
+| Clone then install | copy repo to `/opt/ethpillar-custom`, run `install.sh` as `epstaker` | `/opt/ethpillar-custom` |
 
 Both use the bind-mounted workspace as the install source
 (`ETHPILLAR_INSTALL_COPY_FROM=/ethpillar` on the curl path) so PR branches are tested
@@ -97,7 +97,8 @@ bash tests/integration/run_install_smoke_tests.sh
 - `ethpillar` is on `PATH`
 - `.venv` exists with runtime Python deps (`dotenv`, `requests`, `tqdm`)
 - `functions.sh` resolves `BASE_DIR` to the expected repo
-- clone-path test: symlink must **not** point at `~/git/ethpillar`
+- the install user (`epstaker`) is in `systemd-journal` after `install.sh` runs
+- clone-path test: symlink must **not** point at `~/git/ethpillar` under epstaker's home
 
 Non-interactive installs skip the “Press RETURN” prompt when stdin is not a TTY or
 `ETHPILLAR_INSTALL_NONINTERACTIVE=1` is set.

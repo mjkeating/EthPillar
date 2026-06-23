@@ -6,6 +6,10 @@
 #
 # Made for home and solo stakers 🏠🥩
 
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=functions.sh
+source "$BASE_DIR/functions.sh"
+
 # Install btop process monitoring
 if ! command -v btop &> /dev/null; then
    sudo apt-get install btop -y
@@ -21,16 +25,11 @@ if ! command -v ccze &> /dev/null; then
    sudo apt-get install ccze -y
 fi
 
-# Check if the current user belongs to the systemd-journal group
-current_user=$(whoami)
-group_members=$(getent group systemd-journal | cut -d: -f2-)
-
-if ! echo "$group_members" | grep -qE -o -- "$current_user"; then
+if ! ensure_journal_access; then
   clear
-  # Add the user to the systemd-journal group if they're not already a member
-  sudo usermod -aG systemd-journal $current_user
+  current_user=$(whoami)
   echo -e "\033[1m########## New Terminal Session Required ############"
-  echo "To view logs, $current_user has been added to systemd-journal group."
+  echo "To view logs, $current_user needs an active systemd-journal group session."
   echo "Open a new terminal, run 'ethpillar', then check logs again."
   echo "Press ENTER to continue"
   read

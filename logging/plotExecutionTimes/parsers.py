@@ -54,8 +54,8 @@ class ExecutionLogParser:
     """Parse execution-client log lines into normalized plotting points.
 
     The parser supports multiple client log formats (geth, reth, besu, nethermind,
-    and a generic fallback). It extracts gas used and elapsed processing time
-    and returns a `ProcessingPoint` when a complete measurement is found.
+    ethrex, and a generic fallback). It extracts gas used and elapsed processing
+    time and returns a `ProcessingPoint` when a complete measurement is found.
     """
 
     def __init__(self, client_name: str) -> None:
@@ -88,6 +88,13 @@ class ExecutionLogParser:
             return _compile(r"mwei bfee\|\s*([\d,]+)\s+\(.*?([\d.]+)s exec")
         if client_name == "reth":
             return _compile(r".*number=(\d+).*gas_used=([\d.]+)Mgas.*elapsed=([\d.]+)(ms|s)")
+        if client_name == "ethrex":
+            # Matches print_add_block_pipeline_logs header in ethrex blockchain.rs:
+            # [METRIC] BLOCK {n} {hash} | {Ggas/s} | {total_ms} ms | {txs} txs | {Mgas} ({util}%)
+            return _compile(
+                r"\[METRIC\]\s+BLOCK\s+\d+\s+0x[0-9a-f]+\s*\|\s*[\d.]+\s+Ggas/s\s*\|\s*"
+                r"([\d,.]+)\s+ms\s*\|\s*\d+\s+txs\s*\|\s*([\d,.]+)\s+Mgas\s*\(\d+%\)"
+            )
         if client_name == "nethermind":
             return None
         return _compile(r".*gas_used=([\d.]+)Mgas.*elapsed=([\d.]+)(ms|s)")
@@ -180,6 +187,10 @@ class ExecutionLogParser:
             gas_used = float(match.group(1).replace(",", "")) / 1_000_000.0
             elapsed_value = float(match.group(2))
             elapsed_unit = "s"
+        elif self.client_name == "ethrex":
+            elapsed_time_ms = float(match.group(1).replace(",", ""))
+            gas_used = float(match.group(2).replace(",", ""))
+            return ProcessingPoint(gas_used_mgas=gas_used, elapsed_time_ms=elapsed_time_ms)
         else:
             gas_used = float(match.group(1))
             elapsed_value = float(match.group(2))

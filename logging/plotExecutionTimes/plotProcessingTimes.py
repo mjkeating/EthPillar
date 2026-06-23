@@ -168,6 +168,10 @@ def run_self_test() -> int:
         "reth": "INFO number=23493228 gas_used=8.50Mgas elapsed=59.916758ms",
         "besu": "INFO | 20,237,520 (100.0%) gas; 1.2 mwei bfee| 20,237,520 (0.154s exec)",
         "nethermind": "Processed 123 | 345.6 ms Block 123 17.42 MGas",
+        "ethrex": (
+            "[METRIC] BLOCK 25376968 0x2c14fb16115945ffac5dfaefae96638e13865063183a038c838f314d51f90c77 "
+            "| 0.642 Ggas/s | 76.29 ms | 1023 txs | 49 Mgas (82%)"
+        ),
     }
 
     for client, line in samples.items():

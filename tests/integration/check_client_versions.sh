@@ -2,6 +2,8 @@
 # Verify functions.sh can parse installed client versions and that each matches
 # release_info LATEST — the same comparison update_*.sh uses before showing
 # "You are already on the latest version".
+# Integration tests snapshot LATEST before deploy (latest_snapshot.py) and
+# compare against that install-time snapshot so a mid-test release cannot fail verify.
 set -euo pipefail
 
 cd /ethpillar
@@ -25,22 +27,44 @@ get_latest_release_tag() {
   echo "$tag"
 }
 
+# Integration tests snapshot LATEST before deploy so a release mid-test cannot fail verify.
+get_expected_release_tag() {
+  local client="$1"
+  local snapshot="${ETHPILLAR_INTEGRATION_LATEST_SNAPSHOT:-}"
+  local key="${client,,}"
+  local tag
+
+  if [[ -n "$snapshot" && -f "$snapshot" ]]; then
+    tag=$(jq -r --arg k "$key" '.[$k] // empty' "$snapshot")
+    if [[ -n "$tag" && "$tag" != "null" ]]; then
+      echo "$tag"
+      return 0
+    fi
+  fi
+  get_latest_release_tag "$client"
+}
+
 assert_matches_latest() {
   local label="$1"
   local release_client="$2"
   local installed="$3"
-  local latest
+  local expected
+  local expected_label="LATEST"
 
-  if ! latest=$(get_latest_release_tag "$release_client"); then
-    echo "❌ ${label}: could not resolve LATEST release tag"
+  if [[ -n "${ETHPILLAR_INTEGRATION_LATEST_SNAPSHOT:-}" && -f "${ETHPILLAR_INTEGRATION_LATEST_SNAPSHOT}" ]]; then
+    expected_label="install-time LATEST"
+  fi
+
+  if ! expected=$(get_expected_release_tag "$release_client"); then
+    echo "❌ ${label}: could not resolve ${expected_label} release tag"
     fail=1
     return 0
   fi
-  if installed_matches_latest_tag "$installed" "$latest"; then
-    echo "✅ ${label} matches LATEST (${installed#v}) — update menu would show already on latest"
+  if installed_matches_latest_tag "$installed" "$expected"; then
+    echo "✅ ${label} matches ${expected_label} (${installed#v}) — update menu would show already on latest"
     return 0
   fi
-  echo "❌ ${label} mismatch: installed ${installed#v}, LATEST ${latest#v}"
+  echo "❌ ${label} mismatch: installed ${installed#v}, ${expected_label} ${expected#v}"
   fail=1
 }
 

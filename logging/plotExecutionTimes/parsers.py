@@ -53,10 +53,23 @@ def _compile(pattern: str) -> re.Pattern[str]:
 class ExecutionLogParser:
     """Parse execution-client log lines into normalized plotting points.
 
-    The parser supports multiple client log formats (geth, reth, besu, nethermind,
-    ethrex, and a generic fallback). It extracts gas used and elapsed processing
-    time and returns a `ProcessingPoint` when a complete measurement is found.
+    Each client logs block processing differently. The Y-axis is always elapsed
+    milliseconds and the X-axis is gas used in MGas, but the log field semantics
+    vary — see ``CLIENT_LOG_TIMING`` for what each parser actually measures.
+
+    Supported clients: geth, reth, besu, nethermind, erigon, ethrex, and a
+    generic ``gas_used``/``elapsed`` fallback for unknown clients.
     """
+
+    # What each client's parsed timing field represents (for apples-to-oranges awareness).
+    CLIENT_LOG_TIMING = {
+        "geth": "Block import elapsed (execution + validation) from chain segment log",
+        "reth": "Block execution elapsed from structured log fields",
+        "besu": "Block exec time (modern) or total import time (legacy Imported line)",
+        "nethermind": "Block processing time from Processed line (paired with MGas line)",
+        "erigon": "EVM execution time from head updated (gas derived from mgas/s × time)",
+        "ethrex": "Full add-block pipeline time (validate + exec + merkle + store)",
+    }
 
     def __init__(self, client_name: str) -> None:
         """Initialize the parser for a specific client.
@@ -70,6 +83,19 @@ class ExecutionLogParser:
         self.last_nethermind_elapsed_ms: Optional[float] = None
         self.nethermind_time_pattern = _compile(r"Processed\s+(\d+)\s+\|\s+([\d,.]+)\s*ms")
         self.nethermind_gas_pattern = _compile(r"\bBlock\b.*?([\d,.]+)\s*MGas(?!/s)")
+        self.besu_modern_pattern = _compile(
+            r"Imported\s+#(?:[\d,]+).*?([\d,]+)\s*\(\s*[\d.]+\s*\%\)\s*gas\s+used\s*\|\s*([\d,.]+)\s*ms\s+exec"
+        )
+        self.besu_legacy_pattern = _compile(
+            r"Imported\s+#(?:[\d,]+).*?([\d,]+)\s*\(\s*[\d.]+\s*\%\)\s*gas\s*/.*?in\s+([\d,.]+)\s*s\b"
+        )
+        self.erigon_head_updated_pattern = _compile(
+            r"head updated.*?execution=([\d,.]+)(ms|s).*?mgas/s=([\d,.]+)"
+        )
+        self.erigon_metric_pattern = _compile(
+            r"\[METRIC\]\s+BLOCK EXECUTION THROUGHPUT\s+\(\d+\):\s+[\d.]+\s+Ggas/s\s+"
+            r"TIME SPENT:\s+([\d,.]+)\s+ms\.\s+Gas Used:\s+([\d,.]+)"
+        )
 
     @staticmethod
     def _client_pattern(client_name: str) -> Optional[re.Pattern[str]]:
@@ -85,7 +111,9 @@ class ExecutionLogParser:
         if client_name == "geth":
             return _compile(r"Imported new potential chain segment.*mgas=([\d.]+).*elapsed=([\d.]+)(ms|s)")
         if client_name == "besu":
-            return _compile(r"mwei bfee\|\s*([\d,]+)\s+\(.*?([\d.]+)s exec")
+            return None
+        if client_name == "erigon":
+            return None
         if client_name == "reth":
             return _compile(r".*number=(\d+).*gas_used=([\d.]+)Mgas.*elapsed=([\d.]+)(ms|s)")
         if client_name == "ethrex":
@@ -116,6 +144,10 @@ class ExecutionLogParser:
 
         if self.client_name == "nethermind":
             return self._parse_nethermind_line(line)
+        if self.client_name == "besu":
+            return self._parse_besu_line(line)
+        if self.client_name == "erigon":
+            return self._parse_erigon_line(line)
         return self._parse_single_line_client(line)
 
     def _parse_nethermind_line(self, line: str) -> Optional[ProcessingPoint]:
@@ -158,6 +190,60 @@ class ExecutionLogParser:
         self.last_nethermind_elapsed_ms = None
         return point
 
+    @staticmethod
+    def _elapsed_ms(value: float, unit: str) -> float:
+        return value * 1000.0 if unit.lower() == "s" else value
+
+    def _parse_besu_line(self, line: str) -> Optional[ProcessingPoint]:
+        """Parse Besu EngineNewPayload import summary lines.
+
+        Modern format (Besu 26.x+):
+            Imported #N (...) | ... | 34,833,694 (58.1%) gas used | 671.1ms exec | ...
+        Legacy format:
+            Imported #N / ... / 18,250,609 (60.8%) gas / (...) in 1.507s. Peers: N
+        """
+
+        match = self.besu_modern_pattern.search(line)
+        if match:
+            gas_used_mgas = float(match.group(1).replace(",", "")) / 1_000_000.0
+            elapsed_time_ms = float(match.group(2).replace(",", ""))
+            return ProcessingPoint(gas_used_mgas=gas_used_mgas, elapsed_time_ms=elapsed_time_ms)
+
+        match = self.besu_legacy_pattern.search(line)
+        if not match:
+            return None
+
+        gas_used_mgas = float(match.group(1).replace(",", "")) / 1_000_000.0
+        elapsed_time_ms = float(match.group(2).replace(",", "")) * 1000.0
+        return ProcessingPoint(gas_used_mgas=gas_used_mgas, elapsed_time_ms=elapsed_time_ms)
+
+    def _parse_erigon_line(self, line: str) -> Optional[ProcessingPoint]:
+        """Parse Erigon per-block timing logs.
+
+        Primary (synced node, engine/Caplin path):
+            head updated ... execution=932.476215ms mgas/s=16.23 ...
+        Gas is derived: mgas/s × execution_seconds (not logged directly).
+
+        Fallback (older metric summary):
+            [METRIC] BLOCK EXECUTION THROUGHPUT (N): X Ggas/s TIME SPENT: Y ms. Gas Used: Z ...
+        """
+
+        match = self.erigon_head_updated_pattern.search(line)
+        if match:
+            elapsed_value = float(match.group(1).replace(",", ""))
+            elapsed_time_ms = self._elapsed_ms(elapsed_value, match.group(2))
+            mgas_per_second = float(match.group(3).replace(",", ""))
+            gas_used_mgas = mgas_per_second * (elapsed_time_ms / 1000.0)
+            return ProcessingPoint(gas_used_mgas=gas_used_mgas, elapsed_time_ms=elapsed_time_ms)
+
+        match = self.erigon_metric_pattern.search(line)
+        if not match:
+            return None
+
+        elapsed_time_ms = float(match.group(1).replace(",", ""))
+        gas_used_mgas = float(match.group(2).replace(",", "")) * 1000.0
+        return ProcessingPoint(gas_used_mgas=gas_used_mgas, elapsed_time_ms=elapsed_time_ms)
+
     def _parse_single_line_client(self, line: str) -> Optional[ProcessingPoint]:
         """Parse a single-line client log entry using the client-specific pattern.
 
@@ -183,10 +269,6 @@ class ExecutionLogParser:
             gas_used = float(match.group(1))
             elapsed_value = float(match.group(2))
             elapsed_unit = match.group(3).lower()
-        elif self.client_name == "besu":
-            gas_used = float(match.group(1).replace(",", "")) / 1_000_000.0
-            elapsed_value = float(match.group(2))
-            elapsed_unit = "s"
         elif self.client_name == "ethrex":
             elapsed_time_ms = float(match.group(1).replace(",", ""))
             gas_used = float(match.group(2).replace(",", ""))
@@ -196,5 +278,5 @@ class ExecutionLogParser:
             elapsed_value = float(match.group(2))
             elapsed_unit = match.group(3).lower()
 
-        elapsed_time_ms = elapsed_value * 1000.0 if elapsed_unit == "s" else elapsed_value
+        elapsed_time_ms = self._elapsed_ms(elapsed_value, elapsed_unit)
         return ProcessingPoint(gas_used_mgas=gas_used, elapsed_time_ms=elapsed_time_ms)

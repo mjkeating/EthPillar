@@ -2,6 +2,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "logging" / "plotExecutionTimes" / "plotProcessingTimes.py"
 SYSTEM_INFO_PATH = Path(__file__).resolve().parents[1] / "logging" / "plotExecutionTimes" / "system_info.py"
@@ -36,13 +38,54 @@ def test_reth_parser_converts_seconds_to_milliseconds():
     assert point.elapsed_time_ms == 1250.0
 
 
-def test_besu_parser_converts_raw_gas_to_mgas():
+def test_besu_parser_reads_modern_imported_line():
     parser = plotter.ExecutionLogParser("besu")
+    line = (
+        'Imported #25,268,932 (571ca.....32896)| 292 tx ( 62.0% parallel)| 16 ws| 3 blobs| '
+        "117.07 mwei bfee| 34,833,694 ( 58.1%) gas used| 671.1ms exec| 51.91 Mgas/s| 1 peers"
+    )
 
-    point = parser.parse_line("INFO mwei bfee| 20,237,520 (0.154s exec)")
+    point = parser.parse_line(line)
 
-    assert point.gas_used_mgas == 20.23752
-    assert point.elapsed_time_ms == 154.0
+    assert point.gas_used_mgas == pytest.approx(34.833694)
+    assert point.elapsed_time_ms == pytest.approx(671.1)
+
+
+def test_besu_parser_reads_legacy_imported_line():
+    parser = plotter.ExecutionLogParser("besu")
+    line = (
+        "Imported #15,788,198 / 130 tx / base fee 18.16 gwei / "
+        "18,250,609 (60.8%) gas / (0x3e0340d5c9681e76d9f99fc79304d0853063a754a7cd347b464101eff0e1c5f5) "
+        "in 1.507s. Peers: 17"
+    )
+
+    point = parser.parse_line(line)
+
+    assert point.gas_used_mgas == pytest.approx(18.250609)
+    assert point.elapsed_time_ms == pytest.approx(1507.0)
+
+
+def test_erigon_parser_reads_head_updated_line():
+    parser = plotter.ExecutionLogParser("erigon")
+    line = (
+        "head updated hash=0x33b4bc15574ed67e4993af30571e613474129036c0c55804dc9ad9790d646441 "
+        "number=21851697 age=4s execution=932.476215ms mgas/s=16.23 average mgas/s=18.07"
+    )
+
+    point = parser.parse_line(line)
+
+    assert point.elapsed_time_ms == pytest.approx(932.476215)
+    assert point.gas_used_mgas == pytest.approx(16.23 * 0.932476215)
+
+
+def test_erigon_parser_reads_metric_throughput_line():
+    parser = plotter.ExecutionLogParser("erigon")
+    line = "[METRIC] BLOCK EXECUTION THROUGHPUT (123): 0.642 Ggas/s TIME SPENT: 76 ms. Gas Used: 0.049 (82%), #Txs: 1023."
+
+    point = parser.parse_line(line)
+
+    assert point.elapsed_time_ms == 76.0
+    assert point.gas_used_mgas == 49.0
 
 
 def test_nethermind_parser_combines_elapsed_and_following_gas_line():

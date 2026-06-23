@@ -172,7 +172,14 @@ def run_self_test() -> int:
     samples = {
         "geth": "INFO Imported new potential chain segment number=1 mgas=20.42 elapsed=125.573305ms",
         "reth": "INFO number=23493228 gas_used=8.50Mgas elapsed=59.916758ms",
-        "besu": "INFO | 20,237,520 (100.0%) gas; 1.2 mwei bfee| 20,237,520 (0.154s exec)",
+        "besu": (
+            "Imported #25,268,932 (571ca.....32896)| 292 tx ( 62.0% parallel)| 16 ws| 3 blobs| "
+            "117.07 mwei bfee| 34,833,694 ( 58.1%) gas used| 671.1ms exec| 51.91 Mgas/s| 1 peers"
+        ),
+        "erigon": (
+            "head updated hash=0x33b4bc15574ed67e4993af30571e613474129036c0c55804dc9ad9790d646441 "
+            "number=21851697 age=4s execution=932.476215ms mgas/s=16.23 average mgas/s=18.07"
+        ),
         "nethermind": "Processed 123 | 345.6 ms Block 123 17.42 MGas",
         "ethrex": (
             "[METRIC] BLOCK 25376968 0x2c14fb16115945ffac5dfaefae96638e13865063183a038c838f314d51f90c77 "

@@ -33,7 +33,7 @@ from models import REDRAW_REQUESTED, ProcessingPoint
 from parsers import ExecutionLogParser
 from plotting import PlotRenderer, PlotState, calculate_tier_percentages, consume_points
 from producers import LineProducer, choose_producer
-from system_info import build_machine_info, detect_client_info
+from system_info import build_machine_info, detect_client_info, format_manual_client_label, is_unknown_client_version
 
 
 DEFAULT_MAX_POINTS = 320
@@ -123,8 +123,8 @@ async def refresh_client_info(
         if auto_client:
             parser_state.update_client(client_name)
         detected_client_name = (client_name or "unknown").lower()
-        detected_unknown_version = client_version == "Client:Unknown" or client_version.endswith(":Unknown")
-        current_known_version = not plot_state.machine_info.client_version.endswith(":Unknown")
+        detected_unknown_version = is_unknown_client_version(client_version)
+        current_known_version = not is_unknown_client_version(plot_state.machine_info.client_version)
         same_client = detected_client_name == previous_client_name
         if detected_unknown_version and current_known_version and same_client:
             continue
@@ -194,7 +194,7 @@ async def async_main(args: argparse.Namespace) -> None:
     auto_client = args.client == "auto"
     if not auto_client:
         client_name = args.client
-        client_version = f"{args.client}:manual"
+        client_version = format_manual_client_label(args.client)
 
     parser_state = ParserState(client_name)
     producer = choose_producer(args.source, args.unit, args.tail)

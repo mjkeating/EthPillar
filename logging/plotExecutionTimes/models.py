@@ -36,7 +36,7 @@ class MachineInfo:
     """Information describing the machine and execution client.
 
     Attributes:
-        client_version: Human readable execution client and version (e.g. "geth:1.10").
+        client_version: Human readable execution client and version (e.g. "Geth v1.14.12").
         cpu_model: CPU model string detected from the host.
         storage_model: Storage device description (largest SSD detected, or a fallback).
         installed_ram: Installed RAM as a human readable string.

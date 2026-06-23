@@ -63,21 +63,43 @@ def parse_execution_client_version(client_name: str, output: str) -> Optional[st
     return match.group(0) if match else None
 
 
+def _display_client_name(client_name: str) -> str:
+    """Return a display-friendly execution client name."""
+
+    name = (client_name or "unknown").strip()
+    if not name or name.lower() == "unknown":
+        return "Unknown"
+    return name[0].upper() + name[1:]
+
+
 def format_client_version_label(client_name: str, raw_version: str) -> str:
-    """Return a compact ``client:version`` label for display.
+    """Return a compact client label for the plot header.
 
     Args:
         client_name: Detected execution client name.
         raw_version: Raw ``web3_clientVersion`` result or similar.
 
     Returns:
-        A short label such as ``"ethrex:17.0.0"``, or ``"client:Unknown"``.
+        A short label such as ``"Nethermind v1.38.0"``, or ``"Ethrex Unknown"``.
     """
 
+    display_name = _display_client_name(client_name)
     parsed = parse_execution_client_version(client_name, raw_version)
     if parsed:
-        return f"{client_name}:{parsed}"
-    return f"{client_name}:Unknown"
+        return f"{display_name} v{parsed}"
+    return f"{display_name} Unknown"
+
+
+def format_manual_client_label(client_name: str) -> str:
+    """Return a plot header label for a manually selected client."""
+
+    return f"{_display_client_name(client_name)} manual"
+
+
+def is_unknown_client_version(client_version: str) -> bool:
+    """Return True when a client version label has no resolved semver."""
+
+    return client_version.endswith(" Unknown") or client_version == "Unknown client"
 
 
 def _run_command(command: Sequence[str], timeout: float = 2.0) -> Optional[str]:
@@ -255,9 +277,9 @@ def detect_client_info(endpoint: str) -> tuple[str, str]:
 
     service_client = detect_execution_service_client()
     if service_client:
-        return service_client, f"{service_client}:Unknown"
+        return service_client, format_client_version_label(service_client, "")
 
-    return "unknown", "Client:Unknown"
+    return "unknown", "Unknown client"
 
 
 def build_machine_info(client_version: str) -> MachineInfo:

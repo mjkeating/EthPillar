@@ -93,15 +93,15 @@ def test_parse_execution_client_version_strips_ethrex_rpc_noise():
     )
 
     assert system_info.parse_execution_client_version("ethrex", raw) == "17.0.0"
-    assert system_info.format_client_version_label("ethrex", raw) == "ethrex:17.0.0"
+    assert system_info.format_client_version_label("ethrex", raw) == "Ethrex v17.0.0"
 
 
 def test_parse_execution_client_version_strips_reth_and_nethermind_rpc_noise():
     reth_raw = "reth:v2.3.0-9384bc5/x86_64-unknown-linux-gnu"
     nethermind_raw = "Nethermind:v1.38.0+c07a4d65/linux-x64/dotnet10.0.7"
 
-    assert system_info.format_client_version_label("reth", reth_raw) == "reth:2.3.0"
-    assert system_info.format_client_version_label("Nethermind", nethermind_raw) == "Nethermind:1.38.0"
+    assert system_info.format_client_version_label("reth", reth_raw) == "Reth v2.3.0"
+    assert system_info.format_client_version_label("Nethermind", nethermind_raw) == "Nethermind v1.38.0"
 
 
 def test_detect_client_info_auto_detects_ethrex_from_rpc(monkeypatch):
@@ -110,12 +110,12 @@ def test_detect_client_info_auto_detects_ethrex_from_rpc(monkeypatch):
         "x86_64-unknown-linux-gnu/rustc-v1.91.0"
     )
 
-    monkeypatch.setattr(system_info, "detect_execution_rpc", lambda _endpoint: ("ethrex", "ethrex:17.0.0"))
+    monkeypatch.setattr(system_info, "detect_execution_rpc", lambda _endpoint: ("ethrex", "Ethrex v17.0.0"))
 
     client_name, client_version = system_info.detect_client_info("http://127.0.0.1:8545")
 
     assert client_name == "ethrex"
-    assert client_version == "ethrex:17.0.0"
+    assert client_version == "Ethrex v17.0.0"
 
 
 def test_detect_client_info_falls_back_to_ethrex_service_file(monkeypatch, tmp_path):
@@ -138,4 +138,4 @@ def test_detect_client_info_falls_back_to_ethrex_service_file(monkeypatch, tmp_p
     client_name, client_version = system_info.detect_client_info("http://127.0.0.1:8545")
 
     assert client_name == "ethrex"
-    assert client_version == "ethrex:Unknown"
+    assert client_version == "Ethrex Unknown"

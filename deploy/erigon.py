@@ -47,6 +47,7 @@ def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str
         "--metrics",
         "--pprof",
         "--prune.mode=minimal",
+        "--private.api.addr=127.0.0.1:9091",
         f"--authrpc.jwtsecret={jwtsecret_path}"
     ]
     
@@ -118,6 +119,7 @@ def generate_erigon_standalone_service(eth_network: str, el_p2p_port: str, el_rp
         "--metrics",
         "--pprof",
         "--prune.mode=minimal",
+        "--private.api.addr=127.0.0.1:9091",
         f"--authrpc.jwtsecret={jwtsecret_path}"
     ]
     if sync_parameters:

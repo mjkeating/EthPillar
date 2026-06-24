@@ -67,7 +67,7 @@ class ExecutionLogParser:
         "reth": "Block execution elapsed from structured log fields",
         "besu": "Block exec time (modern) or total import time (legacy Imported line)",
         "nethermind": "Block processing time from Processed line (paired with MGas line)",
-        "erigon": "EVM execution time from head updated (gas derived from mgas/s × time)",
+        "erigon": "EVM execution time from head updated/validated (gas derived from mgas/s × time)",
         "ethrex": "Full add-block pipeline time (validate + exec + merkle + store)",
     }
 
@@ -89,8 +89,8 @@ class ExecutionLogParser:
         self.besu_legacy_pattern = _compile(
             r"Imported\s+#(?:[\d,]+).*?([\d,]+)\s*\(\s*[\d.]+\s*\%\)\s*gas\s*/.*?in\s+([\d,.]+)\s*s\b"
         )
-        self.erigon_head_updated_pattern = _compile(
-            r"head updated.*?execution=([\d,.]+)(ms|s).*?mgas/s=([\d,.]+)"
+        self.erigon_head_pattern = _compile(
+            r"head (?:updated|validated).*?execution=([\d,.]+)(ms|s).*?mgas/s=([\d,.]+)"
         )
         self.erigon_metric_pattern = _compile(
             r"\[METRIC\]\s+BLOCK EXECUTION THROUGHPUT\s+\(\d+\):\s+[\d.]+\s+Ggas/s\s+"
@@ -220,15 +220,17 @@ class ExecutionLogParser:
     def _parse_erigon_line(self, line: str) -> Optional[ProcessingPoint]:
         """Parse Erigon per-block timing logs.
 
-        Primary (synced node, engine/Caplin path):
-            head updated ... execution=932.476215ms mgas/s=16.23 ...
+        Primary (Engine API / fork-validator path, current Erigon releases):
+            head validated ... execution=98ms mgas/s=600.56 avg mgas/s=389.11 ...
+        Canonical commit path (batch FCU):
+            head updated ... execution=932.476215ms mgas/s=16.23 average mgas/s=18.07
         Gas is derived: mgas/s × execution_seconds (not logged directly).
 
         Fallback (older metric summary):
             [METRIC] BLOCK EXECUTION THROUGHPUT (N): X Ggas/s TIME SPENT: Y ms. Gas Used: Z ...
         """
 
-        match = self.erigon_head_updated_pattern.search(line)
+        match = self.erigon_head_pattern.search(line)
         if match:
             elapsed_value = float(match.group(1).replace(",", ""))
             elapsed_time_ms = self._elapsed_ms(elapsed_value, match.group(2))

@@ -78,6 +78,35 @@ def test_erigon_parser_reads_head_updated_line():
     assert point.gas_used_mgas == pytest.approx(16.23 * 0.932476215)
 
 
+def test_erigon_parser_reads_head_validated_journal_lines():
+    parser = plotter.ExecutionLogParser("erigon")
+    lines = [
+        (
+            "Jun 24 15:04:24 testhost erigon[59019]: [INFO] [06-24|15:04:24.764] head validated "
+            "hash=0x0000000000000000000000000000000000000000000000000000000000000001 "
+            "number=3082472 age=0 execution=98ms mgas/s=600.56 avg mgas/s=389.11 alloc=1.7GB sys=4.8GB"
+        ),
+        (
+            "Jun 24 15:04:36 testhost erigon[59019]: [INFO] [06-24|15:04:36.445] head validated "
+            "hash=0x0000000000000000000000000000000000000000000000000000000000000002 "
+            "number=3082473 age=0 execution=25ms mgas/s=84.16 avg mgas/s=369.44 alloc=1.7GB sys=4.8GB"
+        ),
+        (
+            "Jun 24 15:07:13 testhost erigon[59019]: [INFO] [06-24|15:07:13.890] head validated "
+            "hash=0x0000000000000000000000000000000000000000000000000000000000000004 "
+            "number=3082486 age=1s execution=116ms mgas/s=380.74 avg mgas/s=353.63 alloc=1.3GB sys=4.8GB"
+        ),
+    ]
+
+    points = [parser.parse_line(line) for line in lines]
+
+    assert len(points) == 3
+    assert points[0].elapsed_time_ms == pytest.approx(98.0)
+    assert points[0].gas_used_mgas == pytest.approx(600.56 * 0.098)
+    assert points[1].elapsed_time_ms == pytest.approx(25.0)
+    assert points[2].elapsed_time_ms == pytest.approx(116.0)
+
+
 def test_erigon_parser_reads_metric_throughput_line():
     parser = plotter.ExecutionLogParser("erigon")
     line = "[METRIC] BLOCK EXECUTION THROUGHPUT (123): 0.642 Ggas/s TIME SPENT: 76 ms. Gas Used: 0.049 (82%), #Txs: 1023."

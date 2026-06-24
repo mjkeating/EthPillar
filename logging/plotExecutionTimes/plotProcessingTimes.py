@@ -177,8 +177,9 @@ def run_self_test() -> int:
             "117.07 mwei bfee| 34,833,694 ( 58.1%) gas used| 671.1ms exec| 51.91 Mgas/s| 1 peers"
         ),
         "erigon": (
-            "head updated hash=0x33b4bc15574ed67e4993af30571e613474129036c0c55804dc9ad9790d646441 "
-            "number=21851697 age=4s execution=932.476215ms mgas/s=16.23 average mgas/s=18.07"
+            "Jun 24 15:04:24 testhost erigon[59019]: [INFO] head validated "
+            "hash=0x0000000000000000000000000000000000000000000000000000000000000001 "
+            "number=3082472 age=0 execution=98ms mgas/s=600.56 avg mgas/s=389.11 alloc=1.7GB sys=4.8GB"
         ),
         "nethermind": "Processed 123 | 345.6 ms Block 123 17.42 MGas",
         "ethrex": (

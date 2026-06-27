@@ -31,6 +31,16 @@ CAPLIN_POLL_ATTEMPTS = 72      # 360s — HOODI checkpoint + header sync before 
 # Prefer local warmed cache (see warm_checkpoint_cache.py); fall back to ethpandaops.
 from checkpoint_cache_common import checkpoint_sync_url_for_network  # noqa: E402
 from latest_snapshot import ENV_VAR as LATEST_SNAPSHOT_ENV, SNAPSHOT_PATH, write_snapshot  # noqa: E402
+from port_bindings import (  # noqa: E402
+    client_from_service,
+    default_port_expectations,
+    el_supports_rpc_expose,
+    cl_supports_rpc_expose,
+    has_caplin_execution,
+    read_env_ports,
+    verify_port_expectations,
+    wait_for_port_scope,
+)
 
 # Import INSTALL_DIR from common so the path is maintained centrally
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -584,6 +594,151 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
             print(f"  ❌ Failed to run service: {e}")
             return False
 
+def _apply_rpc_bind(service: str, bind_addr: str) -> bool:
+    """Run the production RPC bind helper non-interactively."""
+    script = "/ethpillar/tests/integration/test_port_bindings.sh"
+    result = subprocess.run(
+        ["bash", script, service, bind_addr],
+        capture_output=True,
+        text=True,
+    )
+    if result.stdout:
+        print(result.stdout, end="", flush=True)
+    if result.stderr:
+        print(result.stderr, end="", flush=True)
+    if result.returncode != 0:
+        print(f"  ❌ RPC bind helper failed for {service} -> {bind_addr}", flush=True)
+        return False
+    return True
+
+
+def _verify_default_port_bindings(args: Any, expected_services: List[str]) -> bool:
+    """Verify RPC ports are localhost-only and P2P ports are on all interfaces."""
+    if not systemd_available():
+        print("  ℹ️  Skipping port binding checks (systemd unavailable)", flush=True)
+        return True
+
+    vc_only = is_validator_only(args.config)
+    if vc_only:
+        print("  ℹ️  Skipping port binding checks (validator-only install)", flush=True)
+        return True
+
+    env_path = os.environ.get("ETHPILLAR_ENV_FILE", INTEGRATION_ENV_FILE)
+    ports = read_env_ports(env_path)
+    has_execution = "execution" in expected_services
+    has_consensus = "consensus" in expected_services
+    has_caplin = has_caplin_execution() or (
+        has_execution and not has_consensus and ("caplin" in (args.combo or "").lower() or "caplin" in (args.cc or "").lower())
+    )
+
+    expectations = default_port_expectations(
+        el_p2p_port=ports["el_p2p"],
+        el_rpc_port=ports["el_rpc"],
+        cl_p2p_port=ports["cl_p2p"],
+        cl_rest_port=ports["cl_rest"],
+        has_execution=has_execution,
+        has_consensus=has_consensus,
+        has_caplin=has_caplin,
+    )
+    if not expectations:
+        print("  ℹ️  Skipping port binding checks (no EL/CL services)", flush=True)
+        return True
+
+    print("\n🔌 Verifying default port bindings (RPC localhost, P2P public)...", flush=True)
+    ok, errors = verify_port_expectations(expectations)
+    if ok:
+        for item in expectations:
+            print(f"  ✅ {item.label} (:{item.port}) bound as expected ({item.scope})", flush=True)
+        return True
+
+    for message in errors:
+        print(f"  ❌ {message}", flush=True)
+    return False
+
+
+def _verify_rpc_exposure(args: Any, expected_services: List[str]) -> bool:
+    """Exercise exposeRpc helpers: open RPC to 0.0.0.0, then revoke to localhost."""
+    if not systemd_available():
+        return True
+
+    if is_validator_only(args.config):
+        return True
+
+    env_path = os.environ.get("ETHPILLAR_ENV_FILE", INTEGRATION_ENV_FILE)
+    ports = read_env_ports(env_path)
+    success = True
+
+    if "execution" in expected_services:
+        el_name = client_from_service("execution")
+        if el_supports_rpc_expose(el_name):
+            print("\n🔓 Testing EL RPC exposure via _updateFlagAndRestartService...", flush=True)
+            if not _apply_rpc_bind("execution", "0.0.0.0"):
+                success = False
+            else:
+                ok, message = wait_for_port_scope(
+                    ports["el_rpc"],
+                    "public",
+                    label="EL RPC",
+                )
+                if ok:
+                    print(f"  ✅ EL RPC (:{ports['el_rpc']}) exposed on all interfaces", flush=True)
+                else:
+                    print(f"  ❌ {message}", flush=True)
+                    success = False
+
+            if success and not _apply_rpc_bind("execution", "127.0.0.1"):
+                success = False
+            elif success:
+                ok, message = wait_for_port_scope(
+                    ports["el_rpc"],
+                    "localhost",
+                    label="EL RPC",
+                )
+                if ok:
+                    print(f"  ✅ EL RPC (:{ports['el_rpc']}) revoked to localhost", flush=True)
+                else:
+                    print(f"  ❌ {message}", flush=True)
+                    success = False
+        else:
+            print(f"  ℹ️  Skipping EL RPC exposure test (unsupported client: {el_name or 'unknown'})", flush=True)
+
+    if "consensus" in expected_services:
+        cl_name = client_from_service("consensus")
+        if cl_supports_rpc_expose(cl_name):
+            print("\n🔓 Testing CL RPC exposure via _updateFlagAndRestartService...", flush=True)
+            if not _apply_rpc_bind("consensus", "0.0.0.0"):
+                success = False
+            else:
+                ok, message = wait_for_port_scope(
+                    ports["cl_rest"],
+                    "public",
+                    label="CL REST",
+                )
+                if ok:
+                    print(f"  ✅ CL REST (:{ports['cl_rest']}) exposed on all interfaces", flush=True)
+                else:
+                    print(f"  ❌ {message}", flush=True)
+                    success = False
+
+            if success and not _apply_rpc_bind("consensus", "127.0.0.1"):
+                success = False
+            elif success:
+                ok, message = wait_for_port_scope(
+                    ports["cl_rest"],
+                    "localhost",
+                    label="CL REST",
+                )
+                if ok:
+                    print(f"  ✅ CL REST (:{ports['cl_rest']}) revoked to localhost", flush=True)
+                else:
+                    print(f"  ❌ {message}", flush=True)
+                    success = False
+        else:
+            print(f"  ℹ️  Skipping CL RPC exposure test (unsupported client: {cl_name or 'unknown'})", flush=True)
+
+    return success
+
+
 def verify(args: Any):
     """Assert expected binaries, users, services, permissions, and service health."""
     print(f"\n🔍 Verifying Artifacts...", flush=True)
@@ -668,6 +823,13 @@ def verify(args: Any):
     if version_check.returncode != 0:
         success = False
 
+    if success and not service_health_failed:
+        if not _verify_default_port_bindings(args, expected_services):
+            success = False
+        elif getattr(args, "test_rpc_exposure", False):
+            if not _verify_rpc_exposure(args, expected_services):
+                success = False
+
     return success
 
 if __name__ == "__main__":
@@ -684,6 +846,7 @@ if __name__ == "__main__":
     parser.add_argument('--vc_only_bn_address', type=str, default="http://192.168.1.123:5052")
     parser.add_argument('--test-updates', action='store_true', default=False)
     parser.add_argument('--test-switching', action='store_true', default=False)
+    parser.add_argument('--test-rpc-exposure', action='store_true', default=False)
     parser.add_argument('--service', type=str, default="", help='Service name for verify-service-health')
     args = parser.parse_args()
     require_production_python_deps()

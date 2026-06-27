@@ -34,6 +34,7 @@ elif [[ "${SERVICE}" == "consensus" ]]; then
         Nimbus     ) _flag='--rest-address';;
         Lodestar   ) _flag='--rest.address';;
         Lighthouse ) _flag='--http-address';;
+        Grandine   ) _flag='--http-address';;
         Prysm      ) _flag='--http-host';;
         Teku       ) _flag='--rest-api-interface';;
         * ) echo "Unsupported consensus client for RPC bind: ${CL:-unknown}" >&2; exit 1;;

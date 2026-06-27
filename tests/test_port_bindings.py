@@ -1,6 +1,7 @@
 """Unit tests for integration port binding helpers."""
 from tests.integration.port_bindings import (
     check_port_scope,
+    cl_supports_rpc_expose,
     parse_ss_listeners,
     PortBinding,
 )
@@ -30,6 +31,10 @@ def test_check_port_scope_localhost_and_public():
     assert ok
     ok, _ = check_port_scope(bindings, 30303, "public", protocols=("tcp", "udp"), label="EL P2P")
     assert ok
+
+
+def test_cl_supports_rpc_expose_includes_grandine():
+    assert cl_supports_rpc_expose("Grandine")
 
 
 def test_check_port_scope_detects_public_rpc_binding():

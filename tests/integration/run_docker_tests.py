@@ -70,7 +70,10 @@ switch_tests = [
 ]
 
 rpc_exposure_tests = [
-    ("Port-Bindings-Reth-Lighthouse", f"{RUN_TEST} deploy/deploy-node.py --ec Reth --cc Lighthouse --network SEPOLIA --config 'Full Node Only' --test-rpc-exposure"),
+    (
+        "Port-Bindings-Nethermind-Grandine",
+        f"{RUN_TEST} deploy/deploy-node.py --ec Nethermind --cc Grandine --network SEPOLIA --config 'Full Node Only' --test-rpc-exposure",
+    ),
 ]
 
 class TestTask:

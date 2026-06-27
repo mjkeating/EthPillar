@@ -239,7 +239,7 @@ def read_env_ports(env_path: str) -> Dict[str, int]:
 
 def cl_supports_rpc_expose(cl_name: str) -> bool:
     """Return True when exposeRpcCL supports this consensus client."""
-    return cl_name in {"Nimbus", "Lodestar", "Lighthouse", "Prysm", "Teku"}
+    return cl_name in {"Nimbus", "Lodestar", "Lighthouse", "Grandine", "Prysm", "Teku"}
 
 
 def el_supports_rpc_expose(el_name: str) -> bool:

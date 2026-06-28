@@ -1,15 +1,10 @@
 """Parse ``ss -lntu`` output and verify RPC/P2P port bind addresses."""
 from __future__ import annotations
 
-import re
 import subprocess
 import time
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
-
-LOCALHOST_ADDRS = frozenset({"127.0.0.1", "::1", "[::1]"})
-PUBLIC_ADDRS = frozenset({"0.0.0.0", "*", "[::]", "::"})
-
 
 @dataclass(frozen=True)
 class PortBinding:
@@ -62,19 +57,36 @@ def read_ss_listeners() -> List[PortBinding]:
     return parse_ss_listeners(result.stdout)
 
 
-def is_localhost_address(address: str) -> bool:
+def normalize_bind_address(address: str) -> str:
+    """Normalize a ``ss`` local address for scope checks."""
+    if address.startswith("[::ffff:") and address.endswith("]"):
+        return address[len("[::ffff:"):-1]
+    if address.startswith("[") and address.endswith("]"):
+        inner = address[1:-1]
+        return inner.split("%", 1)[0]
+    return address.split("%", 1)[0]
+
+
+def is_loopback_address(address: str) -> bool:
     """Return True when *address* is loopback-only."""
-    return address in LOCALHOST_ADDRS
+    return normalize_bind_address(address) in {"127.0.0.1", "::1", "localhost"}
 
 
-def is_public_address(address: str) -> bool:
-    """Return True when *address* accepts connections on all interfaces."""
-    if address in PUBLIC_ADDRS:
+def is_all_interfaces_address(address: str) -> bool:
+    """Return True when *address* listens on every interface."""
+    return normalize_bind_address(address) in {"0.0.0.0", "*", "::"}
+
+
+def is_public_bind_address(address: str) -> bool:
+    """Return True when *address* is reachable beyond loopback (P2P-style bind)."""
+    if is_all_interfaces_address(address):
         return True
-    match = re.fullmatch(r"\[(.+)\]", address)
-    if match and match.group(1) in ("::", "*"):
-        return True
-    return False
+    return not is_loopback_address(address)
+
+
+def is_localhost_bind_address(address: str) -> bool:
+    """Return True when *address* is loopback-only (RPC-safe bind)."""
+    return is_loopback_address(address) and not is_all_interfaces_address(address)
 
 
 def listeners_for_port(
@@ -102,16 +114,16 @@ def check_port_scope(
 
     addresses = [entry.address for entry in entries]
     if scope == "localhost":
-        if any(is_public_address(addr) for addr in addresses):
+        if any(is_public_bind_address(addr) for addr in addresses):
             return False, f"{name} (:{port}) is exposed on {addresses} (expected localhost only)"
-        if not any(is_localhost_address(addr) for addr in addresses):
-            return False, f"{name} (:{port}) is bound to {addresses} (expected localhost only)"
-        return True, ""
+        if all(is_localhost_bind_address(addr) for addr in addresses):
+            return True, ""
+        return False, f"{name} (:{port}) is bound to {addresses} (expected localhost only)"
 
     if scope == "public":
-        if any(is_public_address(addr) for addr in addresses):
+        if any(is_public_bind_address(addr) for addr in addresses):
             return True, ""
-        return False, f"{name} (:{port}) is bound to {addresses} (expected all interfaces)"
+        return False, f"{name} (:{port}) is bound to {addresses} (expected reachable, not localhost-only)"
 
     raise ValueError(f"Unknown scope: {scope}")
 

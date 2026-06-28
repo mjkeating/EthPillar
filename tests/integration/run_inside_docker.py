@@ -826,9 +826,8 @@ def verify(args: Any):
     if success and not service_health_failed:
         if not _verify_default_port_bindings(args, expected_services):
             success = False
-        elif getattr(args, "test_rpc_exposure", False):
-            if not _verify_rpc_exposure(args, expected_services):
-                success = False
+        elif not _verify_rpc_exposure(args, expected_services):
+            success = False
 
     return success
 
@@ -846,7 +845,6 @@ if __name__ == "__main__":
     parser.add_argument('--vc_only_bn_address', type=str, default="http://192.168.1.123:5052")
     parser.add_argument('--test-updates', action='store_true', default=False)
     parser.add_argument('--test-switching', action='store_true', default=False)
-    parser.add_argument('--test-rpc-exposure', action='store_true', default=False)
     parser.add_argument('--service', type=str, default="", help='Service name for verify-service-health')
     args = parser.parse_args()
     require_production_python_deps()

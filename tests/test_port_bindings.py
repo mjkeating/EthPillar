@@ -44,3 +44,16 @@ def test_check_port_scope_detects_public_rpc_binding():
     ok, message = check_port_scope(bindings, 8545, "localhost", label="EL RPC")
     assert not ok
     assert "expected localhost only" in message
+
+
+def test_check_port_scope_accepts_ipv4_mapped_addresses():
+    bindings = [
+        PortBinding("tcp", "[::ffff:127.0.0.1]", 8545),
+        PortBinding("tcp", "[::ffff:0.0.0.0]", 30303),
+        PortBinding("udp", "[::ffff:0.0.0.0]", 30303),
+        PortBinding("tcp", "172.17.0.2", 30303),
+    ]
+    ok, _ = check_port_scope(bindings, 8545, "localhost", label="EL RPC")
+    assert ok
+    ok, _ = check_port_scope(bindings, 30303, "public", protocols=("tcp", "udp"), label="EL P2P")
+    assert ok

@@ -69,13 +69,6 @@ switch_tests = [
     ("Switch-Reth-Lighthouse-to-Besu-Nimbus", f"{RUN_TEST} deploy/deploy-node.py --ec Reth --cc Lighthouse --network SEPOLIA --config 'Full Node Only' --test-switching"),
 ]
 
-rpc_exposure_tests = [
-    (
-        "Port-Bindings-Nethermind-Grandine",
-        f"{RUN_TEST} deploy/deploy-node.py --ec Nethermind --cc Grandine --network SEPOLIA --config 'Full Node Only' --test-rpc-exposure",
-    ),
-]
-
 class TestTask:
     """Mutable state for one integration case (container, log path, status, timing)."""
 
@@ -119,9 +112,6 @@ def generate_tests():
         tests.append(TestTask(label, cmd, "Upgrade"))
     for label, cmd in switch_tests:
         tests.append(TestTask(label, cmd, "Switch"))
-
-    for label, cmd in rpc_exposure_tests:
-        tests.append(TestTask(label, cmd, "Port Bindings"))
         
     return tests
 

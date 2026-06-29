@@ -113,18 +113,11 @@ function updateClient(){
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-		EXTRACTED_DIR="/tmp/nethermind_extract"
-		rm -rf "$EXTRACTED_DIR"
-		mkdir -p "$EXTRACTED_DIR"
-		unzip -o "$FILENAME" -d "$EXTRACTED_DIR" || error "❌ Unable to unzip file"
-		rm -f "$FILENAME"
 		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/nethermind/nethermind")
 		DEST_DIR=$(dirname "$EXEC_PATH")
 		sudo systemctl stop execution
-		# install_system_directory will move nethermind and harden perms
-		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_directory; install_system_directory('${EXTRACTED_DIR}', '${DEST_DIR}')"
+		PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "nethermind" "$DEST_DIR" "directory" 0
 		sudo systemctl start execution
-		rm -rf "$EXTRACTED_DIR"
 		;;
 	  Besu)
 		# Ensure JDK 25 is available BEFORE touching the running client; abort
@@ -137,18 +130,11 @@ function updateClient(){
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-		EXTRACTED_DIR="/tmp/besu_extract"
-		rm -rf "$EXTRACTED_DIR"
-		mkdir -p "$EXTRACTED_DIR"
-		tar -xzvf "$FILENAME" -C "$EXTRACTED_DIR" --strip-components=1 || error "❌ Unable to untar file"
 		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/besu/bin/besu")
 		DEST_DIR=$(dirname "$(dirname "$EXEC_PATH")")
 		sudo systemctl stop execution
-		# install_system_directory will move besu directory and harden perms
-		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_directory; install_system_directory('${EXTRACTED_DIR}', '${DEST_DIR}')"
+		PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "besu" "$DEST_DIR" "directory" 1
 		sudo systemctl start execution
-		rm -f "$FILENAME"
-		rm -rf "$EXTRACTED_DIR"
 		;;
 	  Erigon)
 		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')
@@ -156,20 +142,10 @@ function updateClient(){
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-		EXTRACTED_DIR="/tmp/erigon_extract"
-		rm -rf "$EXTRACTED_DIR"
-		mkdir -p "$EXTRACTED_DIR"
-		tar -xzvf "$FILENAME" -C "$EXTRACTED_DIR" --strip-components=1 || error "❌ Unable to untar file"
-		rm "$FILENAME"
 		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/erigon")
-		ERIGON_BIN=$(find "$EXTRACTED_DIR" -type f -name "erigon" | head -n 1)
 		sudo systemctl stop execution
-		sudo rm -f "$EXEC_PATH"
-		sudo mkdir -p "$(dirname "$EXEC_PATH")"
-		# install_system_binary will move and configure the binary at the full exec path
-		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${ERIGON_BIN}', '${EXEC_PATH}')"
+		PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "erigon" "$EXEC_PATH" "binary" 1
 		sudo systemctl start execution
-		rm -rf "$EXTRACTED_DIR"
 		;;
 	  Geth)
 		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')
@@ -177,22 +153,10 @@ function updateClient(){
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-		EXTRACTED_DIR="/tmp/geth_extract"
-		rm -rf "$EXTRACTED_DIR"
-		mkdir -p "$EXTRACTED_DIR"
-		tar -xzvf "$FILENAME" -C "$EXTRACTED_DIR" --strip-components=1 || error "❌ Unable to untar file"
-		GETH_BIN=$(find "$EXTRACTED_DIR" -type f -name "geth" | head -n 1)
-		if [ -z "$GETH_BIN" ]; then
-			error "❌ Could not find the extracted geth binary"
-		fi
 		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/geth")
 		sudo systemctl stop execution
-		sudo rm -f "$EXEC_PATH"
-		sudo mkdir -p "$(dirname "$EXEC_PATH")"
-		# install_system_binary will move and configure the binary at the full exec path
-		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${GETH_BIN}', '${EXEC_PATH}')"
+		PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "geth" "$EXEC_PATH" "binary" 1
 		sudo systemctl start execution
-		rm -rf "$EXTRACTED_DIR" "$FILENAME"
 	    ;;
   	  Reth)
 		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')
@@ -200,23 +164,10 @@ function updateClient(){
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-		EXTRACTED_DIR="/tmp/reth_extract"
-		rm -rf "$EXTRACTED_DIR"
-		mkdir -p "$EXTRACTED_DIR"
-		tar -xzvf "$FILENAME" -C "$EXTRACTED_DIR" || error "❌ Unable to untar file"
-		rm "$FILENAME"
-		RETH_BIN=$(find "$EXTRACTED_DIR" -type f \( -name "reth" -o -name "reth-*" \) | head -n 1)
-		if [ -z "$RETH_BIN" ]; then
-			error "❌ Could not find the extracted reth binary"
-		fi
 		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/execution.service" "/usr/local/bin/reth")
 		sudo systemctl stop execution
-		sudo rm -f "$EXEC_PATH"
-		sudo mkdir -p "$(dirname "$EXEC_PATH")"
-		# install_system_binary will move and configure the binary at the full exec path
-		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${RETH_BIN}', '${EXEC_PATH}')"
+		PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "reth" "$EXEC_PATH" "binary" 0
 		sudo systemctl start execution
-		rm -rf "$EXTRACTED_DIR"
 	    ;;
 	  Ethrex)
 		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')

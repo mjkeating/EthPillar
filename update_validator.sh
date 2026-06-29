@@ -109,21 +109,9 @@ function updateClient(){
         info "✅ Downloading URL: $BINARIES_URL"
         cd "$HOME" || true
         wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-        EXTRACT_DIR="/tmp/lighthouse_extract"
-        rm -rf "$EXTRACT_DIR"
-        mkdir -p "$EXTRACT_DIR"
-        tar -xzvf "$FILENAME" -C "$EXTRACT_DIR" || error "❌ Unable to untar file"
-        rm "$FILENAME"
-        LH_BIN=$(find "$EXTRACT_DIR" -type f -name "lighthouse" | head -n 1)
-        if [ -z "$LH_BIN" ]; then
-            error "❌ Could not find the extracted lighthouse binary"
-        fi
         EXEC_PATH=$(get_systemd_exec_path "$VALIDATOR_SVC" "/usr/local/bin/lighthouse")
         test -f "$VALIDATOR_SVC" && sudo systemctl stop validator
-        sudo rm -f "$EXEC_PATH"
-        sudo mkdir -p "$(dirname "$EXEC_PATH")"
-        PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${LH_BIN}', '${EXEC_PATH}')"
-        rm -rf "$EXTRACT_DIR"
+        PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "lighthouse" "$EXEC_PATH" "binary" 0
         test -f "$VALIDATOR_SVC" && sudo systemctl start validator
         ;;
       Lodestar)
@@ -132,18 +120,9 @@ function updateClient(){
         info "✅ Downloading URL: $BINARIES_URL"
         cd "$HOME" || true
         wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-        EXTRACTED_DIR="/tmp/lodestar_extract"
-        rm -rf "$EXTRACTED_DIR"
-        mkdir -p "$EXTRACTED_DIR"
-        tar -xzvf "$FILENAME" -C "$EXTRACTED_DIR" || error "❌ Unable to untar file"
-        rm "$FILENAME"
         EXEC_PATH=$(get_systemd_exec_path "$VALIDATOR_SVC" "/usr/local/bin/lodestar")
-        LODESTAR_BIN=$(find "$EXTRACTED_DIR" -type f -name "lodestar" | head -n 1)
         test -f "$VALIDATOR_SVC" && sudo systemctl stop validator
-        sudo rm -f "$EXEC_PATH"
-        sudo mkdir -p "$(dirname "$EXEC_PATH")"
-        PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${LODESTAR_BIN}', '${EXEC_PATH}')"
-        rm -rf "$EXTRACTED_DIR"
+        PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "lodestar" "$EXEC_PATH" "binary" 0 --binary-name "lodestar"
         test -f "$VALIDATOR_SVC" && sudo systemctl start validator
         ;;
       Teku)
@@ -153,17 +132,10 @@ function updateClient(){
         info "✅ Downloading URL: $BINARIES_URL"
         cd "$HOME" || true
         wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-        EXTRACT_DIR="/tmp/teku_extract"
-        rm -rf "$EXTRACT_DIR"
-        mkdir -p "$EXTRACT_DIR"
-        tar -xzvf "$FILENAME" -C "$EXTRACT_DIR" --strip-components=1 || error "❌ Unable to untar file"
-        rm "$FILENAME"
-        TEKU_DIR="$EXTRACT_DIR"
         EXEC_PATH=$(get_systemd_exec_path "$VALIDATOR_SVC" "/usr/local/bin/teku/bin/teku")
         DEST_DIR=$(dirname "$(dirname "$EXEC_PATH")")
         test -f "$VALIDATOR_SVC" && sudo systemctl stop validator
-        PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_directory; install_system_directory('${TEKU_DIR}', '${DEST_DIR}')"
-        rm -rf "$EXTRACT_DIR"
+        PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "teku" "$DEST_DIR" "directory" 1
         test -f "$VALIDATOR_SVC" && sudo systemctl start validator
         ;;
       Nimbus)
@@ -172,21 +144,9 @@ function updateClient(){
         info "✅ Downloading URL: $BINARIES_URL"
         cd "$HOME" || true
         wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-        EXTRACT_DIR="/tmp/nimbus_extract"
-        rm -rf "$EXTRACT_DIR"
-        mkdir -p "$EXTRACT_DIR"
-        tar -xzvf "$FILENAME" -C "$EXTRACT_DIR" --strip-components=1 || error "❌ Unable to untar file"
-        rm "$FILENAME"
-        VC_BIN=$(find "$EXTRACT_DIR" -type f -name "nimbus_validator_client" | head -n 1)
-        if [ -z "$VC_BIN" ]; then
-            error "❌ Could not find the extracted nimbus_validator_client binary"
-        fi
         VC_EXEC_PATH=$(get_systemd_exec_path "$VALIDATOR_SVC" "/usr/local/bin/nimbus_validator_client")
         test -f "$VALIDATOR_SVC" && sudo systemctl stop validator
-        sudo rm -f "$VC_EXEC_PATH"
-        sudo mkdir -p "$(dirname "$VC_EXEC_PATH")"
-        PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${VC_BIN}', '${VC_EXEC_PATH}')"
-        rm -rf "$EXTRACT_DIR"
+        PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "nimbus" "$VC_EXEC_PATH" "binary" 1 --binary-name "nimbus_validator_client"
         test -f "$VALIDATOR_SVC" && sudo systemctl start validator
         ;;
       Prysm)

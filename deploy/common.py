@@ -873,6 +873,70 @@ def get_client_release_info(client: str, version_tag: str = "LATEST") -> dict:
         raise ValueError(f"Client module deploy.{module_name} does not implement get_release_info")
 
 
+def extract_and_install(archive_path: str, client_name: str, dest: str, target_type: str, strip_components: int = 0, binary_name: Optional[str] = None) -> None:
+    """Extract an archive and install its contents.
+
+    Args:
+        archive_path: Path to the archive file (.tar.gz, .zip, etc.)
+        client_name: Client name (used to build the temp dir)
+        dest: System target path
+        target_type: 'binary' or 'directory'
+        strip_components: Number of components to strip
+        binary_name: Exact or prefix name of binary to find inside (if target_type == 'binary')
+    """
+    tmp_dir = f"/tmp/{client_name}_extract"
+    # Ensure intermediate temp dir exists
+    subprocess.run(["sudo", "rm", "-rf", tmp_dir], check=False)
+    subprocess.run(["sudo", "mkdir", "-p", tmp_dir], check=True)
+
+    try:
+        # Extract archive
+        if archive_path.endswith(".zip"):
+            subprocess.run(["unzip", "-o", archive_path, "-d", tmp_dir], check=True)
+        else:
+            cmd = ["tar", "xzf", archive_path, "-C", tmp_dir]
+            if strip_components > 0:
+                cmd.append(f"--strip-components={strip_components}")
+            subprocess.run(cmd, check=True)
+
+        if target_type == "binary":
+            name_to_find = binary_name or os.path.basename(dest)
+            found_bin = None
+            for root, _, files in os.walk(tmp_dir):
+                for file in files:
+                    if file == name_to_find:
+                        found_bin = os.path.join(root, file)
+                        break
+                if found_bin:
+                    break
+
+            if not found_bin:
+                for root, _, files in os.walk(tmp_dir):
+                    for file in files:
+                        if file.startswith(name_to_find):
+                            found_bin = os.path.join(root, file)
+                            break
+                    if found_bin:
+                        break
+
+            if not found_bin:
+                raise FileNotFoundError(f"Could not find binary '{name_to_find}' inside extracted archive")
+
+            install_system_binary(found_bin, dest)
+        elif target_type == "directory":
+            install_system_directory(tmp_dir, dest)
+        else:
+            raise ValueError(f"Unknown target_type: {target_type}")
+
+    finally:
+        subprocess.run(["sudo", "rm", "-rf", tmp_dir], check=False)
+        if os.path.exists(archive_path):
+            try:
+                os.remove(archive_path)
+            except OSError:
+                subprocess.run(["sudo", "rm", "-f", archive_path], check=False)
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description="EthPillar Common CLI Utilities")
@@ -887,6 +951,14 @@ if __name__ == '__main__':
     info_parser.add_argument("client", type=str, help="Client name")
     info_parser.add_argument("version_tag", type=str, nargs="?", default="LATEST", help="Version tag or LATEST")
 
+    extract_parser = subparsers.add_parser("extract_and_install", help="Extract and install client files")
+    extract_parser.add_argument("archive_path", type=str, help="Path to archive file")
+    extract_parser.add_argument("client_name", type=str, help="Client name")
+    extract_parser.add_argument("dest", type=str, help="Installation destination")
+    extract_parser.add_argument("target_type", type=str, choices=["binary", "directory"], help="Target type: binary or directory")
+    extract_parser.add_argument("strip_components", type=int, nargs="?", default=0, help="Number of components to strip")
+    extract_parser.add_argument("--binary-name", type=str, default=None, help="Name of binary to search for")
+
     args = parser.parse_args()
     if args.command == "download":
         download_file(args.url, args.dest, args.label)
@@ -897,3 +969,17 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
             exit(1)
+    elif args.command == "extract_and_install":
+        try:
+            extract_and_install(
+                args.archive_path,
+                args.client_name,
+                args.dest,
+                args.target_type,
+                args.strip_components,
+                args.binary_name
+            )
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            exit(1)
+

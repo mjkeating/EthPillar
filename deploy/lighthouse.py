@@ -1,7 +1,7 @@
 import os
 import subprocess
 from typing import Optional
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, install_system_binary, BASE_DATA_DIR
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, install_system_binary, BASE_DATA_DIR, extract_and_install
 from client_requirements import validate_version_for_network
 from deploy.service_generators import form_exec_start, generate_systemd_template
 
@@ -161,20 +161,8 @@ def download_lighthouse(eth_network: str) -> str:
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Lighthouse")
 
-    # Extract to canonical temp dir (strip=0; lighthouse ships the binary at archive root).
-    # Using /tmp/lighthouse_extract as a stable intermediate so the extract-cache key
-    # matches the upgrade flow in update_consensus.sh and update_validator.sh.
-    tmp_dir = "/tmp/lighthouse_extract"
-    subprocess.run(["sudo", "rm", "-rf", tmp_dir], check=False)
-    subprocess.run(["sudo", "mkdir", "-p", tmp_dir], check=True)
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", tmp_dir], check=True)
-
-    # Binary lands at the root of the archive.
-    install_system_binary(os.path.join(tmp_dir, "lighthouse"), f"{INSTALL_DIR}/lighthouse")
-    subprocess.run(["sudo", "rm", "-rf", tmp_dir], check=False)
-
-    # Remove the tar file
-    os.remove(download_path)
+    # Extract to canonical temp dir and install
+    extract_and_install(download_path, "lighthouse", f"{INSTALL_DIR}/lighthouse", "binary", 0)
     return lh_version
 
 def install_lighthouse_bn(eth_network: str, checkpoint_sync_url: str, jwtsecret_path: str,

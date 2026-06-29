@@ -116,25 +116,12 @@ function updateClient(){
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-		EXTRACT_DIR="/tmp/lighthouse_extract"
-		rm -rf "$EXTRACT_DIR"
-		mkdir -p "$EXTRACT_DIR"
-		tar -xzvf "$FILENAME" -C "$EXTRACT_DIR" || error "❌ Unable to untar file"
-		rm "$FILENAME"
-		LH_BIN=$(find "$EXTRACT_DIR" -type f -name "lighthouse" | head -n 1)
-		if [ -z "$LH_BIN" ]; then
-			error "❌ Could not find the extracted lighthouse binary"
-		fi
 		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lighthouse")
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm -f "$EXEC_PATH"
-		sudo mkdir -p "$(dirname "$EXEC_PATH")"
-		# install_system_binary will move and configure the binary at the full exec path
-		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${LH_BIN}', '${EXEC_PATH}')"
+		PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "lighthouse" "$EXEC_PATH" "binary" 0
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
-		rm -rf "$EXTRACT_DIR"
 	    ;;
 	  Lodestar)
 		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')
@@ -142,21 +129,10 @@ function updateClient(){
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-		EXTRACTED_DIR="/tmp/lodestar_extract"
-		rm -rf "$EXTRACTED_DIR"
-		mkdir -p "$EXTRACTED_DIR"
-		tar -xzvf "$FILENAME" -C "$EXTRACTED_DIR" || error "❌ Unable to untar file"
-		rm "$FILENAME"
 		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/lodestar")
-		LODESTAR_DIR=$(dirname "$EXEC_PATH")
-		LODESTAR_BIN=$(find "$EXTRACTED_DIR" -type f -name "lodestar" | head -n 1)
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm -f "$EXEC_PATH"
-		sudo mkdir -p "$(dirname "$EXEC_PATH")"
-		# install_system_binary will move and configure the binary at the full exec path
-		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${LODESTAR_BIN}', '${EXEC_PATH}')"
-		rm -rf "$EXTRACTED_DIR"
+		PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "lodestar" "$EXEC_PATH" "binary" 0 --binary-name "lodestar"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
 	    ;;
@@ -171,21 +147,13 @@ function updateClient(){
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-		EXTRACT_DIR="/tmp/teku_extract"
-		rm -rf "$EXTRACT_DIR"
-		mkdir -p "$EXTRACT_DIR"
-		tar -xzvf "$FILENAME" -C "$EXTRACT_DIR" --strip-components=1 || error "❌ Unable to untar file"
-		rm "$FILENAME"
-		TEKU_DIR="$EXTRACT_DIR"
 		EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/teku/bin/teku")
 		DEST_DIR=$(dirname "$(dirname "$EXEC_PATH")")
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		# install_system_directory will move the Teku directory and harden perms
-		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_directory; install_system_directory('${TEKU_DIR}', '${DEST_DIR}')"
+		PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "teku" "$DEST_DIR" "directory" 1
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
-		rm -rf "$EXTRACT_DIR"
 	    ;;
 	  Nimbus)
 		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')
@@ -193,24 +161,12 @@ function updateClient(){
 		info "✅ Downloading URL: $BINARIES_URL"
 		cd "$HOME" || true
 		wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Unable to wget file"
-		EXTRACT_DIR="/tmp/nimbus_extract"
-		rm -rf "$EXTRACT_DIR"
-		mkdir -p "$EXTRACT_DIR"
-		tar -xzvf "$FILENAME" -C "$EXTRACT_DIR" --strip-components=1 || error "❌ Unable to untar file"
-		rm "$FILENAME"
-		BN_BIN=$(find "$EXTRACT_DIR" -type f -name "nimbus_beacon_node" | head -n 1)
-		if [ -z "$BN_BIN" ]; then
-			error "❌ Could not find the extracted nimbus_beacon_node binary"
-		fi
 		BN_EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/consensus.service" "/usr/local/bin/nimbus_beacon_node")
 		test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator stop
-		sudo rm -f "$BN_EXEC_PATH"
-		sudo mkdir -p "$(dirname "$BN_EXEC_PATH")"
-		PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('${BN_BIN}', '${BN_EXEC_PATH}')"
+		PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "nimbus" "$BN_EXEC_PATH" "binary" 1 --binary-name "nimbus_beacon_node"
 		test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus
 		test -f /etc/systemd/system/validator.service && sudo service validator start
-		rm -rf "$EXTRACT_DIR"
 	    ;;
   	  Prysm)
 		cd "$HOME" || true

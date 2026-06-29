@@ -1,6 +1,6 @@
 import os
 import subprocess
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory, ensure_java_available, BASE_DATA_DIR
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_directory, ensure_java_available, BASE_DATA_DIR, extract_and_install
 from client_requirements import validate_version_for_network
 from typing import Optional
 from deploy.service_generators import form_exec_start, generate_systemd_template
@@ -174,17 +174,8 @@ def download_teku(eth_network: str) -> str:
         print("❌ JDK 25 is required by Teku but could not be installed. Aborting Teku install.")
         exit(1)
 
-    # Extract to canonical temp dir (strip=1 removes the top-level teku-*/ folder).
-    # Using /tmp/teku_extract as a stable intermediate so the extract-cache key
-    # matches the upgrade flow in update_consensus.sh and update_validator.sh.
-    tmp_dir = "/tmp/teku_extract"
-    subprocess.run(["rm", "-rf", tmp_dir], check=False)
-    subprocess.run(["mkdir", "-p", tmp_dir], check=True)
-    subprocess.run(["tar", "xzf", download_path, "-C", tmp_dir, "--strip-components=1"], check=True)
-    install_system_directory(tmp_dir, f"{INSTALL_DIR}/teku")
-    # Remove the tar file and temp dir
-    os.remove(download_path)
-    subprocess.run(["rm", "-rf", tmp_dir], check=False)
+    # Extract to canonical temp dir and install directory
+    extract_and_install(download_path, "teku", f"{INSTALL_DIR}/teku", "directory", 1)
     return teku_version
 
 def install_teku_bn(eth_network: str, checkpoint_sync_url: str, jwtsecret_path: str,

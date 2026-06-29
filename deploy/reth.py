@@ -1,6 +1,6 @@
 import os
 import subprocess
-from deploy.common import install_system_binary, write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, BASE_DATA_DIR
+from deploy.common import install_system_binary, write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, BASE_DATA_DIR, extract_and_install
 from client_requirements import validate_version_for_network
 from typing import Tuple, Optional
 from deploy.service_generators import form_exec_start, generate_systemd_template
@@ -115,32 +115,8 @@ def download_and_install_reth(eth_network: str, el_p2p_port: str, el_p2p_port_2:
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Reth")
 
-    # Extract to canonical temp dir (strip=0; reth ships the binary at archive root).
-    # Using /tmp/reth_extract as a stable intermediate so the extract-cache key
-    # matches the upgrade flow in update_execution.sh.
-    tmp_dir = "/tmp/reth_extract"
-    subprocess.run(["sudo", "rm", "-rf", tmp_dir], check=False)
-    subprocess.run(["sudo", "mkdir", "-p", tmp_dir], check=True)
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", tmp_dir], check=True)
-
-    # v2.3+ ships ``reth`` at archive root; older reproducible builds used ``reth-*``.
-    dest_path = os.path.join(INSTALL_DIR, "reth")
-    find_result = subprocess.run(
-        ["sudo", "find", tmp_dir, "-maxdepth", "1", "-type", "f", "-name", "reth*"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    matches = [line.strip() for line in find_result.stdout.splitlines() if line.strip()]
-    if not matches:
-        print("Error: Could not find reth binary after extracting archive.")
-        exit(1)
-    src_path = next((path for path in matches if os.path.basename(path) == "reth"), matches[0])
-    install_system_binary(src_path, dest_path)
-    subprocess.run(["sudo", "rm", "-rf", tmp_dir], check=False)
-
-    # Remove the tar file
-    os.remove(download_path)
+    # Extract to canonical temp dir and install
+    extract_and_install(download_path, "reth", os.path.join(INSTALL_DIR, "reth"), "binary", 0)
 
     # Generate Service File Content
     service_content = generate_reth_service(

@@ -2,7 +2,9 @@
 # Interactive shell as the integration test user (passwordless sudo, production-shaped).
 #
 # Usage (from host, after starting ep-manual with systemd):
-#   docker exec -it ep-manual bash /ethpillar/tests/integration/docker/manual_shell.sh
+#   docker exec -it ep-manual /ethpillar/tests/integration/docker/manual_shell.sh
+#
+# Keep this script executable in git (100755). On Windows: git add --chmod=+x this file.
 set -euo pipefail
 
 cd /ethpillar

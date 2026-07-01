@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Start a long-lived systemd container for manual TUI / deploy testing.
+#
+# Keep this script executable in git (100755). On Windows: git add --chmod=+x this file.
 set -euo pipefail
 
 IMAGE="${ETHPILLAR_TEST_IMAGE:-ethpillar-test}"
@@ -23,7 +25,7 @@ echo "Waiting for systemd to initialize..."
 sleep 3
 echo ""
 echo "Attach as non-root (recommended):"
-echo "  docker exec -it ${NAME} bash /ethpillar/tests/integration/docker/manual_shell.sh"
+echo "  docker exec -it ${NAME} /ethpillar/tests/integration/docker/manual_shell.sh"
 echo ""
 echo "Remove when finished:"
 echo "  docker rm -f ${NAME}"

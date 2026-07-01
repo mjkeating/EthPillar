@@ -31,6 +31,7 @@ setup() {
 
 @test "manual docker entry drops to integration user" {
   test -x tests/integration/docker/manual_shell.sh
+  test -x tests/integration/docker/start_manual_container.sh
   grep -Fq 'runuser -u "${INTEGRATION_USER}"' tests/integration/docker/manual_shell.sh
   grep -Fq 'manual_shell.sh' tests/README.md
 }

@@ -12,7 +12,7 @@ if [[ "$(id -u)" -eq 0 && "${ETHPILLAR_INTEGRATION_PRIVS_DROPPED:-}" != "1" ]]; 
   export ETHPILLAR_INTEGRATION_PRIVS_DROPPED=1
   export ETHPILLAR_VENV="${ETHPILLAR_VENV:-/tmp/ethpillar-integration-venv}"
   export HOME="$(getent passwd "${INTEGRATION_USER}" | cut -d: -f6)"
-  PYTHONPATH="/ethpillar/tests/integration" python3 -c "from binary_cache_common import prepare_binary_cache_dir; prepare_binary_cache_dir()"
+  PYTHONPATH="/ethpillar/tests/integration" python3 -c "from binary_cache_common import ensure_binary_cache_dir_writable; ensure_binary_cache_dir_writable()"
   echo "[integration] Dropping root; running tests as ${INTEGRATION_USER} (uid=${INTEGRATION_UID})"
   exec runuser -u "${INTEGRATION_USER}" -p -- bash "$0" "$@"
 fi

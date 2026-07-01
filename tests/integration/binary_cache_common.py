@@ -76,8 +76,20 @@ def _append_access_log_line(log_path: str, line: str) -> None:
     subprocess.run(["sudo", "bash", "-c", script], check=True)
 
 
+def ensure_binary_cache_dir_writable(cache_dir: str | None = None) -> None:
+    """Ensure the cache directory exists and is writable without resetting the access log.
+
+    Called at the start of each integration test container so non-root deploys can
+    append to ``.accessed_this_run.log``. Only ``prepare_binary_cache_dir`` should
+    reset the log (once per matrix run).
+    """
+    directory = cache_dir or default_cache_dir()
+    os.makedirs(directory, exist_ok=True)
+    _ensure_cache_dir_writable(directory)
+
+
 def prepare_binary_cache_dir(cache_dir: str | None = None) -> None:
-    """Reset the access log and make the cache directory writable for non-root tests."""
+    """Reset the access log and make the cache directory writable for a new matrix run."""
     directory = cache_dir or default_cache_dir()
     os.makedirs(directory, exist_ok=True)
     reset_access_log(directory)

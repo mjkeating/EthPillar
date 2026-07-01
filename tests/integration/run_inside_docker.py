@@ -589,11 +589,23 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
         if not exec_start: return False
         try:
             cmd = shlex.split(exec_start)
-            process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                       cwd=working_dir, preexec_fn=os.setsid)
+            run_cmd = cmd
+            if user and user != "root":
+                run_cmd = ["sudo", "-u", user, "--"] + cmd
+            process = subprocess.Popen(
+                run_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                cwd=working_dir,
+                preexec_fn=os.setsid,
+            )
             time.sleep(5)
             if process.poll() is not None:
+                err = (process.stderr.read() or b"").decode(errors="replace").strip()
                 print(f"  ❌ Service {service_name} crashed immediately (code {process.returncode})")
+                if err:
+                    tail = "\n".join(err.splitlines()[-5:])
+                    print(f"  stderr: {tail}")
                 return False
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
             print(f"  ✅ Service {service_name} started (process dry-run)")

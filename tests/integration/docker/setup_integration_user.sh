@@ -3,7 +3,7 @@
 #
 # Used by the systemd integration matrix (run_test.sh) and install-smoke tests.
 # UID/GID default to the host orchestrator values so the user can write the
-# bind-mounted repo (e.g. tests/integration/cache, without chowning the checkout).
+# bind-mounted repo when tests run with a read-write mount.
 set -euo pipefail
 
 INTEGRATION_USER="${ETHPILLAR_INTEGRATION_USER:-epstaker}"
@@ -37,6 +37,4 @@ EOF
   if getent group systemd-journal >/dev/null 2>&1; then
     usermod -aG systemd-journal "${INTEGRATION_USER}" 2>/dev/null || true
   fi
-
-  mkdir -p /ethpillar/tests/integration/cache
 }

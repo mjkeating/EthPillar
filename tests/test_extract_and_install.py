@@ -136,6 +136,16 @@ def build_fake_run(calls: list) -> object:
     return fake_run
 
 
+def _cmd_without_sudo(cmd: list) -> list:
+    if cmd and cmd[0] == "sudo":
+        return cmd[1:]
+    return cmd
+
+
+def _tar_xzf_calls(calls: list) -> list[list]:
+    return [cmd for cmd in calls if _cmd_without_sudo(cmd)[:2] == ["tar", "xzf"]]
+
+
 def _make_tgz(path: Path, members: dict[str, bytes]) -> None:
     with tarfile.open(path, "w:gz") as handle:
         for name, content in members.items():
@@ -193,7 +203,8 @@ def test_extract_binary_from_nested_tar(install_env, tmp_path: Path) -> None:
     else:
         assert any("chmod" in " ".join(map(str, c)) for c in calls)
     assert not archive.exists()
-    assert any(cmd[:2] == ["tar", "xzf"] for cmd in calls)
+    assert _tar_xzf_calls(calls)
+    assert any(cmd[:2] == ["sudo", "tar"] for cmd in calls)
 
 
 def test_extract_binary_prefix_match(install_env, tmp_path: Path) -> None:
@@ -242,6 +253,7 @@ def test_extract_zip_directory(install_env, tmp_path: Path) -> None:
 
     assert os.path.isdir(dest)
     assert os.path.isfile(os.path.join(dest, "Nethermind.Runner"))
+    assert any(cmd[:2] == ["sudo", "unzip"] for cmd in calls)
 
 
 def test_extract_raises_when_binary_missing(install_env, tmp_path: Path) -> None:
@@ -283,10 +295,8 @@ def test_extract_tar_invocation_matches_integration_cache_parser(
         archive_path, "geth", str(install_dir / "geth"), "binary", strip_components=strip
     )
 
-    tar_cmd = next(
-        cmd for cmd in calls if len(cmd) >= 4 and cmd[0] == "tar" and cmd[1] == "xzf"
-    )
-    parsed_archive, parsed_dest, parsed_strip = parse_tar_invocation(tar_cmd[1:])
+    tar_cmd = next(cmd for cmd in _tar_xzf_calls(calls))
+    parsed_archive, parsed_dest, parsed_strip = parse_tar_invocation(_cmd_without_sudo(tar_cmd)[1:])
     assert parsed_archive == archive_path
     assert parsed_dest == dest_dir
     assert parsed_strip == strip
@@ -309,8 +319,9 @@ def test_extract_unzip_invocation_matches_integration_cache_parser(
         archive_path, "nethermind", str(install_dir / "nethermind"), "directory", strip_components=strip
     )
 
-    unzip_cmd = next(cmd for cmd in calls if len(cmd) >= 2 and cmd[0] == "unzip")
-    parsed_archive, parsed_dest, parsed_strip = parse_unzip_invocation(unzip_cmd[1:])
+    unzip_cmd = next(cmd for cmd in calls if _cmd_without_sudo(cmd)[0] == "unzip")
+    parsed_archive, parsed_dest, parsed_strip = parse_unzip_invocation(_cmd_without_sudo(unzip_cmd)[1:])
+    assert any(cmd[:2] == ["sudo", "unzip"] for cmd in calls)
     assert parsed_archive == archive_path
     assert parsed_dest == dest_dir
     assert parsed_strip == strip

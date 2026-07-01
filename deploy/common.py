@@ -890,11 +890,11 @@ def extract_and_install(archive_path: str, client_name: str, dest: str, target_t
     subprocess.run(["sudo", "mkdir", "-p", tmp_dir], check=True)
 
     try:
-        # Extract archive
+        # Extract archive (tmp_dir is root-owned; extraction must run via sudo).
         if archive_path.endswith(".zip"):
-            subprocess.run(["unzip", "-o", archive_path, "-d", tmp_dir], check=True)
+            subprocess.run(["sudo", "unzip", "-o", archive_path, "-d", tmp_dir], check=True)
         else:
-            cmd = ["tar", "xzf", archive_path, "-C", tmp_dir]
+            cmd = ["sudo", "tar", "xzf", archive_path, "-C", tmp_dir]
             if strip_components > 0:
                 cmd.append(f"--strip-components={strip_components}")
             subprocess.run(cmd, check=True)

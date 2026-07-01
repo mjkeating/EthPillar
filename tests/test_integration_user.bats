@@ -24,6 +24,11 @@ setup() {
   grep -Fq 'NOPASSWD:ALL' tests/integration/docker/setup_integration_user.sh
 }
 
+@test "run_inside_docker uses sudo systemctl for non-root integration user" {
+  grep -Fq '_systemctl_cmd' tests/integration/run_inside_docker.py
+  grep -Fq '_pid1_is_systemd' tests/integration/run_inside_docker.py
+}
+
 @test "orchestrator passes host uid to containers" {
   grep -Fq 'ETHPILLAR_INTEGRATION_UID' tests/integration/run_docker_tests.py
   grep -Fq 'integration_container_env_flags' tests/integration/run_docker_tests.py

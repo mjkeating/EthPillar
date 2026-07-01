@@ -41,6 +41,61 @@ def access_log_path(cache_dir: str | None = None) -> str:
     return os.path.join(cache_dir or default_cache_dir(), ACCESS_LOG_NAME)
 
 
+def _sudo_unlink(path: str) -> None:
+    """Remove *path* with sudo when the integration user cannot unlink root-owned cache files."""
+    import subprocess
+
+    subprocess.run(["sudo", "rm", "-f", path], check=False)
+
+
+def _ensure_cache_dir_writable(directory: str) -> None:
+    """Ensure the integration user can create files under *directory* on bind mounts.
+
+    Prior root-owned runs (or host-side cache reset) can leave the cache directory
+    itself root-owned; removing the access log is not enough without fixing the dir.
+    """
+    import subprocess
+
+    try:
+        os.chmod(directory, 0o777)
+    except (PermissionError, OSError):
+        subprocess.run(["sudo", "chmod", "a+rwX", directory], check=False)
+
+
+def _append_access_log_line(log_path: str, line: str) -> None:
+    """Append one line to the access log, using sudo when the dir is not writable."""
+    import shlex
+    import subprocess
+
+    directory = os.path.dirname(log_path)
+    script = (
+        f"mkdir -p {shlex.quote(directory)} && "
+        f"printf %s {shlex.quote(line)} >> {shlex.quote(log_path)} && "
+        f"chmod 644 {shlex.quote(log_path)}"
+    )
+    subprocess.run(["sudo", "bash", "-c", script], check=True)
+
+
+def ensure_binary_cache_dir_writable(cache_dir: str | None = None) -> None:
+    """Ensure the cache directory exists and is writable without resetting the access log.
+
+    Called at the start of each integration test container so non-root deploys can
+    append to ``.accessed_this_run.log``. Only ``prepare_binary_cache_dir`` should
+    reset the log (once per matrix run).
+    """
+    directory = cache_dir or default_cache_dir()
+    os.makedirs(directory, exist_ok=True)
+    _ensure_cache_dir_writable(directory)
+
+
+def prepare_binary_cache_dir(cache_dir: str | None = None) -> None:
+    """Reset the access log and make the cache directory writable for a new matrix run."""
+    directory = cache_dir or default_cache_dir()
+    os.makedirs(directory, exist_ok=True)
+    reset_access_log(directory)
+    _ensure_cache_dir_writable(directory)
+
+
 def reset_access_log(cache_dir: str | None = None) -> None:
     """Start a fresh access log for the current integration run."""
     directory = cache_dir or default_cache_dir()
@@ -50,6 +105,8 @@ def reset_access_log(cache_dir: str | None = None) -> None:
         os.remove(path)
     except FileNotFoundError:
         pass
+    except PermissionError:
+        _sudo_unlink(path)
 
 
 def record_cache_access(filename: str, cache_dir: str | None = None) -> None:
@@ -60,8 +117,18 @@ def record_cache_access(filename: str, cache_dir: str | None = None) -> None:
     directory = cache_dir or default_cache_dir()
     os.makedirs(directory, exist_ok=True)
     log_path = access_log_path(directory)
-    with open(log_path, "a", encoding="utf-8") as handle:
-        handle.write(f"{basename}\n")
+    line = f"{basename}\n"
+    try:
+        with open(log_path, "a", encoding="utf-8") as handle:
+            handle.write(line)
+    except PermissionError:
+        _ensure_cache_dir_writable(directory)
+        try:
+            with open(log_path, "a", encoding="utf-8") as handle:
+                handle.write(line)
+        except PermissionError:
+            _sudo_unlink(log_path)
+            _append_access_log_line(log_path, line)
     try:
         os.chmod(log_path, 0o644)
     except OSError:
@@ -124,6 +191,10 @@ def prune_unaccessed_binary_cache(
         try:
             os.remove(path)
             deleted.append(entry)
+        except PermissionError:
+            _sudo_unlink(path)
+            if not os.path.isfile(path):
+                deleted.append(entry)
         except OSError as exc:
             print(f"[CACHE] Prune: could not remove {entry}: {exc}")
 

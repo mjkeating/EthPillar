@@ -88,6 +88,9 @@ Optional: set `$env:GITHUB_TOKEN` to avoid API rate limits when running the full
 - `tests/test_orchestrator.py`: Logic for role flags and CSM overrides.
 - `tests/test_service_generators.py`: Golden-string tests for systemd units (generators live in each `deploy/{client}.py` module).
 - `tests/test_client_module_contracts.py`: Verifies each client module exports required functions per `deploy/protocols.py`.
+- `tests/test_extract_and_install.py`: Unit tests for `extract_and_install` and deploy-module adoption.
+- `tests/test_update_extract.bats`: Static checks that update scripts use the unified extract CLI.
+- `tests/test_integration_user.bats`: Static checks for non-root integration test execution.
 - `tests/test_install_node.bats`: Validation logic for the install wrapper.
 - `tests/test_ethpillar_installnode.bats`: TUI routing and role selection logic.
 - `tests/run_unit_tests.sh`: Bootstraps Python deps via production `functions.sh`, then runs pytest in the project venv.
@@ -97,23 +100,54 @@ Optional: set `$env:GITHUB_TOKEN` to avoid API rate limits when running the full
 
 ## Manual Testing
 
-Run a fresh container with systemd support:
+Manual installs should mirror production: **non-root user + passwordless sudo** (same as the integration matrix). `docker exec` starts as root; use `manual_shell.sh` to drop privileges before running the TUI or deploy scripts.
+
+Build the image once (from the project root):
+
 ```bash
-# From the project root
-docker run -d --name ep-manual --privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock -v "${PWD}:/ethpillar" ethpillar-test
+docker build -t ethpillar-test -f tests/integration/Dockerfile.test .
 ```
 
-Enter the running container:
+**Linux / WSL / Git Bash** — start the container (UID/GID match the host checkout for bind-mount writes):
+
 ```bash
-docker exec -it ep-manual bash
+bash tests/integration/docker/start_manual_container.sh
+docker exec -it ep-manual bash /ethpillar/tests/integration/docker/manual_shell.sh
 ```
 
-In the container, simply run the TUI:
+**PowerShell** — equivalent `docker run` (use your WSL uid/gid if not `1000`):
+
+```powershell
+docker run -d --name ep-manual --privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock `
+  -e ETHPILLAR_INTEGRATION_UID=1000 -e ETHPILLAR_INTEGRATION_GID=1000 `
+  -v "${PWD}:/ethpillar" ethpillar-test
+
+docker exec -it ep-manual bash /ethpillar/tests/integration/docker/manual_shell.sh
+```
+
+You should see:
+
+```
+[manual] Dropping root; shell as ubuntu (uid=1000)
+```
+
+Then run the TUI or deploy tooling:
+
 ```bash
 ./ethpillar.sh
+# or: python3 deploy/deploy-node.py ...
 ```
 
-When finished, clean up the container:
+Use `sudo systemctl …` for service control (same as on a production node). Plain `systemctl` as the test user will fail with “Failed to connect to bus”.
+
+If you already opened a root shell (`docker exec -it ep-manual bash`), drop privileges from inside the container:
+
+```bash
+bash /ethpillar/tests/integration/docker/manual_shell.sh
+```
+
+When finished:
+
 ```bash
 docker rm -f ep-manual
 ```

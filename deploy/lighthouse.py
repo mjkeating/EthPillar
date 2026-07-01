@@ -1,7 +1,7 @@
 import os
 import subprocess
 from typing import Optional
-from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, install_system_binary, BASE_DATA_DIR
+from deploy.common import write_service_file, get_machine_architecture, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, install_system_binary, BASE_DATA_DIR, extract_and_install
 from client_requirements import validate_version_for_network
 from deploy.service_generators import form_exec_start, generate_systemd_template
 
@@ -161,15 +161,8 @@ def download_lighthouse(eth_network: str) -> str:
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Lighthouse")
 
-    # Extract the binary to /usr/local/bin/ using sudo
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}"], check=True)
-
-    # Ensure the binary is owned by root:root with correct permissions
-    # (same as other clients — tar extracts with the running user's uid in some envs)
-    install_system_binary(f"{INSTALL_DIR}/lighthouse", f"{INSTALL_DIR}/lighthouse")
-
-    # Remove the tar file
-    os.remove(download_path)
+    # Extract to canonical temp dir and install
+    extract_and_install(download_path, "lighthouse", f"{INSTALL_DIR}/lighthouse", "binary", 0)
     return lh_version
 
 def install_lighthouse_bn(eth_network: str, checkpoint_sync_url: str, jwtsecret_path: str,

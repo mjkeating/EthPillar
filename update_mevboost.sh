@@ -87,18 +87,10 @@ function updateClient(){
 
 	info "ℹ️  Downloading URL: $BINARIES_URL"
 	cd "$HOME" || true
-	# Download
 	wget -O "$FILENAME" "$BINARIES_URL" || error "❌ Failed to download mev-boost binary."
-	# Untar
-	tar -xzvf "$FILENAME" -C "$HOME" || error "❌ Failed to extract mev-boost archive."
-	# Cleanup
-	rm "$FILENAME" LICENSE README.md 2>/dev/null || true
 	EXEC_PATH=$(get_systemd_exec_path "/etc/systemd/system/mevboost.service" "/usr/local/bin/mev-boost")
 	sudo systemctl stop mevboost
-	sudo rm -f "$EXEC_PATH"
-	sudo mkdir -p "$(dirname "$EXEC_PATH")"
-	# install_system_binary will move and configure the mev-boost binary at the full exec path
-	PYTHONPATH="${BASE_DIR}" python3 -c "from deploy.common import install_system_binary; install_system_binary('$HOME/mev-boost', '${EXEC_PATH}')"
+	PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "mevboost" "$EXEC_PATH" "binary" 0 --binary-name "mev-boost"
 	sudo systemctl start mevboost
 }
 

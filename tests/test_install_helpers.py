@@ -13,6 +13,7 @@ The tests verify that:
   tightens directory and file permissions, preserves executable
   bits for files that were executable, and creates writable
   subdirectories for the service user.
+- ``extract_and_install`` is covered in ``tests/test_extract_and_install.py``.
 """
 
 import os

@@ -154,6 +154,7 @@ async def run_test(task: TestTask, results_dir: str, semaphore: asyncio.Semaphor
                 )
             run_cmd = (
                 f"docker run -d --name {task.container_name} {flags} {token_flag} "
+                f"{integration_container_env_flags()}"
                 f"{cache_mount}"
                 f"-v {shlex.quote(cwd)}:/ethpillar ethpillar-rebuild"
             )
@@ -374,21 +375,47 @@ def generate_html_report(tasks, results_dir, total_duration, timestamp, commit):
         f.write(html)
     return html_path
 
+def _host_integration_ids() -> tuple[int, int]:
+    """Return (uid, gid) for the bind-mounted repo owner inside containers."""
+    try:
+        return os.getuid(), os.getgid()
+    except AttributeError:
+        return 1000, 1000
+
+
+def integration_container_env_flags() -> str:
+    """Docker -e flags so the in-container test user matches the host checkout owner."""
+    uid, gid = _host_integration_ids()
+    return (
+        f"-e ETHPILLAR_INTEGRATION_UID={uid} "
+        f"-e ETHPILLAR_INTEGRATION_GID={gid} "
+        f"-e ETHPILLAR_INTEGRATION_USER=epstaker "
+    )
+
+
 def _docker_repo_mount(cwd: str) -> str:
-    return f"-v {shlex.quote(cwd)}:/ethpillar -e PYTHONPATH=/ethpillar/tests/integration"
+    return (
+        f"-v {shlex.quote(cwd)}:/ethpillar "
+        f"-e PYTHONPATH=/ethpillar/tests/integration "
+        f"{integration_container_env_flags()}"
+    )
 
 
 def docker_reset_binary_cache_access_log(cwd: str) -> None:
-    """Clear the access log as root inside Docker (avoids host sudo on WSL)."""
+    """Clear the access log inside Docker before the matrix (runs as root).
+
+    Cache housekeeping may need to remove root-owned files left from prior runs;
+    deploy/update tests themselves still run as the integration user.
+    """
     cmd = (
         f"docker run --rm {_docker_repo_mount(cwd)} ethpillar-rebuild "
-        "python3 -c \"from binary_cache_common import reset_access_log; reset_access_log()\""
+        "python3 -c \"from binary_cache_common import prepare_binary_cache_dir; prepare_binary_cache_dir()\""
     )
     subprocess.run(cmd, shell=True, check=True)
 
 
 def docker_prune_binary_cache(cwd: str) -> None:
-    """Prune stale cache entries as root inside Docker (same bind mount as tests)."""
+    """Prune stale cache entries inside Docker after the matrix (runs as root)."""
     cmd = (
         f"docker run --rm {_docker_repo_mount(cwd)} ethpillar-rebuild "
         "python3 -c \"from binary_cache_common import prune_unaccessed_binary_cache; "
@@ -400,10 +427,9 @@ def docker_prune_binary_cache(cwd: str) -> None:
 def fix_cache_permissions_for_ci() -> None:
     """Broaden read access on host cache dirs after Docker integration tests.
 
-    Containers run as root, so bind-mounted cache files arrive on the host as
-    root-owned. Per-file chmod 644 at write time helps, but directories and any
-    missed files still block the non-root CI runner from tarring caches for
-    actions/cache/save. sudo chmod -R a+rX fixes the whole tree without chown.
+    Cache files are usually owned by the integration user (host-matched UID) with
+    mode 644 from sitecustomize/extract_cache. When anything still lands as root
+    (e.g. legacy paths), ``sudo chmod -R a+rX`` lets the CI runner tar caches.
     """
     if os.environ.get("CI") != "true":
         return

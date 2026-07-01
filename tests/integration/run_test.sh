@@ -3,6 +3,20 @@
 set -euo pipefail
 
 cd /ethpillar
+
+# docker exec starts as root; drop to a sudo-capable test user (matches production installs).
+if [[ "$(id -u)" -eq 0 && "${ETHPILLAR_INTEGRATION_PRIVS_DROPPED:-}" != "1" ]]; then
+  # shellcheck source=docker/setup_integration_user.sh
+  source tests/integration/docker/setup_integration_user.sh
+  ensure_integration_user
+  export ETHPILLAR_INTEGRATION_PRIVS_DROPPED=1
+  export ETHPILLAR_VENV="${ETHPILLAR_VENV:-/tmp/ethpillar-integration-venv}"
+  export HOME="$(getent passwd "${INTEGRATION_USER}" | cut -d: -f6)"
+  PYTHONPATH="/ethpillar/tests/integration" python3 -c "from binary_cache_common import ensure_binary_cache_dir_writable; ensure_binary_cache_dir_writable()"
+  echo "[integration] Dropping root; running tests as ${INTEGRATION_USER} (uid=${INTEGRATION_UID})"
+  exec runuser -u "${INTEGRATION_USER}" -p -- bash "$0" "$@"
+fi
+
 # shellcheck source=../../functions.sh
 source functions.sh
 

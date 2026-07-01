@@ -1,7 +1,5 @@
-import os
-import subprocess
 from typing import Tuple, Optional
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_binary, BASE_DATA_DIR
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, BASE_DATA_DIR, extract_and_install
 from client_requirements import validate_version_for_network
 from deploy.service_generators import form_exec_start, generate_systemd_template
 
@@ -154,25 +152,8 @@ def download_lodestar(eth_network: str) -> str:
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Lodestar")
 
-    # We want the binary to end up at /usr/local/bin/lodestar.  Each instance (lodestar beacon and validator) will reference the same 
-    # binary, and will each have their own tmp foler in /var/lib/lodestar and /var/lib/lodestar_validator respectively for caxa
-    subprocess.run(["sudo", "mkdir", "-p", "/tmp/lodestar_extract"], check=True)
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", "/tmp/lodestar_extract"], check=True)
-    result = subprocess.run(
-        ["sudo", "find", "/tmp/lodestar_extract", "-type", "f", "-name", "lodestar"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    lodestar_bin = result.stdout.strip().split("\n")[0]
-    if not lodestar_bin:
-        print("Error: Could not find lodestar binary after extracting archive.")
-        exit(1)
-    install_system_binary(lodestar_bin, f"{INSTALL_DIR}/lodestar")
-
-    # Remove the tar file and temporary extraction directory
-    os.remove(download_path)
-    subprocess.run(["sudo", "rm", "-rf", "/tmp/lodestar_extract"])
+    # Single binary shared by beacon and validator; each role uses its own data/tmp dir under /var/lib.
+    extract_and_install(download_path, "lodestar", f"{INSTALL_DIR}/lodestar", "binary", 0, binary_name="lodestar")
     return lodestar_version
 
 def install_lodestar_bn(eth_network: str, checkpoint_sync_url: str, jwtsecret_path: str,

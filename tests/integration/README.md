@@ -46,7 +46,7 @@ The `Dockerfile.test` uses `ubuntu:24.04` and sets systemd as the `CMD`. The tes
    - `--cgroupns=host` — shares the host cgroup namespace
    - `--tmpfs /run --tmpfs /run/lock` — systemd runtime directories
 2. Waits 3 seconds for systemd to initialize.
-3. Runs the test via `docker exec <container> bash /ethpillar/tests/integration/run_test.sh ...`, which sources `functions.sh` to install Python deps the same way production does, then runs the test runner.
+3. Runs the test via `docker exec <container> bash /ethpillar/tests/integration/run_test.sh ...`. `docker exec` starts as **root**, but `run_test.sh` immediately creates the **`epstaker`** user (UID/GID matched to the host checkout owner), grants **passwordless sudo**, and re-execs itself via `runuser` so deploy/update scripts run unprivileged — the same shape as production. Python deps bootstrap into `/tmp/ethpillar-integration-venv` (not the bind-mounted `.venv`).
 4. Cleans up the container with `docker rm -f` in a `finally` block.
 
 ## Project Structure
@@ -55,7 +55,7 @@ The `Dockerfile.test` uses `ubuntu:24.04` and sets systemd as the `CMD`. The tes
 - `run_docker_tests.py`: Main orchestrator — builds the image, runs the test matrix with live UI, and generates HTML reports.
 - `run_docker_tests.ps1`: (Windows) Thin WSL wrapper that invokes `run_docker_tests.sh`.
 - `run_docker_tests.sh`: (Linux/WSL) Ensures host `rich` is installed, then invokes `run_docker_tests.py`.
-- `run_test.sh`: Production bootstrap wrapper — sources `functions.sh` (venv + `ensure_python_deps`) then execs the test runner.
+- `run_test.sh`: Bootstrap wrapper — drops root to `epstaker` (passwordless sudo), sources `functions.sh`, then execs the test runner.
 - `run_inside_docker.py`: Executes inside each container to run the deployment and verify artifacts via `systemctl`. Does not install Python deps itself.
 - `check_client_versions.sh`: After deploy (and after update tests), verifies installed versions parse via `getExecutionCurrentVersion` / `getClVcCurrentVersion` and match `release_info … LATEST` (same comparison as the update menu’s “already on latest” path).
 - `sitecustomize.py`: Caches release **binaries** only (revalidated with `HEAD` before reuse). GitHub API / release metadata always hits the network.
@@ -105,33 +105,40 @@ Non-interactive installs skip the “Press RETURN” prompt when stdin is not a 
 
 ## Manual Testing in the Docker Container
 
-To manually test inside the container (e.g. to debug a service file):
+Manual testing uses the same **non-root + passwordless sudo** shape as the integration matrix. Do not run `./ethpillar.sh` or deploy scripts as root inside the container.
 
 ```bash
 # Build the image
 docker build -t ethpillar-rebuild -f tests/integration/Dockerfile.test .
 
-# Start a long-lived container with systemd
-docker run -d --name ep-manual \
-  --privileged --cgroupns=host \
-  --tmpfs /run --tmpfs /run/lock \
-  -v $(pwd):/ethpillar \
-  ethpillar-rebuild
+# Start a long-lived container with systemd (bash helper sets host UID/GID)
+bash tests/integration/docker/start_manual_container.sh
+# Or set ETHPILLAR_TEST_IMAGE=ethpillar-rebuild if you used that tag
 
-# Open a shell inside
-docker exec -it ep-manual bash
+# Shell as the test user (not root)
+docker exec -it ep-manual bash /ethpillar/tests/integration/docker/manual_shell.sh
+```
 
-# Inside: bootstrap deps like production, then run a deployment
+Inside the container (prompt should be the test user, e.g. `ubuntu`):
+
+```bash
+./ethpillar.sh
+# or bootstrap deps then deploy:
 source /ethpillar/functions.sh
 python3 /ethpillar/deploy/deploy-node.py --skip_prompts true \
   --network SEPOLIA --install_config "Custom Setup" \
   --ec Nethermind --cc Grandine --vc Lighthouse
 
-systemctl status consensus
-systemctl status execution
+sudo systemctl status consensus
+sudo systemctl status execution
 journalctl -fu consensus --no-pager -n 50
+```
 
-# Stop and remove when done
+Pass `ETHPILLAR_INTEGRATION_UID` / `ETHPILLAR_INTEGRATION_GID` on `docker run` so the in-container user can write the bind-mounted repo (especially on WSL). `start_manual_container.sh` sets these from `id -u` / `id -g`.
+
+Stop and remove when done:
+
+```bash
 docker rm -f ep-manual
 ```
 

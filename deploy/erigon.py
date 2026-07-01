@@ -1,7 +1,7 @@
 import os
 import subprocess
 from typing import Optional, Tuple
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_binary, BASE_DATA_DIR
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_binary, BASE_DATA_DIR, extract_and_install
 from client_requirements import validate_version_for_network
 from deploy.service_generators import form_exec_start, generate_systemd_template
 
@@ -192,14 +192,8 @@ def download_and_install_erigon(eth_network: str, el_p2p_port: str, el_rpc_port:
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Erigon")
 
-    # Extract the binary using sudo
-    # Erigon tarball typically contains a folder, so we strip one component and extract to /usr/local/bin
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}", "--strip-components=1"], check=True)
-    # Ensure binary is configured correctly
-    install_system_binary(f"{INSTALL_DIR}/erigon", os.path.join(INSTALL_DIR, "erigon"))
-
-    # Remove the tar file
-    os.remove(download_path)
+    # Extract to canonical temp dir and install
+    extract_and_install(download_path, "erigon", os.path.join(INSTALL_DIR, "erigon"), "binary", 1)
 
     # Generate Service File Content
     service_content = generate_erigon_service(
@@ -243,13 +237,8 @@ def download_and_install_erigon_standalone(eth_network: str, el_p2p_port: str, e
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Erigon Standalone")
 
-    # Extract the binary using sudo
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}", "--strip-components=1"], check=True)
-    subprocess.run(["sudo", "chmod", "a+x", f"{INSTALL_DIR}/erigon"], check=True)
-    install_system_binary(f"{INSTALL_DIR}/erigon", os.path.join(INSTALL_DIR, "erigon"))
-
-    # Remove the tar file
-    os.remove(download_path)
+    # Extract to canonical temp dir and install
+    extract_and_install(download_path, "erigon", os.path.join(INSTALL_DIR, "erigon"), "binary", 1)
 
     # Generate Service File Content
     service_content = generate_erigon_standalone_service(

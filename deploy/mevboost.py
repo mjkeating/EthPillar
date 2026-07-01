@@ -1,7 +1,7 @@
 import os
 import subprocess
 from typing import List, Dict, Tuple
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, download_file, get_machine_architecture, install_system_binary
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, download_file, get_machine_architecture, extract_and_install
 
 def generate_mevboost_service(eth_network: str, mev_min_bid: str, relay_options: List[Dict[str, str]]) -> str:
     """Generate MEV-Boost systemd service file content.
@@ -95,14 +95,9 @@ def install_mevboost(eth_network: str, mev_min_bid: str, relay_options: List[Dic
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "mevboost")
 
-    # Extract the binary
-    subprocess.run(["sudo", "tar", "xzf", download_path, "-C", f"{INSTALL_DIR}"], check=True)
-
-    # Ensure binary is moved/configured and follows system best-practices
-    install_system_binary(f"{INSTALL_DIR}/mev-boost", os.path.join(INSTALL_DIR, "mev-boost"))
-
-    # Remove the downloaded .tar.gz file
-    os.remove(download_path)
+    extract_and_install(
+        download_path, "mevboost", os.path.join(INSTALL_DIR, "mev-boost"), "binary", 0, binary_name="mev-boost"
+    )
 
     # Generate Service File Content
     service_content = generate_mevboost_service(eth_network, mev_min_bid, relay_options)

@@ -103,9 +103,8 @@ if os.environ.get("ENABLE_EP_CACHE") == "1":
             return MockStreamResponse(cache_file, size)
 
         def _chmod_cache_file(path: str) -> None:
-            # Tests run inside Docker as root; cache files bind-mount to the host
-            # still owned by root. chmod 644 lets the CI runner (non-root) read them
-            # when actions/cache/save tars tests/integration/cache — no chown needed.
+            # Tests run as the integration user; cache files bind-mount to the host
+            # with mode 644 so the CI runner can read them for actions/cache/save.
             try:
                 os.chmod(path, 0o644)
             except OSError:

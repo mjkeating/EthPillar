@@ -1,7 +1,7 @@
 import os
 import subprocess
 from typing import Tuple, Optional
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_binary, BASE_DATA_DIR
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_file, get_machine_architecture, install_system_binary, BASE_DATA_DIR, extract_and_install
 from client_requirements import validate_version_for_network
 from deploy.service_generators import form_exec_start, generate_systemd_template
 
@@ -133,26 +133,8 @@ def download_and_install_geth(eth_network: str, el_p2p_port: str, el_rpc_port: s
     download_path = f"{DOWNLOAD_DIR}/{filename}"
     download_file(download_url, download_path, "Geth")
 
-    # Extract the binary to /usr/local/bin/geth using sudo
-    
-    # Extract to a temporary directory in DOWNLOAD_DIR, INSTALL_DIR
-    temp_extract_dir = f"{DOWNLOAD_DIR}/geth_temp"
-    subprocess.run(["mkdir", "-p", temp_extract_dir], check=True)
-    subprocess.run(["tar", "xzf", download_path, "-C", temp_extract_dir], check=True)
-
-    # Find the geth binary and move it
-    extracted_dirs = [d for d in os.listdir(temp_extract_dir) if d.startswith("geth-linux")]
-    if not extracted_dirs:
-        print("Error: Could not find geth binary after extracting archive.")
-        exit(1)
-    geth_bin_path = f"{temp_extract_dir}/{extracted_dirs[0]}/geth"
-    install_system_binary(geth_bin_path, f"{INSTALL_DIR}/geth")
-    
-    # Cleanup temp directory
-    subprocess.run(["rm", "-rf", temp_extract_dir])
-
-    # Remove the tar file
-    os.remove(download_path)
+    # Extract to canonical temp dir and install
+    extract_and_install(download_path, "geth", f"{INSTALL_DIR}/geth", "binary", 1)
 
     # Generate Service File Content
     service_content = generate_geth_service(

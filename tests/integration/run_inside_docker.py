@@ -159,14 +159,31 @@ def write_test_env(args: Any, env_path: str = INTEGRATION_ENV_FILE) -> None:
     with open(env_path, "w", encoding="utf-8") as f:
         f.write(content)
 
+def _systemctl_cmd(*args: str) -> List[str]:
+    """Return a systemctl argv list; prefix sudo for the non-root integration user."""
+    if hasattr(os, "geteuid") and os.geteuid() != 0:
+        return ["sudo", "systemctl", *args]
+    return ["systemctl", *args]
+
+
+def _pid1_is_systemd() -> bool:
+    """Return True when PID 1 is the systemd init process."""
+    try:
+        with open("/proc/1/comm", encoding="utf-8") as f:
+            return f.read().strip() == "systemd"
+    except OSError:
+        return False
+
+
 def systemd_available() -> bool:
-    """Returns True if systemd is running as PID 1 (real systemd, not container stub)."""
+    """Return True when PID 1 is systemd and systemctl reports a live state."""
+    if not _pid1_is_systemd():
+        return False
     try:
         result = subprocess.run(
-            ["systemctl", "is-system-running"],
-            capture_output=True, text=True, timeout=5
+            _systemctl_cmd("is-system-running"),
+            capture_output=True, text=True, timeout=5,
         )
-        # States: running, degraded, maintenance, starting — all indicate live systemd
         return result.stdout.strip() in ("running", "degraded", "maintenance", "starting")
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
@@ -277,6 +294,14 @@ def integration_subprocess_env() -> Dict[str, str]:
     return env
 
 
+def require_non_root_integration_runner() -> None:
+    """Integration installs must mirror production: non-root user + passwordless sudo."""
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        print("❌ Integration tests must not run as root.")
+        print("   run_test.sh should drop privileges to the integration user before calling this script.")
+        sys.exit(1)
+
+
 def require_production_python_deps() -> None:
     """Fail fast if production bootstrap did not install EthPillar Python deps."""
     required = (
@@ -345,7 +370,7 @@ def check_service_file_substitution(service_name: str) -> bool:
 def _journalctl_args(service_name: str) -> List[str]:
     """Return journalctl args scoped to the service's current MainPID when available."""
     pid_result = subprocess.run(
-        ["systemctl", "show", "-p", "MainPID", "--value", service_name],
+        _systemctl_cmd("show", "-p", "MainPID", "--value", service_name),
         capture_output=True, text=True,
     )
     main_pid = pid_result.stdout.strip()
@@ -466,7 +491,7 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
 
         # Step 1: reload daemon — this validates unit file syntax
         result = subprocess.run(
-            ["systemctl", "daemon-reload"],
+            _systemctl_cmd("daemon-reload"),
             capture_output=True, text=True
         )
         if result.returncode != 0:
@@ -476,7 +501,7 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
 
         # Step 2: start the service
         result = subprocess.run(
-            ["systemctl", "start", service_name],
+            _systemctl_cmd("start", service_name),
             capture_output=True, text=True, timeout=30
         )
         if result.returncode != 0:
@@ -497,7 +522,7 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
         )
 
         def get_prop(prop):
-            res = subprocess.run(["systemctl", "show", "-p", prop, "--value", service_name], capture_output=True, text=True)
+            res = subprocess.run(_systemctl_cmd("show", "-p", prop, "--value", service_name), capture_output=True, text=True)
             return res.stdout.strip()
 
         for attempt in range(1, max_attempts + 1):
@@ -581,11 +606,23 @@ def check_service_start(service_name: str, has_caplin: bool = False) -> bool:
         if not exec_start: return False
         try:
             cmd = shlex.split(exec_start)
-            process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                       cwd=working_dir, preexec_fn=os.setsid)
+            run_cmd = cmd
+            if user and user != "root":
+                run_cmd = ["sudo", "-u", user, "--"] + cmd
+            process = subprocess.Popen(
+                run_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                cwd=working_dir,
+                preexec_fn=os.setsid,
+            )
             time.sleep(5)
             if process.poll() is not None:
+                err = (process.stderr.read() or b"").decode(errors="replace").strip()
                 print(f"  ❌ Service {service_name} crashed immediately (code {process.returncode})")
+                if err:
+                    tail = "\n".join(err.splitlines()[-5:])
+                    print(f"  stderr: {tail}")
                 return False
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
             print(f"  ✅ Service {service_name} started (process dry-run)")
@@ -615,7 +652,7 @@ def _apply_rpc_bind(service: str, bind_addr: str) -> bool:
 def _verify_default_port_bindings(args: Any, expected_services: List[str]) -> bool:
     """Verify RPC ports are localhost-only and P2P ports are on all interfaces."""
     if not systemd_available():
-        print("  ℹ️  Skipping port binding checks (systemd unavailable)", flush=True)
+        print("  ℹ️  Skipping port binding checks (systemd not running as PID 1)", flush=True)
         return True
 
     vc_only = is_validator_only(args.config)
@@ -847,6 +884,7 @@ if __name__ == "__main__":
     parser.add_argument('--test-switching', action='store_true', default=False)
     parser.add_argument('--service', type=str, default="", help='Service name for verify-service-health')
     args = parser.parse_args()
+    require_non_root_integration_runner()
     require_production_python_deps()
 
     if args.script_name == "verify-service-health":

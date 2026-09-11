@@ -29,6 +29,10 @@ cd "$BASE_DIR" || exit 1
 # Load functions
 source ./functions.sh
 
+# Non-interactive CLI helpers (status / start|stop|restart / check-updates / upgrade)
+# shellcheck disable=SC1091
+source ./cli.sh
+
 # Load environment variables, Lido CSM withdrawal address and fee recipient
 source ./env
 
@@ -1934,11 +1938,6 @@ function setNodeMode(){
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  if [[ "${1:-}" == "--version" ]]; then
-    printInstalledVersions
-    exit 0
-  fi
-
   # ethpillar --migrate_cdvn [--migrate_cdvn_path=PATH]
   if [[ "${1:-}" == "--migrate_cdvn" ]] || [[ "${1:-}" == --migrate_cdvn=* ]]; then
     setWhiptailColors
@@ -1969,6 +1968,11 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     done
     migrateCdvnFull "$_migrate_path"
     exit $?
+  fi
+
+  # Non-interactive CLI (status, start/stop/restart, check-updates, upgrade, --help, --version)
+  if cli_dispatch "$@"; then
+    exit "$CLI_EXIT_CODE"
   fi
 
   checkV1StakingSetup

@@ -1653,6 +1653,7 @@ while true; do
       ⚙️ "eth-duties: Show upcoming block proposals, attestations, sync duties"
       💎 "ethdo: Conduct common validator tasks"
       💾 "NCDU: Find large files. Analyze disk usage."
+      🧹 "History expiry: Suggested prune flags for ~2TB staking disks"
       🔗 "Beaconcha.in Validator Dashboard: Create a link for my validators"
       🚪 "Beaconcha.in: Check validator entry/exit queue time"
       ⌚ "Timezone: Update machine's timezone"
@@ -1696,6 +1697,9 @@ while true; do
         ;;
       💾)
         findLargestDiskUsage
+        ;;
+      🧹)
+        runScript helpers/history_expiry_suggestions.sh
         ;;
       💎)
         installEthdo

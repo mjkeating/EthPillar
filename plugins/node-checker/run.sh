@@ -270,6 +270,7 @@ check_resources() {
     disk_usage=$(df / | awk '/\// {print $5}' | tr -d '%')
     if [ "$disk_usage" -gt $DISK_WARN ]; then
         print_check_result "WARN" "High disk usage: ${disk_usage}%"
+        print_check_result "INFO" "On ~2TB staking disks, review history expiry / prune flags (Toolbox → History expiry suggestions)."
         ((warning_checks++))
     else
         print_check_result "PASS" "Disk usage: ${disk_usage}%"
@@ -719,6 +720,35 @@ check_charon_version() {
     fi
 }
 
+check_history_expiry() {
+    local helper="${ETHPILLAR_ROOT}/helpers/history_expiry_suggestions.sh"
+    local unit="${EXEC_SERVICE_FILE:-/etc/systemd/system/execution.service}"
+    local cl_unit="${CONSENSUS_SERVICE_FILE:-/etc/systemd/system/consensus.service}"
+    local unit_text="" cl_text="" description execstart client status level summary
+    [[ -f "$helper" ]] || return 0
+    # shellcheck disable=SC1091
+    source "$helper"
+    [[ -f "$unit" ]] || return 0
+
+    ((total_checks++))
+    unit_text=$(history_expiry_read_unit "$unit" 2>/dev/null || true)
+    cl_text=$(history_expiry_read_unit "$cl_unit" 2>/dev/null || true)
+    description=$(history_expiry_extract_description "$unit_text")
+    execstart=$(history_expiry_extract_execstart "$unit_text")
+    client=$(history_expiry_detect_client "$description" "$execstart")
+    status=$(history_expiry_status "$client" "$execstart")
+    level=$(history_expiry_checker_level "$status")
+    summary=$(history_expiry_checker_summary "$status" "$client")
+    print_check_result "$level" "$summary"
+    case "$level" in
+        WARN) ((warning_checks++)) ;;
+    esac
+    # Never FAIL: archive / Caplin archive / missing flags stay WARN or INFO.
+    if [[ "$status" == "missing" || "$status" == "archive" || "$status" == "caplin_archive" ]]; then
+        history_expiry_evaluate_unit_text "$unit_text" "$cl_text" | tail -n +2
+    fi
+}
+
 check_noatime() {
     ((total_checks++))
     if grep -q "noatime" /etc/fstab; then
@@ -825,6 +855,9 @@ check_mevboost_version
 
 print_section_header "Performance Checks"
 check_resources
+echo
+print_check_result "INFO" "History expiry / prune (staking ~2TB):"
+check_history_expiry
 echo
 check_chrony
 echo

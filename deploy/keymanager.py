@@ -72,7 +72,7 @@ PRYSM_VALIDATOR_HOME_AUTH_TOKEN = (
     "/home/validator/.eth2validators/prysm-wallet-v2/auth-token"
 )
 PRYSM_WALLET_NOT_READY_MSG = (
-    "Prysm wallet not initialized (wallet-dir missing or no auth-token). "
+    "Prysm wallet not initialized (no auth-token found). "
     "Create a Prysm wallet first, then re-run Enable Keymanager API."
 )
 
@@ -88,7 +88,7 @@ _ENABLE_FLAGS: dict[str, tuple[str, ...]] = {
         "--http",
         "--http-port=5062",
         "--http-address=127.0.0.1",
-        # Required when HTTP keymanager is enabled without TLS.
+        # Lighthouse refuses to start with --http-address unless this is also set.
         "--unencrypted-http-transport",
     ),
     "lodestar": (
@@ -221,9 +221,11 @@ def _token_path_candidates(client: str, network: str) -> list[str]:
     """Return ordered filesystem paths that may hold a keymanager bearer token.
 
     Paths follow EthPillar layouts (``/var/lib/<client>_validator/...``) and
-    common combined / home-directory layouts. Network-specific subdirs are
-    included when *network* is not mainnet (and always as lower-priority
-    fallbacks).
+    common combined / home-directory layouts. For most clients,
+    network-specific subdirs (including ``mainnet``) follow the non-network
+    EthPillar paths; see each client branch for the exact order (e.g. the
+    Lighthouse home-dir network path precedes ``~/.lighthouse/validators``,
+    and Teku adds no network-specific paths).
     """
     net = normalize_network(network)
     base = _BASE_DATA_DIR
@@ -256,7 +258,8 @@ def _token_path_candidates(client: str, network: str) -> list[str]:
         add(base, "lodestar", net, "validators", "api-token.txt")
 
     elif client == "nimbus":
-        # Nimbus VC writes api-token.txt under --data-dir when keymanager is on.
+        # EthPillar creates api-token.txt under --data-dir (Nimbus reads it; it
+        # does not create it) — see ensure_nimbus_keymanager_token_file.
         add(base, "nimbus_validator", "api-token.txt")
         add(base, "nimbus", "api-token.txt")
         add(base, "nimbus_validator", "validators", "api-token.txt")
@@ -374,7 +377,7 @@ def find_token_file(client: str, network: str = "mainnet") -> Optional[str]:
 
 
 def _path_exists_via_sudo(path: str) -> bool:
-    """Return True if *path* exists, including for root-only paths via sudo."""
+    """Return True if *path* exists (sudo fallback: regular file only, via ``test -f``)."""
     if os.path.exists(path):
         return True
     try:
@@ -631,7 +634,7 @@ def require_prysm_wallet_ready(
     """Like :func:`check_prysm_wallet_ready`, but raise if the wallet is not ready.
 
     Raises:
-        KeymanagerError: Wallet-dir missing or no ``auth-token`` file.
+        KeymanagerError: No ``auth-token`` file found.
     """
     info = check_prysm_wallet_ready(
         service_path=service_path,
@@ -1486,7 +1489,7 @@ def enable_keymanager_api(
                 summary["token"] = discovered.token or summary["token"]
         return summary
 
-    # Flags already present but Prysm/Nimbus side-effects need a restart
+    # Flags already present but Prysm wallet/password bootstrap needs a restart
     if not flags_added and summary["changed"] and not dry_run and restart:
         if canonical == "prysm" and (
             (prysm_bootstrap or {}).get("wallet_created")
@@ -1772,12 +1775,13 @@ class KeymanagerClient:
 
         1. If *client* is set, use :func:`detect_keymanager` for preferred
            port + on-disk token, then probe that endpoint first.
-        2. Probe remaining client-preferred ports (or *ports* override).
-        3. Fall back to scanning :data:`DEFAULT_DISCOVERY_PORTS`.
+        2. Probe remaining client-preferred ports.
+        3. Then probe *ports* if given, otherwise scan
+           :data:`DEFAULT_DISCOVERY_PORTS` (only when *ports* is ``None``).
 
-        An endpoint counts as "found" on HTTP 2xx or 401/403. HTTP 404 is
-        ignored (often a beacon REST API on a shared port). Connection
-        failures continue to the next port.
+        An endpoint counts as "found" on any HTTP response except 404 (e.g.
+        2xx, 401/403, 5xx). HTTP 404 is ignored (often a beacon REST API on a
+        shared port). Connection failures continue to the next port.
 
         Args:
             host: Host to probe (default localhost).
@@ -1792,6 +1796,10 @@ class KeymanagerClient:
         Returns:
             A :class:`KeymanagerClient` for the first reachable endpoint, or
             ``None`` if nothing responded.
+
+        Raises:
+            KeymanagerError: *client* is Prysm and no wallet ``auth-token``
+                is found (see :func:`check_prysm_wallet_ready`).
         """
         net = normalize_network(network)
         probe_ports: list[int] = []
@@ -1878,9 +1886,11 @@ class KeymanagerClient:
     ) -> Optional["KeymanagerClient"]:
         """Probe a single base URL; return a client if a keymanager answers.
 
-        Counts as found: HTTP 2xx, Prysm empty-wallet 500, or 401/403.
-        Counts as not found: connection errors, 404 (often a non-keymanager
-        service such as a beacon REST API on the same port).
+        Counts as found: any HTTP response except 404 (2xx, 401/403, Prysm
+        empty-wallet 500, other error statuses).
+        Counts as not found: connection errors, other client errors, and 404
+        (often a non-keymanager service such as a beacon REST API on the same
+        port).
         """
         km = cls(base_url=base_url, token=token, timeout=timeout)
         try:
@@ -2347,8 +2357,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                 host=args.host,
             )
             summary["ok"] = True
-            # Never echo full token in interactive logs if very long; still return it
-            # for shell capture (local use only).
+            # The JSON includes the full token for shell capture (local use only);
+            # the TUI (manage_validator_keys.sh) only reports whether one was found.
             _cli_print(summary)
             return 0
 

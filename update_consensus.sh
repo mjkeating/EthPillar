@@ -131,7 +131,7 @@ function updateClient(){
 	    ;;
 	  Teku)
 		# Ensure JDK 25 is available BEFORE touching the running client; abort
-		# the update otherwise so we don't replace a working Besu with one that
+		# the update otherwise so we don't replace a working Teku with one that
 		# cannot start (UnsupportedClassVersionError).
 		# NOTE: keep this version in sync with ensure_java_available(25) in deploy/teku.py.
 		updateJRE 25|| error "❌ JDK 25 is required by Teku but could not be installed. Aborting update; Teku was left untouched."

@@ -319,16 +319,18 @@ def parse_unit(content: str) -> ParsedUnit:
 
 
 def canonicalize_unit(content: str) -> str:
-    """Return unit text with sorted directives and order-normalized ExecStart.
+    """Return unit text with ExecStart flags and [Service] Environment= lines sorted.
+
+    Other directives keep their original order.
 
     Suitable for side-by-side diffs where flag order should not matter.
     """
     unit = parse_unit(content)
     lines = content.splitlines()
 
-    # Rebuild non-ExecStart Service/Unit keys in stable order while preserving
-    # section structure from the original as much as practical: replace only
-    # ExecStart with sorted normalized args, and sort Environment= lines.
+    # Preserve the original section structure and directive order: replace
+    # only ExecStart with sorted normalized args, and sort consecutive
+    # Environment= lines within [Service].
     normalized_args = normalize_cli_args(unit.exec_args)
     if normalized_args:
         binary = normalized_args[0]

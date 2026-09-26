@@ -45,7 +45,7 @@ MSG_WEB3_SOCKET_PROVIDER="The websocket provider for your node.
 \nPreferably, use your own local execution client node e.g. you already have for CSM validators.
 \nDefault example: ws://127.0.0.1:8545"
 
-# Get token
+# Get web3 websocket provider
 _WEB3_SOCKET_PROVIDER=$(whiptail --title "Set WEB3_SOCKET_PROVIDER" --inputbox "$MSG_WEB3_SOCKET_PROVIDER" 15 78 "ws://127.0.0.1:8545" --ok-button "Submit" 3>&1 1>&2 2>&3)
 if [ -z "$_WEB3_SOCKET_PROVIDER" ]; then exit; fi #pressed cancel
 
@@ -137,5 +137,5 @@ MSG_COMPLETE="Done! Congratulations on your new locally hosted CSM Sentinel bot.
 \nYou will find it at t.me/[YOUR-BOT-NAME].
 Follow your Node Operator id."
 
-# Intro screen
+# Installation complete screen
 whiptail --title "CSM Sentinel: Install Complete" --msgbox "$MSG_COMPLETE" 10 78

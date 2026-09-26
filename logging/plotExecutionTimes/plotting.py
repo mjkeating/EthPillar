@@ -357,7 +357,9 @@ async def consume_points(
         queue: Async queue yielding either `ProcessingPoint`, `REDRAW_REQUESTED`, or ``None``.
         state: `PlotState` instance to update with new points.
         renderer: `PlotRenderer` used to render the state.
-        refresh_per_second: Refresh rate for Rich live rendering (when available).
+        refresh_per_second: Passed to Rich ``Live`` but currently has no effect:
+            ``auto_refresh=False`` is set and the display is refreshed manually
+            after each batch.
     """
 
     async def _collect_batch() -> tuple[list[ProcessingPoint], bool]:
@@ -380,7 +382,8 @@ async def consume_points(
             except asyncio.QueueEmpty:
                 return batch, False
             if queued is None:
-                # Re-queue the sentinel so the outer loop can observe it.
+                # Defensive: leave the sentinel in the queue for any later reader;
+                # the outer loop stops via the returned saw_none flag.
                 await queue.put(None)
                 return batch, True
             if queued is REDRAW_REQUESTED:

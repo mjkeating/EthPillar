@@ -213,7 +213,10 @@ class MigrationPlan:
 
     Attributes:
         command: ``prepare``, ``complete``, or ``import``.
-        client: Detected validator (or BN for integrated Grandine).
+        client: Detected validator (or BN for integrated Grandine). On
+            ``complete`` without a local validator client it falls back to the
+            consensus client name, then ``mevboost``; on a host with no local
+            BN or MEV-Boost it is ``Charon`` or ``unknown``.
         support: ``full`` or ``placeholder``.
         notes: Per-client support blurb from :data:`SUPPORT_NOTES`.
         actions: Files or systemd operations that would change (or did).
@@ -546,8 +549,10 @@ def support_level(client: str) -> str:
 
     Returns:
         ``full`` (Prysm, Lodestar) or ``placeholder``.
-        The MEV-Boost TUI (``epbsTuiSupported`` in ``functions.sh``) is shown
-        only for ``full``.
+        The MEV-Boost TUI (``epbsTuiSupported`` in ``functions.sh``) mirrors
+        this for local validators (shown for Prysm/Lodestar only), but is
+        always shown on MEV hosts without a local validator (split LXC) and
+        hidden when Charon is enabled.
     """
     if client in ("Prysm", "Lodestar"):
         return "full"
@@ -1046,8 +1051,8 @@ def export_migration(
         ``(path_written, payload_dict)``.
 
     Raises:
-        EpbsError: If MEV-Boost relays cannot be loaded or the file cannot
-            be written.
+        EpbsError: If MEV-Boost relays cannot be loaded.
+        OSError: If the output directory or file cannot be written.
     """
     fs = fs or EpbsFilesystem()
     relays = _load_relays(fs)

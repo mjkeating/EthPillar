@@ -19,19 +19,23 @@ def _nimbus_network_flag(eth_network: str) -> str:
 def build_checkpoint_sync_exec_start_pre(network_flag: str, sync_url: str) -> str:
     """Build ``ExecStartPre`` that checkpoint-syncs Nimbus on first start.
 
-    Nimbus has no checkpoint-sync flag on the beacon node itself; its database
-    must be initialised once with ``trustedNodeSync``. Runs only while no
+    EthPillar passes no checkpoint URL flag to the beacon node; instead the
+    database is initialised once with the separate ``trustedNodeSync``
+    command (the documented Nimbus route). Runs only while no
     database exists, so it is a no-op on later starts and after datadir
     migrations (e.g. CDVN). The sync writes to a staging dir and the finished
     ``db`` is moved into place atomically, so an interrupted sync (provider
     down, start timeout) leaves no half-built ``db`` and is retried on the
     next start instead of Nimbus falling back to genesis sync.
-    Mirrors resync_nimbus() in resync_consensus.sh.
+    Uses the same trustedNodeSync arguments as resync_nimbus() in
+    resync_consensus.sh (which syncs in place, without a staging dir).
 
     Every value is double-quoted inside the script, so URL characters such as
-    ``?&;#`` stay literal and the script contains no single quote. The outer
-    ``shlex.quote`` then yields one single-quoted word, the only quoting form
-    systemd accepts (it rejects concatenated quotes like ``'a'"'"'b'``).
+    ``?&;#`` stay literal to bash and the script contains no single quote. The
+    outer ``shlex.quote`` then yields one plain single-quoted word, which keeps
+    the unit line readable and predictable. Characters that systemd or bash
+    would expand or re-interpret (``%`` specifiers, ``$`` variables, backtick,
+    quotes, backslash escapes, whitespace) are rejected rather than escaped.
 
     Returns:
         Full ``ExecStartPre=`` value (command only, without the key).

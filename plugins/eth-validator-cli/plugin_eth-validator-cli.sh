@@ -3,7 +3,7 @@
 # Author: coincashew.eth | coincashew.com
 # License: GNU GPL
 # Source: https://github.com/coincashew/ethpillar
-# Description: Contributoor helper script
+# Description: eth-validator-cli helper script
 #
 # Made for home and solo stakers 🏠🥩
 

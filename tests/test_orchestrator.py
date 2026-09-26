@@ -362,8 +362,8 @@ class TestRunInstallRouting:
             f"Expected MEV params '{mev_params_expected}' in nimbus install, got: {call_kwargs}"
 
     def test_switch_consensus_client_nimbus_passes_checkpoint_sync_url(self):
-        # Nimbus has no checkpoint-sync unit flag; the URL must reach install_nimbus_bn
-        # so it can run trustedNodeSync instead of syncing from genesis.
+        # EthPillar passes no checkpoint URL flag to the Nimbus unit; the URL must reach
+        # install_nimbus_bn so it can run trustedNodeSync instead of syncing from genesis.
         sync_url = 'https://mainnet.checkpoint.sigp.io'
         mocks = self._run("Switch Consensus Client", None, "Nimbus", None,
                           flags_override={"validator": False, "switch_client": "consensus"},

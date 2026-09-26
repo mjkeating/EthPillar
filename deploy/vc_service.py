@@ -101,8 +101,10 @@ def patch_beacon_endpoint(
         service_path: Path to validator.service.
         vc_name: Validator client name (e.g. Prysm, Lighthouse).
         new_endpoint: Full beacon REST URL.
-            Common defaults:
-              - Lighthouse/Nimbus/Teku: http://127.0.0.1:5052
+            Upstream client defaults (EthPillar itself uses CL_REST_PORT
+            for every consensus client):
+              - Lighthouse/Nimbus:      http://127.0.0.1:5052
+              - Teku:                   http://127.0.0.1:5051
               - Prysm:                  http://127.0.0.1:3500
               - Lodestar:               http://127.0.0.1:9596
 

@@ -99,7 +99,7 @@ DATADIR_MOVES: Dict[str, Tuple[str, str]] = {
     "data/vc-lighthouse": ("lighthouse_validator", "validator"),
 }
 
-# Soft-warn dirs when profile is *-none but data still exists.
+# Soft-warn dirs when the EL/CL profile is *-none or external/unmapped but data still exists.
 _ORPHAN_DATA_HINTS: Dict[str, str] = {
     "data/nethermind": "EL",
     "data/reth": "EL",
@@ -736,8 +736,10 @@ def detect_docker_compose_status(
 
     Returns:
         ``(running, error)``. ``error`` is set when the check could not be
-        performed (missing CLI, permission denied, timeout). Callers must
-        treat a non-empty *error* as unsafe to migrate (same as running).
+        performed (permission denied, timeout). Callers must treat a
+        non-empty *error* as unsafe to migrate (same as running). With no
+        ``docker``/``docker-compose`` CLI at all this returns ``(False, "")``:
+        Compose cannot be running locally.
     """
     if not compose_file:
         return False, ""
@@ -812,7 +814,8 @@ def plan_cdvn_migration(
         :class:`CdvnMigrationPlan` with datadir moves, warnings, and deploy argv.
 
     Raises:
-        ValueError: When ``.env``/profiles are missing or incompatible.
+        ValueError: When ``.env``/profiles are missing or incompatible, or a VC
+            is planned but no fee recipient could be resolved.
         FileNotFoundError: When *path* does not exist.
     """
     data_root = base_data_dir if base_data_dir is not None else BASE_DATA_DIR
@@ -1076,7 +1079,11 @@ def apply_datadir_moves(plan: CdvnMigrationPlan, selected: Optional[Sequence[str
 
 
 def detect_ethpillar_vc_name(service_path: str = "/etc/systemd/system/validator.service") -> Optional[str]:
-    """Return the EthPillar VC name from ``validator.service`` Description/ExecStart.
+    """Return the EthPillar VC name found in ``validator.service``.
+
+    Returns the first known client name (checked in the fixed order Lodestar,
+    Lighthouse, Teku, Nimbus, Prysm, Grandine) that appears anywhere in the
+    unit text, case-insensitively.
 
     Args:
         service_path: Path to ``validator.service`` (overridable in tests).
@@ -1242,8 +1249,14 @@ def run_migration(
         The migration plan (same object whether or not ``dry_run``).
 
     Raises:
-        RuntimeError: When Docker Compose is still up or deploy fails.
-        ValueError: When the plan cannot be built (see :func:`plan_cdvn_migration`).
+        RuntimeError: When Docker Compose is still up or its status cannot be
+            verified, deploy fails, key share sync fails or is skipped (other
+            than destination already populated), or the Charon overlay fails.
+        ValueError: When the plan cannot be built (see :func:`plan_cdvn_migration`)
+            or the ``.charon`` source lacks ``cluster-lock.json``.
+        FileNotFoundError: When *path*, a datadir move source, the ``.charon``
+            source, or the CDVN ``.env`` is missing.
+        subprocess.CalledProcessError: When a ``sudo`` reset/datadir/overlay step fails.
     """
     plan = plan_cdvn_migration(path)
     if plan.docker_running:
@@ -1340,8 +1353,9 @@ def _apply_charon_cluster_overlay(
 ) -> None:
     """Copy CDVN ``.charon`` into EthPillar's Charon datadir.
 
-    Always runs when the plan has a cluster lock. Optional Docker ``data/``
-    moves (``--moves``) do not control this step.
+    Runs unless *skip* is set; an existing EthPillar copy with key shares is
+    kept unless *force*. Optional Docker ``data/`` moves (``--moves``) do not
+    control this step.
 
     Args:
         plan: Plan with ``charon_dir`` / lock / keyshare flags.
@@ -1349,8 +1363,14 @@ def _apply_charon_cluster_overlay(
         force: When True, overwrite an existing EthPillar cluster copy.
 
     Raises:
-        RuntimeError: When the overlay is required but the copy fails or
-            ``cluster-lock.json`` is missing afterward.
+        RuntimeError: When a copy is needed but the plan has no ``.charon``
+            cluster lock, the copy is skipped, or ``cluster-lock.json`` is
+            missing afterward.
+        FileNotFoundError: From :func:`copy_charon_cluster` when the source
+            ``.charon`` directory is missing.
+        ValueError: From :func:`copy_charon_cluster` when the source has no
+            ``cluster-lock.json``.
+        subprocess.CalledProcessError: When a ``sudo`` mkdir/copy step fails.
     """
     dest = _charon_cluster_dest()
     dest_lock = os.path.join(dest, "cluster-lock.json")
@@ -1412,8 +1432,9 @@ def main(argv: Optional[list] = None) -> int:
         argv: Argument list; defaults to ``sys.argv[1:]``.
 
     Returns:
-        ``0`` on success, ``1`` on plan/run error, ``2`` when Docker is still
-        running or its status cannot be verified.
+        ``0`` on success, ``1`` on plan/run error (including ``run`` aborting
+        because Docker is up), ``2`` for ``plan`` when Docker is still running
+        or its status cannot be verified.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)

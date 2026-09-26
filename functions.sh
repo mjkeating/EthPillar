@@ -14,7 +14,7 @@ fi
 
 set -u
 
-# enable command completion
+# enable history and history expansion
 set -o history -o histexpand
 
 # Load BN and EL ENDPOINTS (integration tests may set ETHPILLAR_ENV_FILE to a sidecar env)
@@ -91,7 +91,7 @@ get_execution_version_output() {
 
 # Extract x.y.z with optional prerelease (-rc.N / -alpha… / -beta… / -dev…) when it
 # follows the client name (avoids rustc/JDK semver noise). Does not treat bare
-# hex commit suffixes (e.g. Lighthouse v5.2.1-abc1234) as prereleases.
+# hex commit suffixes (e.g. Erigon 2.60.6-e3bd6a2c) as prereleases.
 parse_execution_client_version() {
   local el="$1"
   local output="$2"
@@ -580,8 +580,9 @@ fetch_latest_release() {
     return 0
 }
 
-# Apply EthPillar self-update: fetch origin/main, hard-reset, clean untracked,
-# refresh Python deps. Preserves .env.overrides across the clean.
+# Apply EthPillar self-update: fetch origin/main, check out main, fast-forward
+# pull, hard-reset to HEAD, remove untracked and ignored files (git clean -xdf,
+# incl. .venv), refresh Python deps. Preserves .env.overrides across the clean.
 # Shared by System Administration → Update EthPillar and `ethpillar upgrade ethpillar`.
 upgradeEthPillar() {
     cd "${BASE_DIR}" || return 1
@@ -1064,7 +1065,8 @@ epbsRemoteVcMode() {
 }
 
 # Build the beacon node REST URL that a separate VC should target.
-# Prefers environment variables, then falls back to scraping the consensus.service.
+# Port: CL_REST_PORT, else scraped from consensus.service, else 5052.
+# IP: a scraped --http-address wins over CL_IP_ADDRESS (default 127.0.0.1).
 # Sets BEACON_NODE_ENDPOINT.
 getBeaconNodeEndpoint(){
     local consensus_svc="${CONSENSUS_SERVICE_FILE:-/etc/systemd/system/consensus.service}"
@@ -2028,13 +2030,13 @@ addSwapfile(){
         read -r -p "Enter the path of the swap file (e.g. /swapfile). Press Enter to use default '/swapfile': " SWAP_PATH
         SWAP_PATH=${SWAP_PATH:-/swapfile}
 
-        # Create the swap file in /swapfile with the given size
+        # Create the swap file at ${SWAP_PATH} with the given size
         sudo fallocate -l "${SWAP_SIZE}" ${SWAP_PATH}
 
         # Change the permissions to read and write for root
         sudo chmod 600 ${SWAP_PATH}
 
-        # Make /swapfile
+        # Format the file as swap space
         sudo mkswap ${SWAP_PATH}
 
         # Enable swapping on the new file and remember the setting persistently across reboots
@@ -2155,7 +2157,7 @@ broadcastVoluntaryExitMessageLocally(){
         # Prompt user for path to VEMs
         read -r -p "Enter path to your VEM file(s) (Press enter to use default: $VEM_PATH_DEFAULT):" VEM_PATH
         VEM_PATH=${VEM_PATH:-$VEM_PATH_DEFAULT}
-        # Check number of keystores
+        # Check number of VEM (exit*.json) files
         local COUNT=$(ls "${VEM_PATH}"/exit*.json | wc -l)
         if [[ $COUNT -gt 0 ]]; then
             echo "INFO: Found $COUNT VEM files"

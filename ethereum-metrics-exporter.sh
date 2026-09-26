@@ -102,8 +102,7 @@ rule_files:
 global:
   scrape_interval:     15s # By default, scrape targets every 15 seconds.
 
-# A scrape configuration containing exactly one endpoint to scrape:
-# Here it's Prometheus itself.
+# Scrape ethereum-metrics-exporter (:9099) and node_exporter (:9100).
 scrape_configs:
    - job_name: 'ethereum-metrics-exporter'
      static_configs:
@@ -138,7 +137,6 @@ function provisionCharonMonitoring(){
 	if [[ ! -f "${PROMETHEUS_DIR}/prometheus.yml" ]] && [[ ! -d "${GRAFANA_DIR}" ]]; then
 		return 0
 	fi
-	# shellcheck disable=SC1091
 	PYTHONPATH="${_root}${PYTHONPATH:+:$PYTHONPATH}" python3 -m manage.charon_monitoring provision \
 		--prometheus-yml "${PROMETHEUS_DIR}/prometheus.yml" \
 		--grafana-dashboards "${GRAFANA_DIR}/provisioning/dashboards" \

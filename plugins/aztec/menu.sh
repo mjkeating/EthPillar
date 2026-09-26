@@ -301,7 +301,7 @@ function claimGuardianRole(){
 \n3) Claim the Role: If you meet the requirements, you will be eligible to claim the Guardian role. Instructions on how to do so will be provided.
 \n4) Next Snapshot: If you are not currently eligible, continue running your Sequencer Node with good uptime and wait for the next snapshot."
 
-  # Register screen
+  # Guardian role instructions screen
   whiptail --title "Claiming the Guardian Role" --msgbox "$MSG" 22 78
 }
 
@@ -329,7 +329,7 @@ function nextSteps(){
     https://aztec-alpha-testnet-fullnode.zkv.xyz
 "    
 
-  # Register screen
+  # Next steps / useful links screen
   whiptail --title "🔒 Everything is gmAztec" --msgbox "$MSG" 26 78
 }
 
@@ -385,7 +385,6 @@ New Validators:
 }
 
 while true; do
-    #get_disk_usage
     buildMenuText
     # Define the options for the submenu
     SUBOPTIONS=(

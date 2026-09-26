@@ -3,7 +3,7 @@
 # Author: coincashew.eth | coincashew.com
 # License: GNU GPL
 # Source: https://github.com/coincashew/ethpillar
-# Description: eth-duties helper script
+# Description: Lido CSM validator plugin
 #
 # Made for home and solo stakers 🏠🥩
 

@@ -35,7 +35,7 @@ _CHANGED=""
 cp /etc/fstab /etc/fstab.bak
 echo "INFO: Backup of /etc/fstab created at /etc/fstab.bak"
 
-# Function to append noatime to mount options
+# Function to add noatime to mount options
 append_noatime() {
     local label=$1
     local mount_point=$2
@@ -55,7 +55,7 @@ append_noatime() {
     fi
 }
 
-# Loop through mount points in /etc/fstab and append noatime
+# Loop through mount points in /etc/fstab and add noatime
 while IFS= read -r line; do
     if [[ ! "$line" =~ "#" ]]; then #skip comments
         mount_point=$(echo $line | awk '{print $2}')

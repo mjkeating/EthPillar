@@ -15,7 +15,7 @@ def generate_reth_service(eth_network: str, el_p2p_port: str, el_p2p_port_2: str
         el_p2p_port: EL P2P port
         el_p2p_port_2: EL secondary P2P port (discv5)
         el_rpc_port: EL RPC port
-        el_max_peer_count: Max peer count (already halved for reth)
+        el_max_peer_count: Peer limit, applied to both --max-outbound-peers and --max-inbound-peers
         jwtsecret_path: Path to JWT secret file
         network_override: Optional network flag override (for ephemery)
         sync_parameters: Optional sync/prune parameters

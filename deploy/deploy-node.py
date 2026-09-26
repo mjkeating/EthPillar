@@ -317,9 +317,13 @@ if flags['validator_only'] and not beacon_node_address:
         exit(1)
 
 # Fee recipient: prompt if not set.
-# Some clients (Nimbus, Teku, Lodestar, Grandine) embed the fee recipient at the BN level,
+# Some clients (Nimbus, Teku, Lodestar, Grandine, Prysm) embed the fee recipient at the BN level,
 # so we must prompt even when there is no separate validator service.
-_cc_needs_fee = cc_name in ['Nimbus', 'Teku', 'Lodestar', 'Grandine']
+# An execution-client switch passes --cc only for context; the BN is not reinstalled.
+_cc_needs_fee = (
+    cc_name in ['Nimbus', 'Teku', 'Lodestar', 'Grandine', 'Prysm']
+    and args.switch_client != "execution"
+)
 _vc_needs_fee = flags['validator'] and vc_name not in ['Grandine (integrated)', None]
 if (_cc_needs_fee or _vc_needs_fee) and not FEE_RECIPIENT_ADDRESS:
     if "Lido CSM" not in role:

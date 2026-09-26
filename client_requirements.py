@@ -17,7 +17,6 @@ FUSAKA_MIN_VERSIONS = {
     'teku': '25.9.3',
     'nimbus': 'v25.9.2',
     'lodestar': 'v1.35.0',
-    'prysm': 'v6.1.0',
     'grandine': 'v2.0.0',
     'prysm': 'v7.0.0',
     # Execution clients

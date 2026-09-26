@@ -52,6 +52,12 @@ from port_bindings import (  # noqa: E402
     verify_port_expectations,
     wait_for_port_scope,
 )
+from service_start import (  # noqa: E402
+    INTEGRATION_TIMEOUT_STOP_SEC,
+    rewrite_timeout_stop_sec,
+    systemctl_start_timeout_sec,
+    unit_has_nimbus_checkpoint_sync,
+)
 
 # Import INSTALL_DIR from common so the path is maintained centrally
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -581,10 +587,40 @@ def check_service_start(
             return False
         print(f"  ✅ daemon-reload succeeded (service file syntax OK)", flush=True)
 
-        # Step 2: start the service
-        result = subprocess.run(
-            _systemctl_cmd("start", service_name),
-            capture_output=True, text=True, timeout=30
+        # Step 2: start the service. Keep a blocking start so ExecStartPre
+        # (Nimbus trustedNodeSync) finishes before we poll ActiveState/ports.
+        # --no-block would return while MainPID is still 0 (start-pre).
+        with open(service_path, encoding="utf-8") as unit_fh:
+            unit_text = unit_fh.read()
+        start_timeout = systemctl_start_timeout_sec(service_name, unit_text)
+        nimbus_pre = (
+            service_name == "consensus" and unit_has_nimbus_checkpoint_sync(unit_text)
+        )
+        pre_note = "; Nimbus trustedNodeSync ExecStartPre" if nimbus_pre else ""
+        print(
+            f"  [systemd] Starting {service_name} "
+            f"(blocking systemctl start, timeout={start_timeout}s{pre_note})...",
+            flush=True,
+        )
+        start_t0 = time.monotonic()
+        try:
+            result = subprocess.run(
+                _systemctl_cmd("start", service_name),
+                capture_output=True, text=True, timeout=start_timeout,
+            )
+        except subprocess.TimeoutExpired:
+            elapsed = time.monotonic() - start_t0
+            print(
+                f"  ❌ systemctl start {service_name} timed out after "
+                f"{elapsed:.1f}s (limit {start_timeout}s)",
+                flush=True,
+            )
+            subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "40"])
+            return False
+        elapsed = time.monotonic() - start_t0
+        print(
+            f"  [systemd] systemctl start {service_name} returned after {elapsed:.1f}s",
+            flush=True,
         )
         if result.returncode != 0:
             print(f"  ❌ systemctl start {service_name} failed:\n{result.stderr}", flush=True)
@@ -800,6 +836,55 @@ def _verify_default_port_bindings(args: Any, expected_services: List[str]) -> bo
     return False
 
 
+def _shorten_unit_timeout_stop(service_name: str) -> bool:
+    """Rewrite installed unit ``TimeoutStopSec`` for faster Integration restarts.
+
+    Production units keep TimeoutStopSec=900. Nimbus can ignore SIGTERM for
+    most of that window once it has chain data; RPC expose/revoke would then
+    block ~15 minutes. Cap stop at :data:`INTEGRATION_TIMEOUT_STOP_SEC` and
+    daemon-reload so the next ``service restart`` SIGKILLs sooner.
+    """
+    service_path = f"/etc/systemd/system/{service_name}.service"
+    if not os.path.isfile(service_path):
+        return False
+    try:
+        with open(service_path, encoding="utf-8") as fh:
+            original = fh.read()
+    except OSError:
+        return False
+    updated = rewrite_timeout_stop_sec(original, INTEGRATION_TIMEOUT_STOP_SEC)
+    if updated == original:
+        return True
+    result = subprocess.run(
+        ["sudo", "tee", service_path],
+        input=updated,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        print(
+            f"  ⚠️  Could not set TimeoutStopSec={INTEGRATION_TIMEOUT_STOP_SEC} "
+            f"on {service_name}: {result.stderr.strip()}",
+            flush=True,
+        )
+        return False
+    reload = subprocess.run(
+        _systemctl_cmd("daemon-reload"),
+        capture_output=True,
+        text=True,
+    )
+    if reload.returncode != 0:
+        print(f"  ⚠️  daemon-reload after TimeoutStopSec rewrite failed for {service_name}", flush=True)
+        return False
+    print(
+        f"  [systemd] Integration TimeoutStopSec={INTEGRATION_TIMEOUT_STOP_SEC}s "
+        f"on {service_name} (RPC restart)",
+        flush=True,
+    )
+    return True
+
+
 def _verify_rpc_exposure(args: Any, expected_services: List[str]) -> bool:
     """Exercise exposeRpc helpers: open RPC to 0.0.0.0, then revoke to localhost."""
     if not getattr(args, "rpc_exposure_el", False) and not getattr(args, "rpc_exposure_cl", False):
@@ -816,6 +901,7 @@ def _verify_rpc_exposure(args: Any, expected_services: List[str]) -> bool:
     success = True
 
     if getattr(args, "rpc_exposure_el", False) and "execution" in expected_services:
+        _shorten_unit_timeout_stop("execution")
         el_name = client_from_service("execution")
         if el_supports_rpc_expose(el_name):
             print("\n🔓 Testing EL RPC exposure via _updateFlagAndRestartService...", flush=True)
@@ -850,6 +936,7 @@ def _verify_rpc_exposure(args: Any, expected_services: List[str]) -> bool:
             print(f"  ℹ️  Skipping EL RPC exposure test (unsupported client: {el_name or 'unknown'})", flush=True)
 
     if getattr(args, "rpc_exposure_cl", False) and "consensus" in expected_services:
+        _shorten_unit_timeout_stop("consensus")
         cl_name = client_from_service("consensus")
         if cl_supports_rpc_expose(cl_name):
             print("\n🔓 Testing CL RPC exposure via _updateFlagAndRestartService...", flush=True)

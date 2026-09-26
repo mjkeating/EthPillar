@@ -28,6 +28,8 @@ from deploy.common import (
     write_service_file,
     setup_node,
     setup_client_user_and_dir,
+    start_units_no_block,
+    finish_install,
     NODE_RUNTIME_PACKAGES,
 )
 
@@ -330,4 +332,64 @@ class TestSetupClientUserAndDir:
         # Ensure mkdir and chown are run
         assert any("mkdir" in s and "someclient" in s for s in calls_as_str)
         assert any("chown" in s and "someuser:someuser" in s and "someclient" in s for s in calls_as_str)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# start_units_no_block / finish_install "start syncing now"
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestStartUnitsNoBlock:
+    @patch("subprocess.run")
+    def test_passes_no_block(self, mock_run):
+        start_units_no_block(["execution", "consensus"])
+        mock_run.assert_called_once()
+        assert mock_run.call_args[0][0] == [
+            "sudo", "systemctl", "start", "--no-block", "execution", "consensus",
+        ]
+
+    @patch("subprocess.run")
+    def test_empty_is_noop(self, mock_run):
+        start_units_no_block([])
+        mock_run.assert_not_called()
+
+    @patch("deploy.common.PromptUtils")
+    @patch("subprocess.run")
+    def test_finish_install_start_syncing_uses_no_block(self, mock_run, mock_prompt):
+        mock_run.return_value = MagicMock(returncode=0)
+        mock_prompt.return_value.prompt_for_yes_or_no.side_effect = [True, False]
+        finish_install(
+            install_config="Solo Staking Node",
+            eth_network="hoodi",
+            sync_url="http://127.0.0.1:19595",
+            execution_client="nethermind",
+            execution_version="1.0",
+            execution_service_path="/etc/systemd/system/execution.service",
+            consensus_client="nimbus",
+            consensus_version="v26.8.0",
+            consensus_service_path="/etc/systemd/system/consensus.service",
+            mevboost_enabled=True,
+            mevboost_version="v1.12",
+            mevboost_service_path="/etc/systemd/system/mevboost.service",
+            validator_enabled=True,
+            validator_service_path="/etc/systemd/system/validator.service",
+            validator_only=False,
+            bn_address=None,
+            node_only=False,
+            fee_recipient_address="0x1234567890123456789012345678901234567890",
+            skip_prompts=False,
+            cl_rest_port="5052",
+        )
+        start_calls = [
+            c.args[0]
+            for c in mock_run.call_args_list
+            if c.args and c.args[0][:3] == ["sudo", "systemctl", "start"]
+        ]
+        assert start_calls == [[
+            "sudo", "systemctl", "start", "--no-block",
+            "execution", "consensus", "mevboost",
+        ]]
+        assert not any(
+            args[:3] == ["sudo", "systemctl", "start"] and "--no-block" not in args
+            for args in start_calls
+        )
 

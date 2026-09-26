@@ -231,7 +231,7 @@ def generate_tests():
                 
             match = re.search(r'--network\s+(\S+)', actual_var)
             local_network = match.group(1) if match else ""
-            
+
             cmd = f"{RUN_TEST} deploy/deploy-node.py --combo \"{combo}\" {actual_var}"
             tests.append(TestTask(combo, cmd, actual_var, local_network))
 

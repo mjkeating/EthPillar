@@ -497,6 +497,24 @@ def write_service_file(content: str, target_path: str, temp_filename: str = 'tem
     except FileNotFoundError:
         pass
 
+
+def start_units_no_block(units: List[str]) -> None:
+    """Queue ``systemctl start`` without waiting for ExecStartPre or active.
+
+    Interactive install must not block on Nimbus ``trustedNodeSync``
+    (ExecStartPre can take minutes). Integration health checks still use a
+    blocking start with a longer timeout; do not call this from that path.
+    """
+    if not units:
+        return
+    subprocess.run(
+        ["sudo", "systemctl", "start", "--no-block", *units],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+
+
 def finish_install(install_config: str, eth_network: str, sync_url: str,
                    execution_client: Optional[str], execution_version: Optional[str], execution_service_path: Optional[str],
                    consensus_client: Optional[str], consensus_version: Optional[str], consensus_service_path: Optional[str],
@@ -648,14 +666,18 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
                 services.append('execution')
             if consensus_service_path:
                 services.append('consensus')
-            if services:
-                subprocess.run(['sudo', 'systemctl', 'start'] + services, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
             if mevboost_enabled:
-                subprocess.run(['sudo', 'systemctl', 'start', 'mevboost'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                services.append('mevboost')
             if charon_enabled:
                 from deploy.charon import CHARON_LOCK_FILE
                 if os.path.isfile(CHARON_LOCK_FILE):
-                    subprocess.run(['sudo', 'systemctl', 'start', 'charon'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                    services.append('charon')
+            # --no-block: Nimbus trustedNodeSync ExecStartPre can block for minutes.
+            start_units_no_block(services)
+            if services:
+                units_flag = " ".join(f"-u {name}" for name in services)
+                print("Sync is starting in the background.")
+                print(f"  Follow progress: journalctl -f {units_flag}")
 
     # Prompt to enable autostart services
     if not skip_prompts:

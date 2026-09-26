@@ -1,0 +1,6 @@
+# Optional inbound QUIC probe (aioquic). Not installed by ensure_python_deps.
+# Used only by plugins/node-checker/quic_inbound_probe.py.
+#
+# Node-checker auto-creates .venv-quic and pip-installs this file on first probe.
+# Disable with NODE_CHECKER_QUIC_AUTO_INSTALL=0.
+aioquic

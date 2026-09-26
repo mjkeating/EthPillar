@@ -3,7 +3,7 @@
 # Author: coincashew.eth | coincashew.com
 # License: GNU GPL
 # Source: https://github.com/coincashew/ethpillar
-# Description: EthPillar is a one-liner setup tool and node management TUI
+# Description: Node-checker TUI entrypoint. Port/QUIC/inbound helpers: networking.sh.
 #
 # Made for home and solo stakers 🏠🥩
 
@@ -12,20 +12,10 @@ ETHPILLAR_ROOT="$(cd "${SOURCE_DIR}/../.." && pwd)"
 # shellcheck disable=SC1091
 source "${ETHPILLAR_ROOT}/functions.sh"
 
-# Node configuration
-p2p_ports=("9000" "30303")
+# Process / systemd inventory (port arrays live in networking.sh).
 p2p_processes=("geth" "besu" "teku" "lighthouse" "prysm" "nimbus_beacon_node" "nimbus_validator" "lodestar" "erigon" "nethermind" "reth" "mev-boost" "charon")
 services=("consensus" "execution" "validator" "mevboost")
-tcp_check_ports="9000,30303"
-udp_check_ports="9000,30303"
-charon_p2p_port=""
-
 if isCharonEnabled; then
-    charon_p2p_port="$(getCharonP2pPort)"
-    if [[ -n "$charon_p2p_port" ]]; then
-        p2p_ports+=("$charon_p2p_port")
-        tcp_check_ports="${tcp_check_ports},${charon_p2p_port}"
-    fi
     services+=("charon")
 fi
 API_BN_ENDPOINT="http://localhost:5052"
@@ -84,11 +74,6 @@ BLUE='\033[0;34m'
 PURPLE='\033[35m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
-
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then
-    print_check_result "WARN" "Some checks require root privileges"
-fi
 
 display_banner() {
 cat << 'EOF'
@@ -153,6 +138,49 @@ print_check_result() {
     esac
 
     echo -e "${color}${prefix} ${icon} ${message}${NC}"
+}
+
+# Port / QUIC / inbound checks live in networking.sh (sourced for bats too).
+# shellcheck source=networking.sh
+source "${SOURCE_DIR}/networking.sh"
+
+node_checker_usage() {
+    cat <<'EOF'
+Usage: run.sh [--troubleshoot] [--debug]
+
+  --troubleshoot  Force inbound firewall/NAT/forward guidance even when checks are green (no ENR or public IP)
+  --debug         Troubleshoot plus ENR/identity/public-IP diagnostics (redact before sharing)
+
+The Plugins menu has no flags. Default path auto-prints the same troubleshoot
+guidance when inbound looks broken (UFW, TCP checker, QUIC probe, zero inbound,
+missing QUIC). Local listen (ss/UFW) is not the same as inbound reachability.
+First QUIC probe auto-installs aioquic into .venv-quic (NODE_CHECKER_QUIC_AUTO_INSTALL=0 to skip).
+Missing tools after that WARN, they do not FAIL. ENR and public IPv4 are debug-only.
+EOF
+}
+
+node_checker_parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --troubleshoot)
+                NODE_CHECKER_TROUBLESHOOT=1
+                ;;
+            --debug)
+                NODE_CHECKER_TROUBLESHOOT=1
+                NODE_CHECKER_DEBUG=1
+                ;;
+            -h|--help)
+                node_checker_usage
+                exit 0
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                node_checker_usage >&2
+                exit 1
+                ;;
+        esac
+        shift
+    done
 }
 
 check_firewall() {
@@ -227,18 +255,6 @@ check_reboot_required() {
         ((failed_checks++))
     else
         print_check_result "PASS" "System reboot not required"
-    fi
-}
-
-check_listening_ports() {
-    ((total_checks++))
-    open_ports=$(sudo ss -tunlp | grep -c -E 'LISTEN|UNCONN')
-    if [ "$open_ports" -gt 0 ]; then
-        print_check_result "INFO" "Listening ports:"
-        sudo ss -tunlp | grep -E 'LISTEN|UNCONN'
-    else
-        print_check_result "WARN" "No listening ports."
-        ((warning_checks++))
     fi
 }
 
@@ -402,63 +418,6 @@ check_chrony() {
     fi
 }
 
-check_charon_listening_port() {
-    [[ -n "$charon_p2p_port" ]] || return 0
-    ((total_checks+=1))
-    if sudo ss -lnt | grep -qE "tcp.*:${charon_p2p_port}"; then
-        print_check_result "PASS" "Detected TCP service on Charon P2P port ${charon_p2p_port}"
-        if [ "$EUID" -eq 0 ]; then
-            pid=$(sudo ss -lntup "sport = :${charon_p2p_port}" | awk -Fpid= '/users:/ {print $2}' | cut -d, -f1 | head -1)
-            if [ -n "$pid" ]; then
-                process=$(ps -p "$pid" -o comm=)
-                echo -e "${YELLOW}          Process: ${process} (PID ${pid})${NC}"
-            fi
-        fi
-    else
-        print_check_result "FAIL" "Charon P2P port ${charon_p2p_port} (TCP) not listening"
-        ((failed_checks++))
-    fi
-}
-
-check_elcl_listening_ports() {
-    ((total_checks+=2))
-    detected=0
-    declare -a p2p_protocols=("tcp" "udp")
-
-    print_check_result "INFO" "Checking for execution & consensus services on ports 9000 tcp/udp and 30303 tcp/udp"
-    # Check standard ports for other clients
-    for port in "${p2p_ports[@]}"; do
-        for proto in "${p2p_protocols[@]}"; do
-            if sudo ss -lntu | grep -qE "${proto}.*:${port}"; then
-                print_check_result "PASS" "Detected ${proto^^} service on port ${port}"
-                ((detected++))
-                if [ "$EUID" -eq 0 ]; then
-                    pid=$(sudo ss -lntup "sport = :${port}" | awk -Fpid= '/users:/ {print $2}' | cut -d, -f1 | head -1)
-                    if [ -n "$pid" ]; then
-                        process=$(ps -p "$pid" -o comm=)
-                        echo -e "${YELLOW}          Process: ${process} (PID ${pid})${NC}"
-                    fi
-                else
-                    echo -e "${YELLOW}          Run as root to identify process${NC}"
-                fi
-            fi
-        done
-    done
-
-    if [ $detected -gt 0 ]; then
-        if [ $detected -eq 4 ]; then
-            print_check_result "PASS" "Found all 4 expected ports (9000 tcp/udp, 30303 tcp/udp) for execution & consensus services"
-        else
-            print_check_result "FAIL" "Found ${detected} ports, expected 4 ports (9000 tcp/udp, 30303 tcp/udp) for execution & consensus services"
-            ((failed_checks++))
-        fi
-    else
-        print_check_result "FAIL" "No execution & consensus services detected on expected ports"
-        ((failed_checks++))
-    fi
-    check_charon_listening_port
-}
-
 check_elcl_processes() {
     print_check_result "INFO" "Ethereum node processes:"
     # Additional check for running processes
@@ -476,88 +435,6 @@ check_elcl_processes() {
     else
         ((failed_checks++))
         print_check_result "FAIL" "No Ethereum node processes detected"
-    fi
-}
-
-check_open_ports() {
-    ((total_checks++))
-    open_ports=0
-    concat_ports=""
-
-    tcp_ports="$tcp_check_ports"
-    udp_ports="$udp_check_ports"
-
-    # Check TCP ports
-    checker_url="https://eth2-client-port-checker.vercel.app/api/checker?ports="
-    tcp_json=$(curl -s "${checker_url}${tcp_ports}")
-
-    # Check UDP ports using netcat
-    udp_open_ports=0
-    open_udp_ports=()
-    for port in $(echo "$udp_ports" | tr ',' ' '); do
-        if nc -z -u localhost "$port" &>/dev/null; then
-            ((udp_open_ports++))
-            open_udp_ports+=("$port")
-        fi
-    done
-
-echo
-
-    # Parse JSON using jq and check if any open ports exist
-    print_check_result "INFO" "Open ports found:"
-    if echo "$tcp_json" | jq -e '.open_ports[]' > /dev/null 2>&1; then
-        echo "$tcp_json" | jq -r '.open_ports[]' | while read -r port; do echo "$port(TCP)"; done
-        tcp_open_ports=$(echo "$tcp_json" | jq '.open_ports | length')
-        open_ports=$((tcp_open_ports + udp_open_ports))
-    fi
-
-    # Show UDP ports
-    for port in "${open_udp_ports[@]}"; do
-        echo "$port(UDP)"
-    done
-
-    # Compare expected vs actual number of open ports
-    expected_tcp_ports=$(echo "$tcp_ports" | tr ',' '\n' | wc -l)
-    expected_udp_ports=$(echo "$udp_ports" | tr ',' '\n' | wc -l)
-    expected_ports=$((expected_tcp_ports + expected_udp_ports))
-
-    if [ "$expected_ports" -ne "$open_ports" ]; then
-        print_check_result "FAIL" "Ports ${tcp_ports} (TCP) and ${udp_ports} (UDP) not all open or reachable. Expected ${expected_ports}. Actual $open_ports. Check port forwarding on router."
-        ((failed_checks++))
-    else
-        print_check_result "PASS" "P2P Ports fully open on ${tcp_ports} (TCP) and ${udp_ports} (UDP)"
-    fi
-}
-
-check_peer_count() {
-    ((total_checks++))
-    declare -A _peer_status=()
-    local _warn=""
-    # Get peer counts from CL and EL
-    _peer_status["Consensus_Layer_Connected_Peer_Count"]="$(curl -m 1 -s -X GET "${API_BN_ENDPOINT}/eth/v1/node/peer_count" -H  "accept: application/json" | jq -r ".data.connected")"
-    _peer_status["Execution_Layer_Connected_Peer_Count"]="$(curl -m 1 -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc": "2.0", "method":"net_peerCount", "params": [], "id":1}' "${EL_RPC_ENDPOINT}" | jq -r ".result" | mawk '{printf "%d\n",$1}')"
-    # Get CL peers by direction
-    _json_cl=$(curl -m 1 -s "${API_BN_ENDPOINT}"/eth/v1/node/peers | jq -c '.data')
-    _peer_status["Consensus_Layer_Known_Inbound_Peers"]=$(jq -c '.[] | select(.direction == "inbound")' <<< "$_json_cl" | wc -l)
-    _peer_status["Consensus_Layer_Known_Outbound_Peers"]=$(jq -c '.[] | select(.direction == "outbound")' <<< "$_json_cl" | wc -l)
-
-    echo
-
-    # Print each peer status
-    print_check_result "INFO" "Peer counts:"
-    for _key in ${!_peer_status[*]}; do
-        if [[ ${_peer_status[$_key]} -gt 0 ]]; then
-            echo -e "[${GREEN}✔${NC}]${BLUE}${BOLD}[$_key]: ${_peer_status[$_key]} peers${NC}"
-        else
-            echo -e "[${RED}✗${NC}]${BLUE}${BOLD}[$_key]: ${_peer_status[$_key]} peers${NC}"
-            _warn="1"
-        fi
-    done
-     if [ -n "${_warn}" ]; then
-        print_check_result "FAIL" "Suboptimal connectivity may affect validating nodes. To resolve, restart the service and check port forwarding, firewall-router settings, public IP, ENR."
-        ((failed_checks++))
-    else
-        print_check_result "PASS" "Consensus and execution client's peer count appear healthy."
     fi
 }
 
@@ -749,14 +626,162 @@ check_history_expiry() {
     fi
 }
 
-check_noatime() {
-    ((total_checks++))
-    if grep -q "noatime" /etc/fstab; then
-        print_check_result "PASS" "noatime is active"
-    else
-        print_check_result "FAIL" "noatime is not active. To change, use Toolbox."
-        ((failed_checks++))
+# Collapse the first ExecStart= block (backslash continuations) to one line.
+node_checker_unit_execstart() {
+    local unit_file="${1:-}"
+    [[ -f "$unit_file" ]] || return 0
+    local in_exec=0 line payload
+    local -a parts=()
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ $in_exec -eq 0 ]]; then
+            if [[ "$line" == ExecStart=* ]]; then
+                in_exec=1
+                payload="${line#ExecStart=}"
+            else
+                continue
+            fi
+        else
+            payload="$line"
+        fi
+        if [[ "$payload" == *\\ ]]; then
+            payload="${payload%\\}"
+            parts+=("$payload")
+            continue
+        fi
+        parts+=("$payload")
+        break
+    done < "$unit_file"
+    printf '%s' "${parts[*]}"
+}
+
+# Print datadir flags from a systemd unit. Does not require the path to exist.
+# Matches --datadir, --data-dir, --dataDir, --data.path, --data-path, --db-path,
+# --base-path, and Lodestar --dbDir / --chainDbDir. Skips --datadir.static-files.
+node_checker_extract_datadir_paths() {
+    local unit_file="${1:-}"
+    local execstart path flag_re
+    execstart="$(node_checker_unit_execstart "$unit_file")"
+    [[ -n "$execstart" ]] || return 0
+    # ERE: require '=' or whitespace after the flag so --datadir.static-files
+    # is not treated as --datadir.
+    flag_re='--(datadir|data-dir|dataDir|data\.path|data-path|db-path|base-path|dbDir|chainDbDir)(=|[[:space:]]+)("[^"]+"|'\''[^'\'']+'\''|[^[:space:]\\]+)'
+    while [[ "$execstart" =~ $flag_re ]]; do
+        path="${BASH_REMATCH[3]}"
+        path="${path#\"}"
+        path="${path%\"}"
+        path="${path#\'}"
+        path="${path%\'}"
+        if [[ -n "$path" && "$path" == /* ]]; then
+            printf '%s\n' "$path"
+        fi
+        execstart="${execstart#*"${BASH_REMATCH[0]}"}"
+    done
+}
+
+# Unique existing EL/CL datadirs from execution.service and consensus.service.
+node_checker_resolved_elcl_datadirs() {
+    local unit_file path
+    local -A seen=()
+    for unit_file in "$(node_checker_exec_service)" "$(node_checker_consensus_service)"; do
+        [[ -f "$unit_file" ]] || continue
+        while IFS= read -r path; do
+            [[ -n "$path" && -e "$path" ]] || continue
+            [[ -z "${seen[$path]:-}" ]] || continue
+            seen[$path]=1
+            printf '%s\n' "$path"
+        done < <(node_checker_extract_datadir_paths "$unit_file")
+    done
+}
+
+# Live mount OPTIONS for PATH (findmnt -T). Empty when findmnt is missing/fails.
+node_checker_findmnt_options() {
+    local path="${1:-}"
+    [[ -n "$path" ]] || return 0
+    command -v findmnt >/dev/null 2>&1 || return 0
+    findmnt -T "$path" -no OPTIONS 2>/dev/null || true
+}
+
+# True when OPTIONS contains the comma-delimited noatime flag (not relatime).
+node_checker_options_has_noatime() {
+    local opts="${1:-}"
+    [[ -n "$opts" ]] || return 1
+    [[ ",${opts}," == *",noatime,"* ]]
+}
+
+# Join path arguments with ", " for operator-facing messages.
+node_checker_join_paths() {
+    local out="" p
+    for p in "$@"; do
+        [[ -n "$out" ]] && out+=", "
+        out+="$p"
+    done
+    printf '%s' "$out"
+}
+
+# VC-only / remote CL: no local EL+CL chaindata. WARN, never FAIL (including fstab).
+node_checker_noatime_unresolved_fallback() {
+    local fstab="${NODE_CHECKER_FSTAB:-/etc/fstab}"
+    print_check_result "WARN" "noatime not checked (less critical on validator-only): no local EL/CL chaindata"
+    warning_checks=$((warning_checks + 1))
+    if [[ -f "$fstab" ]] && grep -q "noatime" "$fstab"; then
+        print_check_result "INFO" "fstab mentions noatime (not used as a gate)"
     fi
+}
+
+# Require noatime on live mounts of EL/CL chaindata (not guest fstab alone).
+check_noatime() {
+    total_checks=$((total_checks + 1))
+    local -a paths=() passed=() failed=() unchecked=()
+    local path opts
+
+    while IFS= read -r path; do
+        [[ -n "$path" ]] || continue
+        paths+=("$path")
+    done < <(node_checker_resolved_elcl_datadirs)
+
+    if [[ ${#paths[@]} -eq 0 ]]; then
+        node_checker_noatime_unresolved_fallback
+        return
+    fi
+
+    for path in "${paths[@]}"; do
+        opts="$(node_checker_findmnt_options "$path")"
+        if [[ -z "$opts" ]]; then
+            unchecked+=("$path")
+            continue
+        fi
+        if node_checker_options_has_noatime "$opts"; then
+            passed+=("$path")
+        else
+            failed+=("$path")
+        fi
+    done
+
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        local msg
+        msg="noatime missing on: $(node_checker_join_paths "${failed[@]}")"
+        if [[ ${#passed[@]} -gt 0 ]]; then
+            msg+=" (ok: $(node_checker_join_paths "${passed[@]}"))"
+        fi
+        msg+=". To change, use Toolbox."
+        print_check_result "FAIL" "$msg"
+        failed_checks=$((failed_checks + 1))
+        return 0
+    fi
+
+    if [[ ${#passed[@]} -gt 0 && ${#unchecked[@]} -eq 0 ]]; then
+        print_check_result "PASS" "noatime on EL/CL data: $(node_checker_join_paths "${passed[@]}")"
+        return 0
+    fi
+
+    if [[ ${#passed[@]} -gt 0 ]]; then
+        print_check_result "WARN" "noatime on $(node_checker_join_paths "${passed[@]}"); could not read mount options for $(node_checker_join_paths "${unchecked[@]}")"
+        warning_checks=$((warning_checks + 1))
+        return 0
+    fi
+
+    print_check_result "WARN" "Could not read live mount options for $(node_checker_join_paths "${unchecked[@]}")"
+    warning_checks=$((warning_checks + 1))
 }
 
 check_swappiness() {
@@ -812,71 +837,89 @@ print_system_information() {
     printf "${PURPLE}%-20s${NC} %s\n" "I/O Speed:" "$io"
 }
 
-start_time=$(date +%s)
-echo -e "\n${YELLOW}${BOLD}=== Starting Node Security Scanner and Health Checkup ===${NC}\n"
-display_banner
+node_checker_main() {
+    if [ "$EUID" -ne 0 ]; then
+        print_check_result "WARN" "Some checks require root privileges"
+    fi
 
-# Execute checks
-print_section_header "Security Checks"
+    local start_time end_time duration
+    start_time=$(date +%s)
+    echo -e "\n${YELLOW}${BOLD}=== Starting Node Security Scanner and Health Checkup ===${NC}\n"
+    display_banner
 
-# Network Security
-print_check_result "INFO" "Network Security:"
-check_firewall
-check_fail2ban
-echo
-# SSH Security
-print_check_result "INFO" "SSH Security:"
-check_ssh_key_presence
-check_ssh_keys
-check_ssh_port
-check_ssh_2fa
-echo
-# System Updates
-print_check_result "INFO" "System Updates:"
-check_updates
-check_unattended_upgrades
-check_reboot_required
+    # Execute checks
+    print_section_header "Security Checks"
 
-print_section_header "Node Health Checks"
-check_listening_ports
-check_open_ports
-echo
-check_elcl_listening_ports
-check_peer_count
-echo
-check_systemd_services
+    # Network Security
+    print_check_result "INFO" "Network Security:"
+    check_firewall
+    check_fail2ban
+    echo
+    # SSH Security
+    print_check_result "INFO" "SSH Security:"
+    check_ssh_key_presence
+    check_ssh_keys
+    check_ssh_port
+    check_ssh_2fa
+    echo
+    # System Updates
+    print_check_result "INFO" "System Updates:"
+    check_updates
+    check_unattended_upgrades
+    check_reboot_required
 
-print_section_header "Client Version Checks"
-check_execution_version
-check_consensus_version
-check_validator_version
-check_charon_version
-check_mevboost_version
+    print_section_header "Node Health Checks"
+    check_listening_ports
+    echo
+    check_elcl_listening_ports
+    check_cl_quic
+    echo
+    check_open_ports
+    echo
+    check_inbound_quic_probe
+    echo
+    check_peer_count
+    echo
+    check_systemd_services
 
-print_section_header "Performance Checks"
-check_resources
-echo
-print_check_result "INFO" "History expiry / prune (suitable for a ~2TB drive):"
-check_history_expiry
-echo
-check_chrony
-echo
-print_check_result "INFO" "Tuning:"
-check_swappiness
-check_noatime
+    print_section_header "Client Version Checks"
+    check_execution_version
+    check_consensus_version
+    check_validator_version
+    check_charon_version
+    check_mevboost_version
 
-print_system_information
+    print_section_header "Performance Checks"
+    check_resources
+    echo
+    print_check_result "INFO" "History expiry / prune (suitable for a ~2TB drive):"
+    check_history_expiry
+    echo
+    check_chrony
+    echo
+    print_check_result "INFO" "Tuning:"
+    check_swappiness
+    check_noatime
 
-# Summary
-print_section_header "Summary"
-printf "${BLUE}${BOLD}%-20s${NC} %d\n" "Total checks:" "$total_checks"
-printf "${GREEN}%-20s${NC} %d\n" "Passed checks:" "$((total_checks - failed_checks - warning_checks))"
-printf "${YELLOW}%-20s${NC} %d\n" "Warning checks:" "$warning_checks"
-printf "${RED}%-20s${NC} %d\n" "Failed checks:" "$failed_checks"
+    print_system_information
 
-# Duration
-end_time=$(date +%s)
-duration=$((end_time - start_time))
-echo -e "\n${YELLOW}${BOLD}Duration: $duration seconds${NC}"
-echo -e "\n${GREEN}${BOLD}=== Node Checker Complete: Press enter to exit ===${NC}"
-read -r
+    # Summary
+    print_section_header "Summary"
+    printf "${BLUE}${BOLD}%-20s${NC} %d\n" "Total checks:" "$total_checks"
+    printf "${GREEN}%-20s${NC} %d\n" "Passed checks:" "$((total_checks - failed_checks - warning_checks))"
+    printf "${YELLOW}%-20s${NC} %d\n" "Warning checks:" "$warning_checks"
+    printf "${RED}%-20s${NC} %d\n" "Failed checks:" "$failed_checks"
+
+    # Duration
+    end_time=$(date +%s)
+    duration=$((end_time - start_time))
+    echo -e "\n${YELLOW}${BOLD}Duration: $duration seconds${NC}"
+    echo -e "\n${GREEN}${BOLD}=== Node Checker Complete: Press enter to exit ===${NC}"
+    read -r
+}
+
+# Allow sourcing for bats tests without auto-running the interactive scanner.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    node_checker_parse_args "$@"
+    node_checker_main
+fi

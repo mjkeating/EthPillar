@@ -1171,25 +1171,7 @@ done
 submenuUFW(){
 while true; do
     getBackTitle
-    # Define the options for the submenu
-    SUBOPTIONS=(
-      1 "View ufw status"
-      2 "Allow incoming traffic on a port"
-      3 "Deny incoming traffic on a port"
-      4 "Delete a rule"
-      - ""
-      5 "Enable firewall with default settings"
-      6 "EC RPC Node: Allow local network access to RPC port 8545"
-      7 "CC RPC Node: Allow local network access to RPC port 5052"
-      8 "Monitoring: Allow local network access to Grafana port 3000"
-      9 "${OBOL_CHARON}: Allow P2P port (from charon.service)"
-      10 "Disable firewall"
-      11 "Reset firewall rules: Delete all rules"
-      - ""
-      12 "Whitelist an IP address: Allow full access to this node"
-      - ""
-      99 "Back to main menu"
-    )
+    ufwBuildFirewallMenu
 
     # Display the submenu and get the user's choice
     SUBCHOICE=$(whiptail --clear --cancel-button "Back" \
@@ -1197,7 +1179,7 @@ while true; do
       --title "UFW Firewall" \
       --menu "Choose one of the following options:" \
       0 0 0 \
-      "${SUBOPTIONS[@]}" \
+      "${UFW_MENU_PAIRS[@]}" \
       3>&1 1>&2 2>&3)
 
     if [ $? -gt 0 ]; then # user pressed <Cancel> button
@@ -1205,32 +1187,32 @@ while true; do
     fi
 
     # Handle the user's choice from the submenu
-    case $SUBCHOICE in
-      1)
+    case "$(ufwFirewallMenuAction "$SUBCHOICE")" in
+      view)
         sudo ufw status numbered
         ohai "Press ENTER to continue."
         read
         ;;
-      2)
+      allow_port)
         read -p "Enter the port number to allow: " port_number
         sudo ufw allow $port_number
         ohai "Port allowed."
         sleep 2
         ;;
-      3)
+      deny_port)
         read -p "Enter the port number to deny: " port_number
         sudo ufw deny $port_number
         ohai "Port denied."
         sleep 2
         ;;
-      4)
+      delete_rule)
         sudo ufw status numbered
         read -p "Enter the rule number to delete: " rule_number
         sudo ufw delete $rule_number
         ohai "Rule deleted."
         sleep 2
         ;;
-      5)
+      enable_defaults)
         # Default ufw settings
         sudo ufw default deny incoming
         sudo ufw default allow outgoing
@@ -1252,72 +1234,56 @@ while true; do
             fi
           done
         fi
-        sudo ufw allow 30303 comment 'Allow execution client port'
-        sudo ufw allow 9000 comment 'Allow consensus client port'
-        getClient
-        # Client specific ports
-        [[ $CL == "Lighthouse" ]] && sudo ufw allow 9001/udp comment 'Allow lighthouse QUIC port'
-        # Teku 26.7.0+ enables QUIC by default: UDP 9001 (IPv4) and UDP 9091 (IPv6)
-        [[ $CL == "Teku" ]] && sudo ufw allow 9001/udp comment 'Allow teku QUIC port (IPv4)'
-        [[ $CL == "Teku" ]] && sudo ufw allow 9091/udp comment 'Allow teku QUIC port (IPv6)'
-        # Nimbus v26.8.0+ enables QUIC gossip by default on UDP 9001 (--quic-port)
-        [[ $CL == "Nimbus" ]] && sudo ufw allow 9001/udp comment 'Allow nimbus QUIC port'
-        # Lodestar v1.42.0+ enables QUIC by default on UDP 9001 (--quicPort, default port+1)
-        [[ $CL == "Lodestar" ]] && sudo ufw allow 9001/udp comment 'Allow lodestar QUIC port'
-        [[ $CL == "Grandine" ]] && sudo ufw allow 9001/udp comment 'Allow grandine QUIC port'
-        # Prysm v5.2.0+ enables QUIC by default; without --p2p-quic-port it uses UDP 13000
-        [[ $CL == "Prysm" ]] && sudo ufw allow 9001/udp comment 'Allow prysm QUIC port'
-        [[ $EL == "Reth" ]] && sudo ufw allow 30304/udp comment 'Allow reth discv5 port'
-        [[ $EL =~ "Erigon" ]] && sudo ufw allow 42069 comment 'Allow erigon torrent port'
-        [[ $EL =~ "Erigon" ]] && sudo ufw allow 30304 comment 'Allow erigon p2p port'
+        ufwAllowExpectedP2pPorts
         ufwAllowCharonP2p
         sudo ufw enable
         sudo ufw status numbered
         ohai "UFW firewall enabled."
         sleep 3
         ;;
-      6)
+      ec_rpc)
         sudo ufw allow from ${network_current} to any port 8545 comment 'Allow local network to access execution client RPC port'
         ohai "Local network ${network_current} can access RPC port 8545"
         sleep 2
         ;;
-      7)
+      cc_rpc)
         sudo ufw allow from ${network_current} to any port 5052 comment 'Allow local network to access consensus client RPC port'
         ohai "Local network ${network_current} can access RPC port 5052"
         sleep 2
         ;;
-      8)
+      grafana)
         sudo ufw allow from ${network_current} to any port 3000 comment 'Allow local network to access Grafana'
         ohai "Local network ${network_current} can access RPC port 3000"
         sleep 2
         ;;
-      9)
-        if isCharonEnabled; then
-            ufwAllowCharonP2p
-            ohai "Charon P2P port $(getCharonP2pPort) allowed (TCP)."
-        else
-            whiptail --title "${OBOL_CHARON}" --msgbox "charon.service is not installed.\nInstall ${OBOL_CHARON} first, or use option 2 to allow a port manually." 10 70
-        fi
+      elcl_p2p)
+        ufwAllowExpectedP2pPorts
+        ohai "EL/CL P2P allowed: $(describeExpectedP2pUfwRules) (TCP/UDP, incl. QUIC)."
         sleep 2
         ;;
-      10)
+      charon)
+        ufwAllowCharonP2p
+        ohai "Charon P2P port $(getCharonP2pPort) allowed (TCP)."
+        sleep 2
+        ;;
+      disable)
         sudo ufw disable
         ohai "UFW firewall disabled."
         sleep 2
         ;;
-      11)
+      reset)
         sudo ufw disable
         sudo ufw --force reset
         ohai "UFW firewall reset."
         sleep 2
         ;;
-      12)
+      whitelist)
         read -p "Enter the IP address to whitelist: " ip_whitelist
         sudo ufw allow from $ip_whitelist
         ohai "IP address whitelisted."
         sleep 2
         ;;
-      99)
+      back|"")
         break
         ;;
     esac

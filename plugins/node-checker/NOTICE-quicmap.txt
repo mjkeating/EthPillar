@@ -1,0 +1,20 @@
+This directory includes an active inbound QUIC probe adapted from quicmap.
+
+  Project: quicmap (https://github.com/bojanisc/quicmap)
+  File:    quicmap.py
+  Authors: Fran Cutura, Bojan Zdrnja
+  Copyright (c) 2024 INFIGO IS d.o.o. (https://www.infigo.is)
+  License: Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0)
+
+quicmap is not vendored wholesale. quic_inbound_probe.py keeps the aioquic
+version-negotiation + ALPN handshake idea, drops the ALPN brute-force scanner
+and tqdm UI, and emits JSON for node-checker.
+
+eth-docker `port-check` (Apache-2.0) prints a throwaway Docker one-liner that
+pip-installs aioquic/cryptography/tqdm and curls quicmap.py. EthPillar is
+systemd/bare-metal: node-checker auto-creates a side .venv-quic on first probe
+so aioquic is not a default install dependency. Set NODE_CHECKER_QUIC_AUTO_INSTALL=0
+to skip that one-time pip.
+
+A copy of the Apache License 2.0 is at:
+  https://www.apache.org/licenses/LICENSE-2.0

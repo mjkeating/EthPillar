@@ -422,7 +422,7 @@ class TestRethService:
     """Test Reth execution client service file generation."""
 
     def test_mainnet_service(self):
-        # Reth halves peers
+        # Any value works here; the generator applies it to both inbound and outbound limits
         reth_max_peers = max(1, EL_MAX_PEER_COUNT // 2)
         sync_params = '--prune.bodies.pre-merge --prune.receipts.pre-merge'
         result = generate_reth_service(

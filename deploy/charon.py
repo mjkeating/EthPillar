@@ -1942,8 +1942,9 @@ def scrape_beacon_endpoints(content: str) -> Optional[str]:
 def patch_beacon_endpoints(service_path: str, new_endpoints: str) -> bool:
     """Replace Charon ``--beacon-node-endpoints`` in a systemd unit.
 
-    Also refreshes the BN readiness ``ExecStartPre`` curl wait (and ensures
-    ``TimeoutStartSec=infinity``) so patched endpoints stay in sync.
+    Also refreshes the BN readiness ``ExecStartPre`` curl wait so patched
+    endpoints stay in sync, and adds ``TimeoutStartSec=infinity`` when the
+    unit has no ``TimeoutStartSec=`` line (an existing value is kept).
 
     Returns:
         True if the file was updated.
@@ -1981,12 +1982,21 @@ def patch_beacon_endpoints(service_path: str, new_endpoints: str) -> bool:
             count=1,
         )
     if "TimeoutStartSec=" not in new_content:
-        new_content = re.sub(
+        # Prefer placing it next to TimeoutStopSec=; hand-edited units may lack
+        # that line, so fall back to the top of [Service].
+        new_content, n = re.subn(
             r"(?m)^(TimeoutStopSec=\d+\s*)$",
             r"\1\nTimeoutStartSec=infinity",
             new_content,
             count=1,
         )
+        if n == 0:
+            new_content = re.sub(
+                r"(?m)^(\[Service\]\s*)$",
+                r"\1\nTimeoutStartSec=infinity",
+                new_content,
+                count=1,
+            )
 
     if new_content == content:
         return False

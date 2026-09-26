@@ -754,3 +754,29 @@ def test_lookup_validator_indices_connection_error(monkeypatch):
     result = lookup_validator_indices(["0x" + "aa" * 48], "http://127.0.0.1:5052")
     assert result["found"] == 0
     assert "error" in result
+
+
+def test_patch_beacon_endpoints_adds_timeout_without_timeoutstopsec(tmp_path):
+    """Hand-edited units may lack TimeoutStopSec=; TimeoutStartSec must still be added."""
+    legacy = "\n".join(
+        line
+        for line in CHARON_UNIT.splitlines()
+        if not line.startswith(("ExecStartPre=", "TimeoutStartSec=", "TimeoutStopSec="))
+    )
+    service_path = tmp_path / "charon.service"
+    service_path.write_text(legacy + "\n", encoding="utf-8")
+    assert patch_beacon_endpoints(str(service_path), "http://10.0.0.5:5052")
+    updated = service_path.read_text(encoding="utf-8")
+    assert "[Service]\nTimeoutStartSec=infinity" in updated
+    assert updated.count("TimeoutStartSec=") == 1
+
+
+def test_patch_beacon_endpoints_keeps_existing_timeout(tmp_path):
+    unit = CHARON_UNIT.replace("TimeoutStartSec=infinity", "TimeoutStartSec=600")
+    assert "TimeoutStartSec=600" in unit
+    service_path = tmp_path / "charon.service"
+    service_path.write_text(unit, encoding="utf-8")
+    assert patch_beacon_endpoints(str(service_path), "http://10.0.0.5:5052")
+    updated = service_path.read_text(encoding="utf-8")
+    assert "TimeoutStartSec=600" in updated
+    assert "TimeoutStartSec=infinity" not in updated

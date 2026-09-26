@@ -307,6 +307,23 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "ensureCharonBeforeValidator (re)starts Charon when installed" {
+  write_charon_service
+  ensureCharonBeforeValidator
+  run cat "$COMMAND_LOG"
+  # restart, not try-restart: try-restart is a no-op for a stopped unit.
+  [[ "$output" == *"sudo systemctl restart charon"* ]]
+  [[ "$output" != *"try-restart"* ]]
+}
+
+@test "ensureCharonBeforeValidator does nothing without Charon" {
+  rm -f "$CHARON_SERVICE_FILE"
+  export CHARON_SERVICE_FILE="/nonexistent/charon.service"
+  ensureCharonBeforeValidator
+  run cat "$COMMAND_LOG"
+  [[ "$output" != *"charon"* ]]
+}
+
 @test "getCharonP2pPort reads p2p-tcp-address from charon.service" {
   write_charon_service "http://127.0.0.1:5052" 3812
   run getCharonP2pPort

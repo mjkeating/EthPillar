@@ -939,8 +939,12 @@ startValidatorStackAfterUpdate(){
 }
 
 # Ensure Charon is up before starting the VC (key import / loadKeys).
+# restart (not try-restart): also starts a stopped Charon, since the VC talks
+# to the beacon node through Charon's validator API.
 ensureCharonBeforeValidator(){
-    isCharonEnabled && sudo systemctl try-restart charon 2>/dev/null || sudo systemctl start charon 2>/dev/null || true
+    if isCharonEnabled; then
+        sudo systemctl restart charon 2>/dev/null || true
+    fi
 }
 
 # Reload systemd units after .env.overrides edits (Charon + core stack).

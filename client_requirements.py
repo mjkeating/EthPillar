@@ -4,13 +4,14 @@ Client version requirements for Ethereum networks.
 This module defines minimum client versions required for specific fork activations
 and provides validation utilities to ensure compatibility.
 
-Networks requiring Fusaka fork (PeerDAS support):
+Networks gated on Fusaka fork (PeerDAS support) minimum versions:
 - Ephemery: Activates Fusaka at epoch 10 (resets every 28 days)
 - Hoodi: Fusaka active since epoch 50688
+Other networks (including mainnet, where Fusaka is also live) are not checked.
 """
 
 # Minimum client versions for Fusaka fork (PeerDAS support)
-# Required for: Ephemery (active at epoch 10), Hoodi (active since epoch 50688)
+# Enforced only for: Ephemery (active at epoch 10), Hoodi (active since epoch 50688)
 FUSAKA_MIN_VERSIONS = {
     # Consensus clients
     'lighthouse': 'v8.0.0',
@@ -101,7 +102,7 @@ def validate_version_for_network(client_name, version, network):
     Returns:
         Tuple of (is_valid: bool, error_message: str | None)
 
-    Networks requiring Fusaka (PeerDAS):
+    Networks gated on Fusaka (PeerDAS) minimum versions:
     - Ephemery: Active at epoch 10 (resets every 28 days)
     - Hoodi: Active since epoch 50688
 
@@ -111,7 +112,7 @@ def validate_version_for_network(client_name, version, network):
         >>> validate_version_for_network('lighthouse', 'v7.1.0', 'ephemery')
         (False, 'ERROR: ...')
         >>> validate_version_for_network('lighthouse', 'v7.1.0', 'mainnet')
-        (True, None)  # Mainnet doesn't require Fusaka yet
+        (True, None)  # Only ephemery/hoodi are gated; other networks always pass
     """
     # Only validate for networks running Fusaka fork
     if network not in ["ephemery", "hoodi"]:

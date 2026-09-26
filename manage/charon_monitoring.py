@@ -284,12 +284,13 @@ def main(argv: Optional[list] = None) -> int:
         argv: Argument list; defaults to ``sys.argv[1:]``.
 
     Returns:
-        ``0`` on success, ``1`` when no known subcommand is given.
+        ``0`` on success. A missing/unknown subcommand makes argparse exit
+        with status ``2`` (subcommand is required).
     """
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("provision", help="Ensure Charon scrape job + Overview dashboard")
+    p = sub.add_parser("provision", help="Ensure Charon scrape job + CDVN dashboards (Overview only with --overview-only)")
     p.add_argument("--prometheus-yml", type=Path, default=DEFAULT_PROMETHEUS_YML)
     p.add_argument("--grafana-dashboards", type=Path, default=DEFAULT_GRAFANA_DASHBOARDS)
     p.add_argument("--dashboard-url", default=CHARON_OVERVIEW_URL)
@@ -298,7 +299,7 @@ def main(argv: Optional[list] = None) -> int:
         action="store_true",
         help="Provision Charon Overview only (default: full CDVN dashboard bundle)",
     )
-    p.add_argument("--restart", action="store_true", help="try-restart prometheus if scrape changed")
+    p.add_argument("--restart", action="store_true", help="try-restart prometheus if scrape changed, grafana-server if datasource/dashboards changed")
 
     args = parser.parse_args(argv)
     if args.cmd == "provision":

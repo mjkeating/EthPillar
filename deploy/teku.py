@@ -169,9 +169,11 @@ def download_teku(eth_network: str) -> str:
     download_file(download_url, download_path, "Teku")
 
     # Teku 26.6.0+ is compiled for JDK 25; an older runtime fails to start with
-    # UnsupportedClassVersionError. Abort before installing anything if JDK 25
-    # is not available (e.g. Ubuntu too old).
-    # NOTE: keep this version in sync with the `updateJRE 25` call in update_execution.sh.
+    # UnsupportedClassVersionError. Abort before replacing the installed Teku if
+    # JDK 25 is not available (e.g. Ubuntu too old); users/dirs and the download
+    # already exist at this point.
+    # NOTE: keep this version in sync with the `updateJRE 25` calls in
+    # update_consensus.sh and update_validator.sh.
     if not ensure_java_available(25):
         print("❌ JDK 25 is required by Teku but could not be installed. Aborting Teku install.")
         exit(1)
@@ -201,7 +203,6 @@ def install_teku_bn(eth_network: str, checkpoint_sync_url: str, jwtsecret_path: 
     Returns:
         The path to the created service file.
     """
-    # Match call in deploy-teku-besu.py (6 positional arguments)
     service_content = generate_teku_bn_service(
         eth_network, checkpoint_sync_url, jwtsecret_path,
         cl_rest_port, cl_p2p_port, cl_max_peer_count,

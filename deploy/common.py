@@ -219,9 +219,9 @@ def _install_java(version: int) -> bool:
         return True
     print(f"""
 >> ❌ ERROR: could not install '{pkg}' from the Ubuntu repositories.
->>    Besu requires JDK {version}. If the package was not found, your Ubuntu
->>    release is likely too old to provide it; upgrade Ubuntu (e.g. run
->>    'sudo do-release-upgrade'), then re-run the update.
+>>    This client requires JDK {version}. If the package was not found, your
+>>    Ubuntu release is likely too old to provide it; upgrade Ubuntu (e.g. run
+>>    'sudo do-release-upgrade'), then re-run the install/update.
 """)
     return False
 
@@ -455,7 +455,7 @@ def setup_node(jwt_secret_path: str, validator_only: bool = False) -> None:
 
     Args:
         jwt_secret_path: Path to save the JWT secret.
-        validator_only: If True, only setup validator-specific parts.
+        validator_only: If True, skip JWT secret creation (packages are still installed).
     """
     subprocess.run(['sudo', 'apt', '-y', '-qq', 'update'], check=True)
     subprocess.run(['sudo', 'apt', '-y', '-qq', 'upgrade'], check=True)

@@ -9,7 +9,7 @@
 
 set -u
 
-# enable  command completion
+# enable history and history expansion
 set -o history -o histexpand
 
 python="python3"

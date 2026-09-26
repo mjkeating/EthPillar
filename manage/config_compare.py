@@ -810,7 +810,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    """Non-interactive prepare + launch (apply left to Bash/TUI)."""
+    """Prepare, then launch interactive tmeld; print WORKDIR=/CHANGED= (apply left to Bash/TUI)."""
     workdir = Path(args.workdir) if args.workdir else Path(tempfile.mkdtemp(prefix="ethpillar-compare-"))
     workdir.mkdir(parents=True, exist_ok=True)
     print(f"Workdir: {workdir}")
@@ -881,7 +881,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    # Ensure repo root imports (config.py) resolve when run as a module.
+    # Put the repo root on sys.path for any later imports. Module-level imports
+    # (config, deploy.*) already ran, so callers must set PYTHONPATH / cwd.
     root = _repo_root()
     if root not in sys.path:
         sys.path.insert(0, root)

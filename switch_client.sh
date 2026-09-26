@@ -129,7 +129,7 @@ function switchClient(){
         fi
     fi
 
-    # 3) Get network before stopping anything (requires EL to be running if switching CC)
+    # 3) Get network (requires EL to be running if switching CC)
     getNetwork
     if [ "$NETWORK" == "Network Syncing" ] || [ -z "$NETWORK" ]; then
         # Fallback: scrape from existing systemd file

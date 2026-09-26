@@ -1041,7 +1041,7 @@ def _passphrases_all_equal(keys_dir: str, keystores: List[str]) -> bool:
 
 
 def _stage_single_charon_keystore(import_dir: str, keystore_name: str) -> str:
-    """Stage one Charon keystore+json pair for VC import CLI (single-key directory)."""
+    """Stage one Charon keystore ``.json`` + passphrase ``.txt`` pair for VC import CLI (single-key directory)."""
     txt_name = keystore_name.replace(".json", ".txt")
     staging = tempfile.mkdtemp(prefix="ethpillar-charon-key-import-one-")
     os.chmod(staging, 0o700)
@@ -1942,8 +1942,10 @@ def scrape_beacon_endpoints(content: str) -> Optional[str]:
 def patch_beacon_endpoints(service_path: str, new_endpoints: str) -> bool:
     """Replace Charon ``--beacon-node-endpoints`` in a systemd unit.
 
-    Also refreshes the BN readiness ``ExecStartPre`` curl wait (and ensures
-    ``TimeoutStartSec=infinity``) so patched endpoints stay in sync.
+    Also refreshes the BN readiness ``ExecStartPre`` curl wait so patched
+    endpoints stay in sync. If the unit has no ``TimeoutStartSec=`` line,
+    ``TimeoutStartSec=infinity`` is inserted after the ``TimeoutStopSec=<n>``
+    line (nothing is added when that line is missing as well).
 
     Returns:
         True if the file was updated.

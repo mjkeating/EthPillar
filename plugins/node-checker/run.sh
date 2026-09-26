@@ -3,7 +3,7 @@
 # Author: coincashew.eth | coincashew.com
 # License: GNU GPL
 # Source: https://github.com/coincashew/ethpillar
-# Description: EthPillar is a one-liner setup tool and node management TUI
+# Description: Node security scanner and health checkup
 #
 # Made for home and solo stakers 🏠🥩
 

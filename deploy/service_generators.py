@@ -28,8 +28,8 @@ def generate_systemd_template(
         limit_nofile: Optional file descriptor limit.
         unit_after: Additional systemd units that must start before this service.
         unit_requires: Hard dependencies on other systemd units.
-        exec_start_pre: Optional ``ExecStartPre=`` command lines (run as root
-            before dropping to ``user`` unless ``+``/``!`` prefixes are used).
+        exec_start_pre: Optional ``ExecStartPre=`` command lines (run as
+            ``user`` like ``ExecStart``; prefix with ``+`` for full privileges).
         timeout_start_sec: Optional ``TimeoutStartSec`` (e.g. ``infinity`` when
             ``ExecStartPre`` waits indefinitely for a dependency).
 

@@ -39,6 +39,8 @@ graph TD
     *   **CSM**: Solo Staking with Lido Overrides
     *   **Full Node**: EC + CC only
     *   **VC Only**: External BN + local VC
+    *   **CSM VC Only**: VC Only with Lido Overrides
+    *   **Failover Staking Node**: EC + CC + MEV, no VC (backup BN for validators elsewhere)
     *   **Custom**: Granular selection of all components
 3.  **Client Selection**:
     *   If Custom: Pick EC, then CC, then VC.
@@ -46,14 +48,14 @@ graph TD
     *   **Obol Charon DV**: listed as a VC choice. Selecting it sets `flags['charon']=True` and re-prompts for the signer VC (no Charon, no Grandine integrated). CLI: `--with_charon --vc Lodestar`.
 4.  **Parameter Collection**: JWT, Fee Recipient, Graffiti, Sync URLs.
 5.  **Execution**:
-    *   `common.setup_node()`: JWT creation, user/group setup.
+    *   `common.setup_node()`: apt packages + JWT secret (users/groups are created per client by `common.setup_client_user_and_dir()`).
+    *   MEV-Boost installation.
     *   Execution Client installation (download binary + systemd).
     *   Consensus Client installation.
-    *   MEV-Boost installation.
     *   Charon installation (`deploy/charon.py`) when `flags['charon']`: upstream BN REST → Charon; VC beacon flag → `http://127.0.0.1:3600`. Nimbus BN → Charon `--feature-set-enable=json_requests`. Teku BN → `--validators-graffiti-client-append-format=DISABLED`.
     *   Validator Client installation when Charon is on: `--distributed` for Lighthouse/Nimbus/Prysm/Lodestar; `--Xobol-dvt-integration-enabled=true` and `--Xvalidator-client-beacon-api-executor-threads=50` for Teku.
     *   **Lodestar BN warning**: Charon v1.11+ marks Lodestar BN + Lighthouse/Nimbus/Prysm VC as duties may fail (client-side). EthPillar warns at install/migrate; prefer Lodestar or Teku VC, or a different BN.
-    *   `common.finish_install()`: Service reload and completion report. Charon is enabled on boot but not started until `/var/lib/charon/.charon/cluster-lock.json` exists. When monitoring is already present, `manage.charon_monitoring` adds a Prometheus scrape for `:3620` and provisions the Charon Overview Grafana dashboard (also run when monitoring is installed later if `charon.service` exists).
+    *   `common.finish_install()`: Service reload and completion report. Charon is enabled on boot only if the autostart prompt is accepted, and is started (via the start-syncing prompt) only once `/var/lib/charon/.charon/cluster-lock.json` exists. When monitoring is already present, `manage.charon_monitoring` adds a Prometheus scrape for `:3620` and provisions the Charon Overview Grafana dashboard (also run when monitoring is installed later if `charon.service` exists).
 
 Runtime: `getValidatorMode()` stays `none | separate | integrated_grandine`. Detect Charon via `isCharonEnabled()` (`charon.service`). After a CC switch, `patchValidatorBeaconEndpoint` updates Charon’s `--beacon-node-endpoints` (VC stays on `:3600`), then Charon is `try-restart`ed. Full-stack CDVN migrate: `ethpillar --migrate_cdvn` (`deploy.cdvn_migrate` + `migrateCdvnFull`) detects EL/CL/VC/MEV, deploys the matching role, moves datadirs, overlays `.charon` + `.env` → systemd, and provisions fresh EthPillar monitoring.
 

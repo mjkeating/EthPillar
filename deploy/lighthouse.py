@@ -20,7 +20,8 @@ def generate_lighthouse_bn_service(eth_network: str, sync_url: str, jwtsecret_pa
         cl_p2p_port: CL P2P port
         cl_p2p_port_2: CL secondary P2P port
         cl_max_peer_count: CL max peer count
-        fee_parameters: Optional fee recipient parameters
+        fee_parameters: Accepted for interface compatibility; ignored (the
+            Lighthouse BN unit sets no fee recipient)
         mev_parameters: Optional MEV relay parameters
         network_override: Optional network flag override
 
@@ -74,7 +75,7 @@ def generate_lighthouse_vc_service(eth_network: str, graffiti: str, beacon_node_
     Args:
         eth_network: Network name
         graffiti: Graffiti string
-        beacon_node_address: Beacon node address
+        beacon_node_address: Full beacon node flag (e.g. ``--beacon-nodes=URL``)
         fee_parameters: Optional fee recipient parameters
         extra_parameters: Optional extra ExecStart flags (builder/MEV and/or DVT)
         network_override: Optional network flag override
@@ -191,7 +192,7 @@ def install_lighthouse_vc(lh_version: str, eth_network: str, cl_rest_port: str, 
         eth_network: Network name.
         cl_rest_port: Consensus client REST port.
         graffiti: Graffiti string.
-        beacon_node_address: Beacon node address URL.
+        beacon_node_address: Full beacon node flag (e.g. ``--beacon-nodes=URL``).
         fee_parameters: Optional fee recipient parameters.
         extra_parameters: Optional extra ExecStart flags (builder/MEV and/or DVT).
         unit_after: Optional extra systemd ``After=``/``Wants=`` units.

@@ -1265,7 +1265,7 @@ while true; do
         # Lodestar v1.42.0+ enables QUIC by default on UDP 9001 (--quicPort, default port+1)
         [[ $CL == "Lodestar" ]] && sudo ufw allow 9001/udp comment 'Allow lodestar QUIC port'
         [[ $CL == "Grandine" ]] && sudo ufw allow 9001/udp comment 'Allow grandine QUIC port'
-        # Prysm v5.2.0+ enables QUIC by default; without --p2p-quic-port it uses UDP 13000
+        # Prysm v5.2.0+ enables QUIC by default; EthPillar sets --p2p-quic-port=CL_P2P_PORT_2 (UDP 9001)
         [[ $CL == "Prysm" ]] && sudo ufw allow 9001/udp comment 'Allow prysm QUIC port'
         [[ $EL == "Reth" ]] && sudo ufw allow 30304/udp comment 'Allow reth discv5 port'
         [[ $EL =~ "Erigon" ]] && sudo ufw allow 42069 comment 'Allow erigon torrent port'
@@ -1831,7 +1831,7 @@ function checkV1StakingSetup(){
   fi
 }
 
-# If no consensus or validator client service is installed, start install workflow
+# If no execution, consensus or validator service and no Aztec install exist, start install workflow
 function installNode(){
   if [[ ! -f /etc/systemd/system/consensus.service && ! -f /etc/systemd/system/execution.service && ! -f /etc/systemd/system/validator.service && ! -d /opt/ethpillar/aztec ]]; then
           local _ROLE
@@ -1859,7 +1859,7 @@ function installNode(){
   fi
 }
 
-# Ask to apply patches
+# Ensure motd runs at login; offer the locale patch (002) if not yet applied and locale is not UTF-8
 function applyPatches(){
   # Add motd to login message
   local motd_line="cat \"${BASE_DIR}/motd\""

@@ -22,8 +22,7 @@ rule_files:
 global:
   scrape_interval:     15s # By default, scrape targets every 15 seconds.
 
-# A scrape configuration containing exactly one endpoint to scrape:
-# Here it's Prometheus itself.
+# Scrape ethereum-metrics-exporter (:9099) and node_exporter (:9100).
 scrape_configs:
    - job_name: 'ethereum-metrics-exporter'
      static_configs:

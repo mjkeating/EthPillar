@@ -6,7 +6,7 @@
 #
 # Made for home and solo stakers 🏠🥩
 
-# Dir to install staking-deposit-cli
+# Dir to install ethstaker-deposit-cli
 STAKING_DEPOSIT_CLI_DIR=$HOME
 # Path to deposit cli tool
 DEPOSIT_CLI_PATH=$STAKING_DEPOSIT_CLI_DIR/ethstaker_deposit-cli
@@ -371,7 +371,8 @@ function setConfig(){
             EXPLORER="https://hoodi.cloud.blockscout.com"
           ;;
           ephemery)
-            # Reuse HOODI values unless ephemery-specific ones exist
+            # Lido launchpad and CSM withdrawal address reuse the HOODI values;
+            # the CSM sentinel URL is a placeholder
             LAUNCHPAD_URL="https://launchpad.ephemery.dev"
             LAUNCHPAD_URL_LIDO=${LAUNCHPAD_URL_LIDO_HOODI}
             CSM_WITHDRAWAL_ADDRESS=${CSM_WITHDRAWAL_ADDRESS_HOODI}
@@ -736,7 +737,8 @@ keymanagerPy() {
         "$cmd" "$@"
 }
 
-# Parse last JSON object from mixed stdout (logging may precede JSON).
+# Print a field from JSON output (uses the last element if an array; if
+# several JSON values are given, the last match wins).
 keymanagerJsonField() {
     local json="$1"
     local field="$2"
@@ -1008,7 +1010,7 @@ keymanagerImportKeystores() {
         "Imported ${count:-?} keystore(s) via Keymanager API.\n\n${statuses_text}" 18 78
 }
 
-# Truncate a pubkey for display: first 10 chars + "…" + last 6 (e.g. 0xb1da40f8…f9af).
+# Truncate a pubkey for display: first 10 chars + "…" + last 6 (e.g. 0xb1da40f8…a3f9af).
 keymanagerTruncatePubkey() {
     local pk="$1"
     local len=${#pk}
@@ -1352,7 +1354,8 @@ elif [[ "$_skip_or_mode" == "helpers-only" ]]; then
     # Unit tests / pure source — do not download deposit-cli or open menus.
     :
 elif [[ -n "$_skip_or_mode" ]]; then
-    # Sourced/invoked by CSM plugin with a skip flag — load helpers only.
+    # Sourced/invoked by CSM plugin with a skip flag — download deposit-cli
+    # and run checkLido, but do not open the main menu.
     downloadEthstakerDepositCli
     checkLido
 else

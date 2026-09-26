@@ -89,8 +89,8 @@ def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: s
     setup_client_user_and_dir("execution", "besu")
     print(f">> Installing dependencies")
     # Besu 26.6.0+ is compiled for JDK 25; an older runtime fails to start with
-    # UnsupportedClassVersionError. Abort before installing anything if JDK 25
-    # is not available (e.g. Ubuntu too old).
+    # UnsupportedClassVersionError. Abort before replacing the installed Besu if
+    # JDK 25 is not available (e.g. Ubuntu too old); users/dirs already exist.
     # NOTE: keep this version in sync with the `updateJRE 25` call in update_execution.sh.
     if not ensure_java_available(25):
         print("❌ JDK 25 is required by Besu but could not be installed. Aborting Besu install.")

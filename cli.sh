@@ -73,8 +73,8 @@ cli_missing_client_targets() {
 }
 
 # Resolve a user target arg into a list of concrete targets.
-# Usage: cli_resolve_targets <mode> <arg>
-#   mode=clients  → start/stop/restart/status (no ethpillar)
+# Usage: cli_resolve_targets <mode> <arg> [order_array_name]
+#   mode=clients  → start/stop/restart (no ethpillar)
 #   mode=upgrade  → check-updates/upgrade (includes ethpillar)
 # Prints targets one per line; returns 1 on invalid/not-installed target.
 cli_resolve_targets() {

@@ -176,7 +176,11 @@ def read_privileged_text(path: Path) -> Optional[str]:
         path: File to read.
 
     Returns:
-        File contents, or None when the file is missing / unreadable even with sudo.
+        File contents, or None when the file is missing or another OSError
+        occurs.
+
+    Raises:
+        PermissionError: If the direct read is denied and ``sudo cat`` fails.
     """
     try:
         return path.read_text(encoding="utf-8")

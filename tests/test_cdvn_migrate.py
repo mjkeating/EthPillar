@@ -576,3 +576,51 @@ def test_apply_cdvn_monitoring_from_env_reads_effective_port(monkeypatch, tmp_pa
         lambda default=3000: 3000,
     )
     assert apply_cdvn_monitoring_from_env(str(env)) == 3000
+
+
+# ── _dest_has_data (fail closed) / main error handling ─────────────────────────
+
+def test_dest_has_data_missing_and_readable_dirs(tmp_path):
+    from deploy.cdvn_migrate import _dest_has_data
+
+    assert _dest_has_data(str(tmp_path / "missing")) is False
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert _dest_has_data(str(empty)) is False
+    (empty / "db").mkdir()
+    assert _dest_has_data(str(empty)) is True
+
+
+@pytest.mark.parametrize(
+    "returncode, stdout, expected",
+    [
+        (1, "", True),            # sudo find fails -> cannot list -> occupied (fail closed)
+        (0, "/dest/db\n", True),  # root-only dir with content
+        (0, "", False),           # root-only dir, really empty
+    ],
+)
+def test_dest_has_data_unreadable_dir(monkeypatch, returncode, stdout, expected):
+    import deploy.cdvn_migrate as cm
+
+    def deny(_path):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(cm, "path_exists", lambda path, directory=False: True)
+    monkeypatch.setattr(cm.os, "listdir", deny)
+    monkeypatch.setattr(
+        cm.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], returncode, stdout=stdout, stderr=""),
+    )
+    assert cm._dest_has_data("/dest") is expected
+
+
+def test_main_reports_failed_sudo_step_as_error(monkeypatch, capsys):
+    import deploy.cdvn_migrate as cm
+
+    def boom(*a, **k):
+        raise subprocess.CalledProcessError(1, ["sudo", "mv", "a", "b"])
+
+    monkeypatch.setattr(cm, "run_migration", boom)
+    assert cm.main(["run", "--path", "/nonexistent"]) == 1
+    assert "ERROR:" in capsys.readouterr().err

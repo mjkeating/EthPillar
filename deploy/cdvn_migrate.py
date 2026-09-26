@@ -708,21 +708,30 @@ def _dir_nonempty(path: str) -> bool:
 def _dest_has_data(path: str) -> bool:
     """True when destination already looks occupied (skip move).
 
+    Fails closed: a destination that exists but cannot be listed (even via
+    sudo) counts as occupied, so data is never moved into it blindly.
+
     Args:
         path: EthPillar ``/var/lib/…`` destination directory.
 
     Returns:
-        True when *path* exists and is non-empty (or cannot be listed).
+        True when *path* exists and is non-empty or cannot be listed.
     """
-    if path_exists(path, directory=True):
-        return bool(list_dir_basenames(path))
-    if not os.path.isdir(path):
+    if not path_exists(path, directory=True):
         return False
     try:
-        entries = list(os.scandir(path))
+        return bool(os.listdir(path))
     except OSError:
+        pass
+    result = subprocess.run(
+        ["sudo", "find", path, "-mindepth", "1", "-maxdepth", "1", "-print", "-quit"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
         return True
-    return len(entries) > 0
+    return bool(result.stdout.strip())
 
 
 def detect_docker_compose_status(
@@ -1486,7 +1495,7 @@ def main(argv: Optional[list] = None) -> int:
                 fresh=args.fresh,
             )
             return 0
-    except (OSError, ValueError, RuntimeError) as exc:
+    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     return 1

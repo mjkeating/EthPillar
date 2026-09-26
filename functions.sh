@@ -1065,7 +1065,8 @@ epbsRemoteVcMode() {
 }
 
 # Build the beacon node REST URL that a separate VC should target.
-# Prefers environment variables, then falls back to scraping the consensus.service.
+# Port: CL_REST_PORT, else scraped from consensus.service, else 5052.
+# IP: a scraped --http-address wins over CL_IP_ADDRESS (default 127.0.0.1).
 # Sets BEACON_NODE_ENDPOINT.
 getBeaconNodeEndpoint(){
     local consensus_svc="${CONSENSUS_SERVICE_FILE:-/etc/systemd/system/consensus.service}"

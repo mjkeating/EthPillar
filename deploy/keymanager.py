@@ -2357,8 +2357,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                 host=args.host,
             )
             summary["ok"] = True
-            # Never echo full token in interactive logs if very long; still return it
-            # for shell capture (local use only).
+            # The JSON includes the full token for shell capture (local use only);
+            # the TUI (manage_validator_keys.sh) only reports whether one was found.
             _cli_print(summary)
             return 0
 

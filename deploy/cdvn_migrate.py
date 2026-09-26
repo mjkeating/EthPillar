@@ -736,8 +736,10 @@ def detect_docker_compose_status(
 
     Returns:
         ``(running, error)``. ``error`` is set when the check could not be
-        performed (missing CLI, permission denied, timeout). Callers must
-        treat a non-empty *error* as unsafe to migrate (same as running).
+        performed (permission denied, timeout). Callers must treat a
+        non-empty *error* as unsafe to migrate (same as running). With no
+        ``docker``/``docker-compose`` CLI at all this returns ``(False, "")``:
+        Compose cannot be running locally.
     """
     if not compose_file:
         return False, ""

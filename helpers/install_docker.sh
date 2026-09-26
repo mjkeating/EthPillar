@@ -39,7 +39,7 @@ if [ "$(id -u)" -ne 0 ]; then
     sudo loginctl enable-linger "$USER" || true
     systemctl enable docker || true
     systemctl restart docker || true
-    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -d)}"
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
     # point docker CLI to rootless socket for this user
     # shellcheck disable=SC2016
     if ! grep -q 'DOCKER_HOST=unix://\$XDG_RUNTIME_DIR/docker.sock' "$HOME/.profile" 2>/dev/null; then

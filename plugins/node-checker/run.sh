@@ -85,11 +85,6 @@ PURPLE='\033[35m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then
-    print_check_result "WARN" "Some checks require root privileges"
-fi
-
 display_banner() {
 cat << 'EOF'
              ,----------------,              ,---------,
@@ -154,6 +149,11 @@ print_check_result() {
 
     echo -e "${color}${prefix} ${icon} ${message}${NC}"
 }
+
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+    print_check_result "WARN" "Some checks require root privileges"
+fi
 
 check_firewall() {
     ((total_checks++))

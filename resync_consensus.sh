@@ -85,7 +85,8 @@ EPHEMERY_NETWORK_PATH="/opt/ethpillar/testnet"
 # Help
 # ---------------------------------------------------------------------------
 usage() {
-	sed -n '2,60p' "$0" | sed 's/^# \{0,1\}//'
+	# Print the leading comment block (the whole header), without the '# ' prefix.
+	awk 'NR == 1 { next } /^#/ { seen = 1; sub(/^# ?/, ""); print; next } seen { exit }' "$0"
 	exit 0
 }
 

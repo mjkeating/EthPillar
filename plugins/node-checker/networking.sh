@@ -116,7 +116,8 @@ node_checker_unit_client() {
     grep "Description=" "$path" 2>/dev/null | awk -F'=' '{print $2}' | awk '{print $1}'
 }
 
-# Caplin is integrated into execution.service (EL Erigon-Caplin); no QUIC by default.
+# Caplin is integrated into execution.service (EL Erigon-Caplin).
+# QUIC is --caplin.discovery.quicport (UDP 9001 / CL_P2P+1; native default is 4001).
 is_caplin_node() {
     local exec_svc el cl consensus_svc
     exec_svc="$(node_checker_exec_service)"
@@ -139,17 +140,16 @@ node_checker_cl_name() {
     node_checker_unit_client "$(node_checker_consensus_service)"
 }
 
-# True when a local consensus.service exists and the CL is not Caplin.
-# Known QUIC CLs: Lighthouse, Teku, Nimbus, Lodestar, Grandine, Prysm.
-# Unknown CL with consensus.service: still expect 9001/udp.
+# True when a local CL should listen for QUIC.
+# Caplin (execution.service) and any consensus.service, including unknown CLs.
 cl_expects_quic() {
-    is_caplin_node && return 1
+    is_caplin_node && return 0
     local cl
     cl="$(node_checker_cl_name)"
     [[ -n "$cl" ]]
 }
 
-# Prints space-separated UDP ports. Empty when QUIC is not expected (Caplin / no CL).
+# Prints space-separated UDP ports. Empty when QUIC is not expected (no CL).
 # Delegates to functions.sh so the UFW TUI and node-checker share one resolver.
 expected_cl_quic_udp_ports() {
     if declare -F getExpectedClQuicUdpPorts >/dev/null; then
@@ -247,12 +247,6 @@ check_cl_quic_listening() {
 
 check_cl_quic() {
     print_check_result "INFO" "CL QUIC: after Glamsterdam, libp2p MPlex/TCP P2P is deprecated — verify QUIC UDP (typically ${CL_P2P_PORT_2:-9001}/udp)"
-    if is_caplin_node; then
-        total_checks=$((total_checks + 1))
-        print_check_result "WARN" "Caplin has no QUIC by default; skipping ${CL_P2P_PORT_2:-9001}/udp requirement"
-        warning_checks=$((warning_checks + 1))
-        return 0
-    fi
     if ! cl_expects_quic; then
         return 0
     fi
@@ -778,7 +772,7 @@ check_inbound_quic_probe() {
 
     print_check_result "INFO" "Active inbound QUIC (quicmap-style). Local listen is not proof the Internet can complete a QUIC handshake."
 
-    if is_caplin_node || ! cl_expects_quic; then
+    if ! cl_expects_quic; then
         return 0
     fi
 

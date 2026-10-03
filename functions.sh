@@ -978,7 +978,7 @@ unitClientName(){
     grep "Description=" "$path" 2>/dev/null | awk -F'=' '{print $2}' | awk '{print $1}'
 }
 
-# Caplin is integrated into execution.service; no QUIC by default.
+# Caplin is integrated into execution.service. QUIC is --caplin.discovery.quicport.
 isCaplinNode(){
     local exec_svc el cl consensus_svc
     exec_svc="${EXEC_SERVICE_FILE:-/etc/systemd/system/execution.service}"
@@ -997,18 +997,26 @@ isCaplinNode(){
     return 1
 }
 
-# True when a local consensus.service exists and the CL is not Caplin.
+# True when a local CL should listen for QUIC (consensus.service, or Caplin).
 clExpectsQuic(){
-    isCaplinNode && return 1
+    isCaplinNode && return 0
     local cl
     cl="$(unitClientName "${CONSENSUS_SERVICE_FILE:-/etc/systemd/system/consensus.service}")"
     [[ -n "$cl" ]]
 }
 
-# QUIC UDP from consensus.service (--quic-port / --quicPort / --p2p-quic-port).
+# QUIC UDP from the live unit.
+# Caplin: --caplin.discovery.quicport on execution.service (eth-docker #2836 uses
+# CL_P2P+1 / 9001; Caplin's native default is UDP 4001).
+# Other CLs: --quic-port / --quicPort / --p2p-quic-port on consensus.service.
 parseClQuicPortFromUnit(){
-    local svc="${CONSENSUS_SERVICE_FILE:-/etc/systemd/system/consensus.service}"
-    local val=""
+    local svc val=""
+    if isCaplinNode; then
+        svc="${EXEC_SERVICE_FILE:-/etc/systemd/system/execution.service}"
+        parseUnitFlagPort "$svc" '--caplin.discovery.quicport'
+        return
+    fi
+    svc="${CONSENSUS_SERVICE_FILE:-/etc/systemd/system/consensus.service}"
     [[ -f "$svc" ]] || return 0
     val=$(grep -oE -- '--(p2p-quic-port|quic-port|quicPort)[= ][0-9]+' "$svc" 2>/dev/null | head -1 | grep -oE '[0-9]+$' || true)
     if [[ "$val" =~ ^[0-9]+$ ]] && (( val >= 1 && val <= 65535 )); then
@@ -1016,7 +1024,7 @@ parseClQuicPortFromUnit(){
     fi
 }
 
-# Space-separated UDP ports. Empty when QUIC is not expected (Caplin / no CL).
+# Space-separated UDP ports. Empty when QUIC is not expected (no CL).
 # Prefer the live unit flag, then CL_P2P_PORT_2, then 9001. Teku also needs IPv6 QUIC.
 getExpectedClQuicUdpPorts(){
     clExpectsQuic || return 0
@@ -1040,7 +1048,7 @@ ufwAllowClQuic(){
     if [[ -z "$ports" ]]; then
         if [[ "$quiet" != "quiet" ]] && command -v whiptail >/dev/null 2>&1; then
             whiptail --title "CL QUIC" --msgbox \
-                "No consensus QUIC port to allow (no consensus.service, or Caplin which has no QUIC by default).\nUse the generic Allow option to open a UDP port manually." 12 70 \
+                "No consensus QUIC port to allow (no consensus client is installed).\nUse the generic Allow option to open a UDP port manually." 12 70 \
                 || true
         fi
         return 0
@@ -1209,6 +1217,8 @@ getValidatorClient(){
         VALIDATOR_CLIENT=$(grep -m1 '^Description=' "$validator_svc" 2>/dev/null | awk -F'=' '{print $2}' | awk '{print $1}')
     elif [[ -f "$consensus_svc" ]] && grep -q 'keystore-dir' "$consensus_svc" 2>/dev/null; then
         VALIDATOR_CLIENT="Grandine"
+    elif isCaplinNode; then
+        VALIDATOR_CLIENT="Erigon-Caplin"
     fi
 
     VC="$VALIDATOR_CLIENT"
@@ -1226,7 +1236,8 @@ charonEpbsSupported() {
 # True when the MEV-Boost TUI should offer ePBS migration.
 # - Split LXC (MEV, no local VC): always show (export / remote complete).
 # - Charon DVT on this host: hide until charonEpbsSupported (builder path is Charon's).
-# - Solo: manage.epbs.support_level == "full" (Prysm v7.2.0+ builders list, Lodestar).
+# - Solo: manage.epbs.support_level == "full" (Prysm v7.2.0+ builders list,
+#   Lodestar, Erigon-Caplin v3.7.1+ caplin-builders.json).
 # CLI (`python -m manage.epbs`) is not gated; placeholders stay there.
 epbsTuiSupported() {
     local validator_svc="${VALIDATOR_SERVICE_FILE:-/etc/systemd/system/validator.service}"
@@ -1241,7 +1252,7 @@ epbsTuiSupported() {
     local client
     client=$(getValidatorClient)
     case "$client" in
-        Prysm|Lodestar) return 0 ;;
+        Prysm|Lodestar|Erigon-Caplin) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -1263,7 +1274,7 @@ epbsImportUnderValidator() {
     local client
     client=$(getValidatorClient)
     case "$client" in
-        Prysm|Lodestar) return 0 ;;
+        Prysm|Lodestar|Erigon-Caplin) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -1277,7 +1288,10 @@ epbsImportMenuSupported() {
 epbsRemoteVcMode() {
     local validator_svc="${VALIDATOR_SERVICE_FILE:-/etc/systemd/system/validator.service}"
     local mev_svc="${MEVBOOST_SERVICE_FILE:-/etc/systemd/system/mevboost.service}"
-    [[ -f "$mev_svc" && ! -f "$validator_svc" ]]
+    [[ -f "$mev_svc" && ! -f "$validator_svc" ]] || return 1
+    # Integrated Caplin has no validator.service; it is the local VC.
+    isCaplinNode && return 1
+    return 0
 }
 
 # Build the beacon node REST URL that a separate VC should target.

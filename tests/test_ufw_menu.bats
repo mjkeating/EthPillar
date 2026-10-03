@@ -94,13 +94,27 @@ menu_labels() {
 	[ "$output" = "9001 9091" ]
 }
 
-@test "getExpectedClQuicUdpPorts is empty for Caplin" {
+@test "getExpectedClQuicUdpPorts is 9001 for Caplin without an explicit flag" {
 	cat > "$EXEC_SERVICE_FILE" <<EOF
 [Unit]
 Description=Erigon-Caplin Integrated Execution-Consensus Client for MAINNET
 EOF
+	rm -f "$CONSENSUS_SERVICE_FILE"
 	run getExpectedClQuicUdpPorts
-	[ -z "$output" ]
+	[ "$output" = "9001" ]
+}
+
+@test "getExpectedClQuicUdpPorts reads Caplin --caplin.discovery.quicport" {
+	cat > "$EXEC_SERVICE_FILE" <<EOF
+[Unit]
+Description=Erigon-Caplin Integrated Execution-Consensus Client for MAINNET
+[Service]
+ExecStart=/usr/local/bin/erigon --caplin.discovery.port=9000 --caplin.discovery.quicport=19001
+EOF
+	rm -f "$CONSENSUS_SERVICE_FILE"
+	CL_P2P_PORT_2=9001
+	run getExpectedClQuicUdpPorts
+	[ "$output" = "19001" ]
 }
 
 @test "getExpectedElP2pPort and getExpectedClP2pPort read unit flags" {
@@ -146,12 +160,12 @@ EOF
 	[[ "$(describeExpectedP2pUfwRules)" == *"30303/tcp 30303/udp 9000/tcp 9000/udp 30304/udp 9001/udp"* ]]
 }
 
-@test "ufwAllowExpectedP2pPorts does not open Charon and skips QUIC for Caplin" {
+@test "ufwAllowExpectedP2pPorts opens Caplin QUIC UDP 9001 and not Charon" {
 	cat > "$EXEC_SERVICE_FILE" <<EOF
 [Unit]
 Description=Erigon-Caplin Integrated Execution-Consensus Client for MAINNET
 [Service]
-ExecStart=/usr/local/bin/erigon --port=30303 --caplin.discovery.port=9000
+ExecStart=/usr/local/bin/erigon --port=30303 --caplin.discovery.port=9000 --caplin.discovery.quicport=9001
 EOF
 	rm -f "$CONSENSUS_SERVICE_FILE"
 	run ufwAllowExpectedP2pPorts
@@ -161,7 +175,7 @@ EOF
 	grep -q "ufw allow 9000/udp" "$COMMAND_LOG"
 	grep -q "ufw allow 30304/tcp" "$COMMAND_LOG"
 	grep -q "ufw allow 42069/udp" "$COMMAND_LOG"
-	grep -qv "9001/udp" "$COMMAND_LOG"
+	grep -q "ufw allow 9001/udp" "$COMMAND_LOG"
 	grep -qv "3610" "$COMMAND_LOG"
 }
 

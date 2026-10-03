@@ -210,6 +210,30 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+@test "epbsTuiSupported is true for integrated Erigon-Caplin without a separate VC" {
+  rm -f "$VALIDATOR_SERVICE_FILE" "$CHARON_SERVICE_FILE" "$CONSENSUS_SERVICE_FILE"
+  export VALIDATOR_SERVICE_FILE="/nonexistent/validator.service"
+  export CHARON_SERVICE_FILE="/nonexistent/charon.service"
+  export CONSENSUS_SERVICE_FILE="/nonexistent/consensus.service"
+  export MEVBOOST_SERVICE_FILE="/nonexistent/mevboost.service"
+  export EXEC_SERVICE_FILE
+  EXEC_SERVICE_FILE=$(mktemp)
+  cat > "$EXEC_SERVICE_FILE" <<EOF
+[Unit]
+Description=Erigon-Caplin Integrated Execution-Consensus Client for SEPOLIA
+EOF
+  run getValidatorClient
+  [ "$output" = "Erigon-Caplin" ]
+  run epbsTuiSupported
+  [ "$status" -eq 0 ]
+  export MEVBOOST_SERVICE_FILE
+  MEVBOOST_SERVICE_FILE=$(mktemp)
+  echo "[Service]" > "$MEVBOOST_SERVICE_FILE"
+  run epbsRemoteVcMode
+  [ "$status" -ne 0 ]
+  rm -f "$EXEC_SERVICE_FILE" "$MEVBOOST_SERVICE_FILE"
+}
+
 @test "epbsTuiSupported is false for Grandine integrated VC" {
   rm -f "$VALIDATOR_SERVICE_FILE" "$CHARON_SERVICE_FILE"
   export VALIDATOR_SERVICE_FILE="/nonexistent/validator.service"

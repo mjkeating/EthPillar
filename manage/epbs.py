@@ -26,10 +26,12 @@ support (same gate as ``charonEpbsSupported`` in the TUI).
 
 Support levels:
 
-* ``full`` — Prysm v7.2.0+ (proposer-settings schema v2 ``builders`` list)
-  and Lodestar v1.47.0+ (VC ``--builder.urls`` / ``--builder.minBid``).
-  Lodestar prepare still probes ``lodestar validator --help`` so older
-  binaries are skipped.
+* ``full`` — Prysm v7.2.0+ (proposer-settings schema v2 ``builders`` list),
+  Lodestar v1.47.0+ (VC ``--builder.urls`` / ``--builder.minBid``), and
+  Erigon-Caplin v3.7.1+ (``caplin-builders.json`` plus the existing
+  ``--caplin.mev-relay-url`` sidecar). Lodestar prepare still probes
+  ``lodestar validator --help`` and Caplin prepare still probes
+  ``erigon --version`` so older binaries are skipped.
 * ``placeholder`` — Lighthouse, Teku, Nimbus, Grandine: no released VC relay
   list; prepare is a documented no-op. Complete is refused without
   ``--force``.
@@ -40,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -49,6 +52,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
+from client_requirements import compare_versions, parse_version
 from deploy.common import BASE_DATA_DIR, write_service_file
 from manage.service_parse import (
     SERVICE_FILES,
@@ -66,6 +70,10 @@ from manage.service_parse import (
 SIDECAR_MARKERS = ("127.0.0.1:18550", "localhost:18550", "[::1]:18550")
 GWEI_PER_ETH = Decimal("1000000000")
 PRYSM_SETTINGS_PATH = f"{BASE_DATA_DIR}/prysm_validator/proposer-settings.json"
+# Erigon datadir is ``/var/lib/erigon``. Caplin has no multi-relay CLI flag;
+# this file is the prepared builder list (see :func:`apply_relays_caplin`).
+CAPLIN_BUILDERS_PATH = f"{BASE_DATA_DIR}/erigon/caplin-builders.json"
+CAPLIN_BUILDERS_MIN_VERSION = "3.7.1"
 MIGRATION_FORMAT = "ethpillar.epbs-migration"
 MIGRATION_VERSION = 1
 MIGRATION_EXTENSION = ".ethpillar.epbs-migration"
@@ -84,6 +92,8 @@ def complete_rollback_hint(fs: "EpbsFilesystem") -> str:
     restore: List[str] = []
     if fs.exists(fs.unit_path("consensus")):
         restore.append("consensus.service.bak.epbs.* over consensus.service")
+    if _execution_has_caplin(fs):
+        restore.append("execution.service.bak.epbs.* over execution.service")
     if fs.exists(fs.unit_path("charon")):
         restore.append("charon.service.bak.epbs.* over charon.service")
     restore_txt = " and ".join(restore) if restore else "the newest *.bak.epbs.* backups"
@@ -94,8 +104,9 @@ def complete_rollback_hint(fs: "EpbsFilesystem") -> str:
     steps.append("sudo systemctl daemon-reload")
     restart = [
         name
-        for name in ("consensus", "charon", "validator")
+        for name in ("execution", "consensus", "charon", "validator")
         if fs.exists(fs.unit_path(name))
+        and (name != "execution" or _execution_has_caplin(fs))
     ]
     if restart:
         steps.append("sudo systemctl restart " + " ".join(restart))
@@ -186,6 +197,15 @@ SUPPORT_NOTES: Dict[str, str] = {
     "Grandine": (
         "Placeholder: integrated client; --builder-url takes a single sidecar. "
         "Prepare is a no-op. Complete is refused without --force."
+    ),
+    "Erigon-Caplin": (
+        "Full: Erigon/Caplin v3.7.1+ (first tagged Caplin release with Sepolia "
+        "Gloas). Prepare writes caplin-builders.json (builders[].url, "
+        "max_execution_payment \"0\", min_bid in Gwei) when `erigon --version` "
+        "is at least v3.7.1. --caplin.mev-relay-url stays the pre-Gloas sidecar "
+        "until complete, which removes it and switches Caplin to the Gloas "
+        "dynamic builder client. v3.7.1 already schedules Sepolia's 200M gas "
+        "limit; EthPillar does not set one."
     ),
 }
 
@@ -303,22 +323,26 @@ class EpbsFilesystem:
     Attributes:
         systemd_dir: Directory containing ``*.service`` files.
         prysm_settings_path: Default Prysm proposer-settings JSON path.
+        caplin_builders_path: Default Caplin builder-list JSON path.
         read_text: Read a file; return None if missing.
         exists: True when the path is a regular file.
         write_unit: Optional override for writing systemd units.
         write_data: Optional override for writing JSON/data files.
         stop_disable_mevboost: Optional override for ``systemctl stop/disable``.
         run_help: Optional ``argv -> help text`` probe (Lodestar ``--help``).
+        run_version: Optional ``argv -> version text`` probe (``erigon --version``).
     """
 
     systemd_dir: str = "/etc/systemd/system"
     prysm_settings_path: str = PRYSM_SETTINGS_PATH
+    caplin_builders_path: str = CAPLIN_BUILDERS_PATH
     read_text: Callable[[str], Optional[str]] = read_text_file
     exists: Callable[[str], bool] = unit_exists
     write_unit: Optional[Callable[[str, str], None]] = None
     write_data: Optional[Callable[[str, str], None]] = None
     stop_disable_mevboost: Optional[Callable[[], None]] = None
     run_help: Optional[Callable[[Sequence[str]], str]] = None
+    run_version: Optional[Callable[[Sequence[str]], str]] = None
 
     def unit_path(self, key: str) -> str:
         """Return the systemd unit path for *key*.
@@ -531,19 +555,52 @@ def _read_required_unit(fs: EpbsFilesystem, key: str) -> Tuple[str, str]:
     return path, content
 
 
+def _execution_has_caplin(fs: EpbsFilesystem) -> bool:
+    """Return True when ``execution.service`` is integrated Erigon-Caplin.
+
+    Args:
+        fs: IO adapter.
+    """
+    path = fs.unit_path("execution")
+    if not fs.exists(path):
+        return False
+    content = fs.read_text(path) or ""
+    client = parse_unit(content).client
+    if client in ("Erigon-Caplin", "Caplin"):
+        return True
+    return "caplin" in content.lower()
+
+
+def _bn_service_key(bn_name: str) -> str:
+    """Return the systemd unit key that holds this beacon node's sidecar flag.
+
+    Args:
+        bn_name: Beacon-node client name from :func:`detect_clients`.
+
+    Returns:
+        ``execution`` for integrated Caplin, otherwise ``consensus``.
+    """
+    if bn_name == "Erigon-Caplin":
+        return "execution"
+    return "consensus"
+
+
 def detect_clients(fs: EpbsFilesystem) -> Tuple[str, str, str]:
     """Detect validator and beacon-node client names from systemd units.
 
     Grandine with ``keystore-dir`` on the consensus unit is treated as
-    integrated (no separate ``validator.service``).
+    integrated (no separate ``validator.service``). Erigon-Caplin with no
+    separate validator unit is ``integrated_caplin`` (the builder list lives
+    on ``execution.service``'s datadir).
 
     Args:
         fs: IO adapter.
 
     Returns:
         ``(vc_name, bn_name, validator_mode)`` where *validator_mode* is
-        ``separate``, ``integrated_grandine``, or ``none``. Names are empty
-        strings when the corresponding unit is absent.
+        ``separate``, ``integrated_grandine``, ``integrated_caplin``, or
+        ``none``. Names are empty strings when the corresponding unit is
+        absent.
     """
     bn_name = ""
     consensus_path = fs.unit_path("consensus")
@@ -553,10 +610,17 @@ def detect_clients(fs: EpbsFilesystem) -> Tuple[str, str, str]:
         if "keystore-dir" in content:
             return "Grandine", bn_name or "Grandine", "integrated_grandine"
 
+    caplin = _execution_has_caplin(fs)
+    if caplin and not bn_name:
+        bn_name = "Erigon-Caplin"
+
     vc_path = fs.unit_path("validator")
     if fs.exists(vc_path):
         content = fs.read_text(vc_path) or ""
         return parse_unit(content).client, bn_name, "separate"
+
+    if caplin and bn_name == "Erigon-Caplin":
+        return "Erigon-Caplin", "Erigon-Caplin", "integrated_caplin"
 
     return "", bn_name, "none"
 
@@ -568,13 +632,13 @@ def support_level(client: str) -> str:
         client: Validator client name (``Prysm``, ``Lodestar``, …).
 
     Returns:
-        ``full`` (Prysm, Lodestar) or ``placeholder``.
+        ``full`` (Prysm, Lodestar, Erigon-Caplin) or ``placeholder``.
         The MEV-Boost TUI (``epbsTuiSupported`` in ``functions.sh``) mirrors
-        this for local validators (shown for Prysm/Lodestar only), but is
-        always shown on MEV hosts without a local validator (split LXC) and
-        hidden when Charon is enabled.
+        this for local validators (shown for Prysm, Lodestar, and integrated
+        Caplin), but is always shown on MEV hosts without a local validator
+        (split LXC) and hidden when Charon is enabled.
     """
-    if client in ("Prysm", "Lodestar"):
+    if client in ("Prysm", "Lodestar", "Erigon-Caplin"):
         return "full"
     return "placeholder"
 
@@ -919,6 +983,175 @@ def lodestar_has_builder_urls_flag(fs: EpbsFilesystem, vc_content: str) -> bool:
     return "--builder.urls" in _command_help(fs, help_cmd)
 
 
+def _version_meets_floor(text: str, minimum: str) -> bool:
+    """Return True when the first ``X.Y.Z`` in *text* is at least *minimum*.
+
+    Prerelease suffixes do not lower the binary: ``3.7.1-rc.0`` meets floor
+    ``3.7.1``. The base triple is compared with
+    :func:`client_requirements.compare_versions`.
+
+    Args:
+        text: Version command output or a tag.
+        minimum: Floor such as ``3.7.1``.
+
+    Returns:
+        False when either side has no ``X.Y.Z``.
+    """
+    def base(raw: str) -> Optional[str]:
+        match = re.search(r"(\d+\.\d+\.\d+)", raw or "")
+        if not match:
+            return None
+        major, minor, patch, _prerelease = parse_version(match.group(1))
+        return f"{major}.{minor}.{patch}"
+
+    got = base(text)
+    need = base(minimum)
+    if got is None or need is None:
+        return False
+    return compare_versions(got, need) >= 0
+
+
+def _binary_version(fs: EpbsFilesystem, argv: Sequence[str]) -> str:
+    """Return version text for *argv*, or empty string on failure.
+
+    Args:
+        fs: IO adapter; ``run_version`` short-circuits subprocess in tests.
+        argv: Command line, typically ``[binary, "--version"]``.
+    """
+    if fs.run_version is not None:
+        return fs.run_version(argv)
+    return _command_help(fs, argv)
+
+
+def caplin_supports_epbs(fs: EpbsFilesystem, unit_content: str) -> bool:
+    """True when the Erigon binary is at least v3.7.1 (Sepolia Gloas Caplin).
+
+    Args:
+        fs: IO adapter used to run ``erigon --version``.
+        unit_content: ``execution.service`` text (binary path).
+
+    Returns:
+        True for Erigon v3.7.1 or newer. Older or unreadable binaries are False
+        so prepare does not pretend a builder list the release cannot use.
+    """
+    args = normalize_cli_args(parse_unit(unit_content).exec_args)
+    if not args:
+        return False
+    binary = args[0].split()[0]
+    text = _binary_version(fs, [binary, "--version"])
+    return _version_meets_floor(text, CAPLIN_BUILDERS_MIN_VERSION)
+
+
+def apply_relays_caplin(relays: RelaysConfig, existing: Optional[str]) -> str:
+    """Build Caplin's prepared builder-list JSON.
+
+    Erigon v3.7.1 has a single ``--caplin.mev-relay-url`` (the pre-Gloas
+    mev-boost sidecar) and no multi-relay flag. Post-Gloas, Caplin's dynamic
+    builder client uses URLs a validator sends on each block-production
+    request. This file is the relay list EthPillar records so complete can
+    drop the sidecar without forgetting which relays were in use.
+    ``max_execution_payment`` ``"0"`` is trustless-only, matching Prysm.
+    ``min_bid`` is MEV-Boost ``-min-bid`` in integer Gwei when set.
+
+    Args:
+        relays: Relay URLs and optional MEV-Boost min-bid (ETH).
+        existing: Current JSON, or None.
+
+    Returns:
+        Canonical JSON text.
+
+    Raises:
+        EpbsError: If *existing* is not a JSON object.
+    """
+    data: dict = {}
+    if existing:
+        try:
+            loaded = json.loads(existing)
+        except json.JSONDecodeError as exc:
+            raise EpbsError(f"Invalid caplin-builders.json: {exc}") from exc
+        if not isinstance(loaded, dict):
+            raise EpbsError("caplin-builders.json must be a JSON object")
+        data = loaded
+    seen = set()
+    builders: List[dict] = []
+    for url in relays.urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        builders.append({"url": url, "max_execution_payment": "0"})
+    out: dict = {"version": 1, "builders": builders}
+    if relays.min_bid:
+        out["min_bid"] = eth_min_bid_to_gwei(relays.min_bid)
+    known = {"version", "builders", "min_bid"}
+    for key, value in data.items():
+        if key not in known:
+            out[key] = value
+    return json.dumps(out, indent=2) + "\n"
+
+
+def caplin_has_builder_list(data: dict) -> bool:
+    """Return True when Caplin builders include a non-sidecar URL.
+
+    Args:
+        data: Parsed ``caplin-builders.json`` object.
+    """
+    entries = data.get("builders")
+    if not isinstance(entries, list):
+        return False
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        url = entry.get("url")
+        if isinstance(url, str) and url.strip() and not is_sidecar_url(url):
+            return True
+    return False
+
+
+def _load_caplin_builders(fs: EpbsFilesystem) -> Optional[dict]:
+    """Load ``caplin-builders.json``, or None when missing or invalid.
+
+    Args:
+        fs: IO adapter.
+    """
+    raw = fs.read_text(fs.caplin_builders_path)
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_execution_data(path: str, content: str) -> None:
+    """Write a data file under the Erigon datadir as the execution user.
+
+    Args:
+        path: Destination path.
+        content: File text. A trailing newline is added if missing.
+    """
+    import tempfile
+
+    directory = os.path.dirname(path)
+    if directory:
+        subprocess.run(["sudo", "mkdir", "-p", directory], check=True)
+        subprocess.run(["sudo", "chown", "execution:execution", directory], check=False)
+    fd, tmp = tempfile.mkstemp(prefix="epbs_", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            if not content.endswith("\n"):
+                handle.write("\n")
+        subprocess.run(["sudo", "cp", tmp, path], check=True)
+        subprocess.run(["sudo", "chmod", "644", path], check=False)
+        subprocess.run(["sudo", "chown", "execution:execution", path], check=False)
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
 def apply_relays_placeholder(client: str) -> str:
     """Return a planned-flag blurb; do not mutate units.
 
@@ -1231,7 +1464,7 @@ def _apply_vc_relays(
         apply: If True, write units/settings.
         plan: Plan to append actions/warnings/restarts.
         vc_name: Detected validator client name.
-        mode: ``separate`` or ``integrated_grandine``.
+        mode: ``separate``, ``integrated_grandine``, or ``integrated_caplin``.
         relays_source: Short label for the plan action (e.g. ``mevboost.service``).
     """
     if relays.min_bid:
@@ -1240,7 +1473,12 @@ def _apply_vc_relays(
         PlanAction("relays", f"{len(relays.urls)} URL(s) from {relays_source}")
     )
 
-    vc_key = "consensus" if mode == "integrated_grandine" else "validator"
+    if mode == "integrated_grandine":
+        vc_key = "consensus"
+    elif mode == "integrated_caplin" or vc_name == "Erigon-Caplin":
+        vc_key = "execution"
+    else:
+        vc_key = "validator"
     vc_path, vc_content = _read_required_unit(fs, vc_key)
 
     if vc_name == "Prysm":
@@ -1304,6 +1542,49 @@ def _apply_vc_relays(
                 plan.warnings.append(
                     "Lodestar VC already has builder.urls; nothing to change."
                 )
+    elif vc_name == "Erigon-Caplin":
+        if not caplin_supports_epbs(fs, vc_content):
+            plan.actions.append(
+                PlanAction(
+                    "Erigon-Caplin",
+                    "skipped: erigon --version is older than "
+                    f"{CAPLIN_BUILDERS_MIN_VERSION} (no caplin-builders.json)",
+                )
+            )
+            plan.warnings.append(
+                "Prepare: no-op on this Erigon build — Complete will stop "
+                "MEV-Boost without a builder list. Install Erigon/Caplin "
+                f"{CAPLIN_BUILDERS_MIN_VERSION} or later (first tagged Caplin "
+                "release that is Gloas-ready on Sepolia)."
+            )
+        else:
+            builders_path = fs.caplin_builders_path
+            existing = fs.read_text(builders_path)
+            new_json = apply_relays_caplin(relays, existing)
+            changed = (existing or "") != new_json
+            plan.actions.append(
+                PlanAction(
+                    builders_path,
+                    "write builders[].url (caplin-builders.json); keep "
+                    "--caplin.mev-relay-url until complete",
+                )
+            )
+            if relays.network == "sepolia":
+                plan.warnings.append(
+                    "Sepolia on Erigon/Caplin v3.7.1 already schedules a 200M "
+                    "gas limit at Gloas. EthPillar does not set a gas-limit flag."
+                )
+            if apply and changed:
+                if existing:
+                    _backup(builders_path, fs)
+                writer = fs.write_data or _write_execution_data
+                writer(builders_path, new_json)
+            if changed:
+                plan.services_to_restart.append("execution")
+            else:
+                plan.warnings.append(
+                    "Caplin already has these builders; nothing to change."
+                )
     else:
         planned = apply_relays_placeholder(vc_name)
         plan.actions.append(PlanAction(f"{vc_name} VC (placeholder)", planned))
@@ -1322,7 +1603,9 @@ def prepare(fs: Optional[EpbsFilesystem] = None, apply: bool = False) -> Migrati
     """Copy mev-boost relays onto the VC. Keep the sidecar running.
 
     Prysm writes proposer-settings JSON and VC flags. Lodestar gets
-    ``--builder.urls`` when the binary documents that flag. Other VCs are
+    ``--builder.urls`` when the binary documents that flag. Erigon-Caplin
+    writes ``caplin-builders.json`` when ``erigon --version`` is at least
+    v3.7.1 and leaves ``--caplin.mev-relay-url`` in place. Other VCs are
     a documented no-op. When Charon is installed, VC relay writes are skipped
     (Charon ``--builder-api`` owns the MEV path until complete).
     Beacon-node sidecar flags are not touched.
@@ -1496,9 +1779,12 @@ def _vc_has_relays(fs: EpbsFilesystem, vc_name: str, vc_content: str) -> bool:
 
     Returns:
         True for Prysm when ``default_config.builder.builders`` has a
-        non-sidecar URL, or for Lodestar when ``--builder.urls`` is set and
-        is not the sidecar. Legacy ``builder.relays`` does not count.
-        Always False for placeholder clients.
+        non-sidecar URL, for Lodestar when ``--builder.urls`` is set and
+        is not the sidecar, or for Erigon-Caplin when ``caplin-builders.json``
+        has a non-sidecar ``builders[].url`` and the binary is v3.7.1+.
+        Legacy ``builder.relays`` does not count.
+        Always False for placeholder clients and for an Erigon binary older
+        than v3.7.1.
     """
     if vc_name == "Prysm":
         data = _load_prysm_settings(fs, vc_content)
@@ -1507,6 +1793,11 @@ def _vc_has_relays(fs: EpbsFilesystem, vc_name: str, vc_content: str) -> bool:
         args = normalize_cli_args(parse_unit(vc_content).exec_args)
         urls = get_flag_value(args, "--builder.urls")
         return bool(urls) and not is_sidecar_url(urls)
+    if vc_name == "Erigon-Caplin":
+        if not caplin_supports_epbs(fs, vc_content):
+            return False
+        loaded = _load_caplin_builders(fs)
+        return bool(loaded) and caplin_has_builder_list(loaded)
     return False
 
 
@@ -1605,6 +1896,9 @@ def complete(
     if mode == "separate":
         _, vc_content = _read_required_unit(fs, "validator")
         has_relays = _vc_has_relays(fs, vc_name, vc_content)
+    elif mode == "integrated_caplin":
+        _, vc_content = _read_required_unit(fs, "execution")
+        has_relays = _vc_has_relays(fs, vc_name or "Erigon-Caplin", vc_content)
     via_charon = charon_ready_for_complete(fs)
     if not has_relays and not via_charon and not force and not remote_vc_prepared:
         raise EpbsError(COMPLETE_REFUSED)
@@ -1625,13 +1919,16 @@ def complete(
         )
 
     if has_bn:
-        bn_path, bn_content = _read_required_unit(fs, "consensus")
+        bn_key = _bn_service_key(bn_name or vc_name)
+        bn_path, bn_content = _read_required_unit(fs, bn_key)
         new_bn = strip_bn_sidecar(bn_content, bn_name or vc_name)
         if _write_unit_if_changed(fs, bn_path, bn_content, new_bn, apply):
             plan.actions.append(
                 PlanAction(bn_path, f"remove mev-boost sidecar flags from {bn_name}")
             )
-            plan.services_to_restart.append("consensus")
+            plan.services_to_restart.append(
+                "execution" if bn_key == "execution" else "consensus"
+            )
         else:
             plan.actions.append(PlanAction(bn_path, "no sidecar builder URL present"))
     else:
@@ -1655,8 +1952,8 @@ def complete(
     if "consensus" in plan.services_to_restart and mode == "integrated_grandine":
         # Integrated Grandine restarts with consensus.service only.
         pass
-    elif vc_name == "Prysm" or vc_name == "Lodestar":
-        # VC flags do not change on complete; BN restart is enough.
+    elif vc_name in ("Prysm", "Lodestar", "Erigon-Caplin"):
+        # VC flags / builder file do not change on complete; BN restart is enough.
         pass
 
     plan.applied = apply
@@ -1751,8 +2048,24 @@ def status(fs: Optional[EpbsFilesystem] = None) -> str:
         lines.append(
             "Complete: refused unless --force (local EL + P2P only)."
         )
+    elif mode == "integrated_caplin":
+        _, vc_content = _read_required_unit(fs, "execution")
+        has_relays = _vc_has_relays(fs, vc_name or "Erigon-Caplin", vc_content)
+        lines.append("VC relays: " + ("yes" if has_relays else "no"))
+        if not caplin_supports_epbs(fs, vc_content):
+            lines.append(
+                "Erigon binary: older than "
+                f"{CAPLIN_BUILDERS_MIN_VERSION}; caplin-builders.json "
+                "is not used. Prepare is a no-op."
+            )
+        elif not has_relays:
+            lines.append(
+                "Complete: refused until Prepare writes caplin-builders.json "
+                "(or --force for local EL + P2P only)."
+            )
     if bn_name:
-        _, bn_content = _read_required_unit(fs, "consensus")
+        bn_key = _bn_service_key(bn_name)
+        _, bn_content = _read_required_unit(fs, bn_key)
         stripped = strip_bn_sidecar(bn_content, bn_name)
         lines.append(
             "BN sidecar flags: "
@@ -1860,6 +2173,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default=None,
         help="Override Prysm proposer-settings.json path (tests).",
     )
+    parser.add_argument(
+        "--caplin-builders",
+        default=None,
+        help="Override Caplin caplin-builders.json path (tests).",
+    )
     args = parser.parse_args(argv)
 
     fs = EpbsFilesystem()
@@ -1872,6 +2190,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         fs.exists = os.path.isfile
     if args.prysm_settings:
         fs.prysm_settings_path = args.prysm_settings
+    if args.caplin_builders:
+        fs.caplin_builders_path = args.caplin_builders
 
     try:
         if args.command == "status":

@@ -1,9 +1,8 @@
 #!/bin/bash
-# EthPillar ePBS migration integration test (Prysm or Lodestar + MEV-Boost).
-# Runs inside the Docker container after a VC+MEV node is deployed.
-#
-# Starts the validator with an empty wallet (no keystores) so we can
-# catch unknown flags / invalid config without importing keys.
+# EthPillar ePBS migration integration test.
+# Prysm or Lodestar: VC + MEV-Boost, empty-wallet VC start.
+# Erigon-Caplin v3.7.1: integrated execution.service, no separate VC.
+# Runs inside the Docker container after a MEV node is deployed.
 
 set -e
 
@@ -13,9 +12,11 @@ source "${ETHPILLAR_ENV_FILE:-/ethpillar/env}"
 py="${ETHPILLAR_PYTHON:-python3}"
 VC_UNIT="/etc/systemd/system/validator.service"
 BN_UNIT="/etc/systemd/system/consensus.service"
+EXEC_UNIT="/etc/systemd/system/execution.service"
 MEV_UNIT="/etc/systemd/system/mevboost.service"
 SIDECAR="127.0.0.1:18550"
 SETTINGS="/var/lib/prysm_validator/proposer-settings.json"
+CAPLIN_BUILDERS="/var/lib/erigon/caplin-builders.json"
 
 # Run manage.epbs with the integration venv. Extra args are forwarded.
 epbs_cli() {
@@ -224,9 +225,106 @@ reload_and_restart() {
     done
 }
 
+# Integrated Erigon-Caplin (no validator.service): real v3.7.1 prepare path.
+run_caplin_epbs() {
+    echo "  Client: Erigon-Caplin (integrated)"
+    assert_mev_installed
+    assert_unit_has "$EXEC_UNIT" "$SIDECAR"
+    assert_unit_has "$EXEC_UNIT" "--caplin.discovery.quicport="
+
+    if ! sudo systemctl is-active --quiet mevboost; then
+        echo "❌ mevboost is not active before prepare"
+        sudo systemctl status mevboost --no-pager -l || true
+        exit 1
+    fi
+    echo "✅ Pre-migration: Erigon-Caplin + active MEV-Boost + sidecar URL"
+
+    echo
+    echo "--- prepare (write caplin-builders.json, keep MEV-Boost) ---"
+    epbs_cli status
+    epbs_cli prepare --apply --json
+    if [[ ! -f "$CAPLIN_BUILDERS" ]]; then
+        echo "❌ caplin-builders.json was not written (Erigon must be v3.7.1+)"
+        epbs_cli status || true
+        exit 1
+    fi
+    PYTHONPATH=/ethpillar "$py" - <<PY
+import json
+from pathlib import Path
+data = json.loads(Path("$CAPLIN_BUILDERS").read_text(encoding="utf-8"))
+urls = [e.get("url") for e in data.get("builders") or [] if isinstance(e, dict)]
+assert urls, data
+assert all("127.0.0.1:18550" not in u for u in urls), urls
+assert data["builders"][0].get("max_execution_payment") == "0", data
+print(f"✅ caplin-builders.json: {len(urls)} builder URL(s)")
+PY
+    assert_unit_has "$EXEC_UNIT" "$SIDECAR"
+    if ! sudo systemctl is-active --quiet mevboost; then
+        echo "❌ mevboost stopped during prepare (must stay up until complete)"
+        exit 1
+    fi
+    echo "✅ prepare: builder list written; sidecar and MEV-Boost still present"
+
+    reload_and_restart execution
+    check_service_health execution
+    pid=$(sudo systemctl show -p MainPID --value execution 2>/dev/null || echo "0")
+    cmdline=$(tr '\0' ' ' < "/proc/${pid}/cmdline" || true)
+    if [[ "$cmdline" != *"--caplin.mev-relay-url"* ]]; then
+        echo "❌ running Erigon lost --caplin.mev-relay-url during prepare"
+        echo "  cmdline: $cmdline"
+        exit 1
+    fi
+    if [[ "$cmdline" != *"--caplin.discovery.quicport="* ]]; then
+        echo "❌ running Erigon is missing --caplin.discovery.quicport"
+        echo "  cmdline: $cmdline"
+        exit 1
+    fi
+    echo "✅ execution pid=${pid} still has the sidecar and QUIC port"
+
+    echo
+    echo "--- complete (disable MEV-Boost, strip Caplin sidecar) ---"
+    epbs_cli complete --apply --json
+    assert_unit_lacks "$EXEC_UNIT" "$SIDECAR"
+    assert_unit_lacks "$EXEC_UNIT" "--caplin.mev-relay-url"
+    if [[ ! -f "$CAPLIN_BUILDERS" ]]; then
+        echo "❌ complete removed caplin-builders.json"
+        exit 1
+    fi
+    if sudo systemctl is-active --quiet mevboost; then
+        echo "❌ mevboost is still active after complete"
+        exit 1
+    fi
+    if sudo systemctl is-enabled --quiet mevboost; then
+        echo "❌ mevboost is still enabled after complete"
+        exit 1
+    fi
+    echo "✅ complete: sidecar gone; MEV-Boost stopped; builder list kept"
+
+    reload_and_restart execution
+    check_service_health execution \
+        --ignore-journal-pattern "cannot connect to builder client"
+    pid=$(sudo systemctl show -p MainPID --value execution 2>/dev/null || echo "0")
+    cmdline=$(tr '\0' ' ' < "/proc/${pid}/cmdline" || true)
+    if [[ "$cmdline" == *"--caplin.mev-relay-url"* || "$cmdline" == *"$SIDECAR"* ]]; then
+        echo "❌ running Erigon still has the MEV-Boost sidecar after complete"
+        echo "  cmdline: $cmdline"
+        exit 1
+    fi
+    echo "✅ execution pid=${pid} started without the sidecar"
+    epbs_cli status
+    echo "========================================="
+    echo " ePBS migration: Erigon-Caplin prepare/complete"
+    echo "========================================="
+}
+
 echo "========================================="
 echo " Starting ePBS Migration Integration Test"
 echo "========================================="
+
+if [[ -f "$EXEC_UNIT" ]] && grep -q 'Erigon-Caplin' "$EXEC_UNIT" && [[ ! -f "$VC_UNIT" ]]; then
+    run_caplin_epbs
+    exit 0
+fi
 
 if [[ ! -f "$VC_UNIT" ]]; then
     echo "❌ validator.service not found"

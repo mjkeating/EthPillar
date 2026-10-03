@@ -51,9 +51,8 @@ def test_cl_supports_rpc_expose_includes_grandine():
 
 
 def test_cl_enables_quic_by_default_covers_deployed_beacon_clients():
-    for name in ("Lighthouse", "Teku", "Nimbus", "Lodestar", "Grandine", "Prysm"):
+    for name in ("Lighthouse", "Teku", "Nimbus", "Lodestar", "Grandine", "Prysm", "Caplin"):
         assert cl_enables_quic_by_default(name)
-    assert not cl_enables_quic_by_default("Caplin")
 
 
 def test_expected_cl_quic_unit_flag_pins_ethpillar_flags():
@@ -62,6 +61,7 @@ def test_expected_cl_quic_unit_flag_pins_ethpillar_flags():
     assert expected_cl_quic_unit_flag("Grandine", 9001) == "--quic-port=9001"
     assert expected_cl_quic_unit_flag("Lodestar", 9001) == "--quicPort=9001"
     assert expected_cl_quic_unit_flag("Prysm", 9001) == "--p2p-quic-port=9001"
+    assert expected_cl_quic_unit_flag("Caplin", 9001) == "--caplin.discovery.quicport=9001"
     assert expected_cl_quic_unit_flag("Teku", 9001) is None
 
 
@@ -131,7 +131,7 @@ def test_cl_quic_help_flag_matches_ethpillar_pins():
     assert cl_quic_help_flag("Lodestar") == "--quicPort"
     assert cl_quic_help_flag("Prysm") == "--p2p-quic-port"
     assert cl_quic_help_flag("Teku") is None
-    assert cl_quic_help_flag("Caplin") is None
+    assert cl_quic_help_flag("Caplin") == "--caplin.discovery.quicport"
 
 
 def test_help_advertises_quic_flag_true_when_present():

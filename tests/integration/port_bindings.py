@@ -155,8 +155,10 @@ def has_caplin_execution() -> bool:
         return False
 
 
-# Beacon clients that enable libp2p QUIC by default. Caplin does not.
-# Value is the ExecStart flag EthPillar pins (empty = client default only; Teku).
+# Beacon clients that enable libp2p QUIC. Value is the ExecStart flag EthPillar
+# pins (empty = client default only; Teku). Caplin's native QUIC default is UDP
+# 4001; EthPillar pins --caplin.discovery.quicport to CL_P2P+1 (9001), matching
+# eth-docker #2836.
 CL_QUIC_UNIT_FLAGS: Dict[str, str] = {
     "Lighthouse": "--quic-port=",
     "Nimbus": "--quic-port=",
@@ -164,6 +166,7 @@ CL_QUIC_UNIT_FLAGS: Dict[str, str] = {
     "Lodestar": "--quicPort=",
     "Prysm": "--p2p-quic-port=",
     "Teku": "",
+    "Caplin": "--caplin.discovery.quicport=",
 }
 
 # Version floors from comments in ethpillar.sh (UFW QUIC notes). Backup only
@@ -174,6 +177,8 @@ CL_QUIC_VERSION_FLOORS: Dict[str, str] = {
     "Teku": "26.7.0",
     "Lodestar": "1.42.0",
     "Prysm": "5.2.0",
+    # Erigon v3.7.1 is the first release that binds Caplin QUIC.
+    "Caplin": "3.7.1",
 }
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -448,7 +453,10 @@ def probe_cl_quic_capability(
 
 
 def verify_cl_quic_unit_flag(cl_name: str, quic_port: int) -> Tuple[bool, str]:
-    """Check ``consensus.service`` pins the EthPillar QUIC port when required.
+    """Check the CL unit pins the EthPillar QUIC port when required.
+
+    Caplin's flag lives on ``execution.service``. Other clients use
+    ``consensus.service``.
 
     Returns:
         ``(True, "")`` when no pin is required or the flag is present.
@@ -457,7 +465,11 @@ def verify_cl_quic_unit_flag(cl_name: str, quic_port: int) -> Tuple[bool, str]:
     expected = expected_cl_quic_unit_flag(cl_name, quic_port)
     if expected is None:
         return True, ""
-    path = "/etc/systemd/system/consensus.service"
+    path = (
+        "/etc/systemd/system/execution.service"
+        if cl_name == "Caplin"
+        else "/etc/systemd/system/consensus.service"
+    )
     try:
         with open(path, encoding="utf-8") as handle:
             content = handle.read()
@@ -465,7 +477,8 @@ def verify_cl_quic_unit_flag(cl_name: str, quic_port: int) -> Tuple[bool, str]:
         return False, f"CL QUIC unit flag: cannot read {path}: {exc}"
     if expected in content:
         return True, ""
-    return False, f"CL QUIC unit flag missing: expected {expected!r} in consensus.service"
+    unit_name = os.path.basename(path)
+    return False, f"CL QUIC unit flag missing: expected {expected!r} in {unit_name}"
 
 
 def default_port_expectations(
@@ -511,6 +524,10 @@ def default_port_expectations(
                 PortExpectation(cl_rest_port, "localhost", ("tcp",), "Caplin REST"),
             ]
         )
+        if expect_cl_quic:
+            expectations.append(
+                PortExpectation(cl_p2p_port_2, "public", ("udp",), "CL QUIC"),
+            )
     if has_charon:
         expectations.append(
             PortExpectation(charon_p2p_port, "public", ("tcp",), "Charon P2P")

@@ -786,9 +786,13 @@ def _verify_default_port_bindings(args: Any, expected_services: List[str]) -> bo
         has_execution and not has_consensus and ("caplin" in (args.combo or "").lower() or "caplin" in (args.cc or "").lower())
     )
     cl_name = client_from_service("consensus") if has_consensus else ""
+    quic_unit = "/etc/systemd/system/consensus.service"
+    if has_caplin and not has_consensus:
+        cl_name = "Caplin"
+        quic_unit = "/etc/systemd/system/execution.service"
     quic = (
-        probe_cl_quic_capability(cl_name)
-        if has_consensus and cl_enables_quic_by_default(cl_name)
+        probe_cl_quic_capability(cl_name, unit_path=quic_unit)
+        if cl_name and cl_enables_quic_by_default(cl_name)
         else None
     )
     expect_cl_quic = bool(quic and quic.expect_listen)
@@ -1129,7 +1133,7 @@ if __name__ == "__main__":
         '--test-epbs',
         action='store_true',
         default=False,
-        help='After a Prysm/Lodestar+MEV install, apply ePBS prepare/complete and start the VC',
+        help='After a Prysm/Lodestar or Erigon-Caplin+MEV install, apply ePBS prepare/complete',
     )
     parser.add_argument(
         '--rpc-exposure-el',

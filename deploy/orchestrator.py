@@ -271,9 +271,12 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
         elif ec_name == 'Erigon':
             if cc_name == 'Caplin' or cc_name == 'Caplin (integrated)':
                 mev_params = f'--caplin.mev-relay-url=http://127.0.0.1:18550' if flags['mevboost'] else ''
+                # eth-docker #2836: Caplin QUIC is CL_P2P+1 (9001), not native UDP 4001.
+                cl_quic_port = str(cl_p2p_port_2) if cl_p2p_port_2 else '9001'
                 el_ver, el_path = erigon.download_and_install_erigon(
                     network, el_p2p_port, el_rpc_port, el_max_peers, jwtsecret_path,
-                    cl_p2p_port, cl_rest_port, cl_max_peers, sync_url, mev_parameters=mev_params
+                    cl_p2p_port, cl_rest_port, cl_max_peers, sync_url,
+                    mev_parameters=mev_params, cl_quic_port=cl_quic_port,
                 )
             else:
                 el_ver, el_path = erigon.download_and_install_erigon_standalone(

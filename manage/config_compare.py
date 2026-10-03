@@ -247,7 +247,13 @@ def _resolve_context(env: Dict[str, str], paths: Dict[str, str]) -> Dict[str, ob
     el_rpc = _env_or(env, "EL_RPC_PORT", get_flag_value(exec_args, "--http.port", "--rpc-http-port", "--JsonRpc.Port", "--http.port"), default="8545")
     el_peers = _env_or(env, "EL_MAX_PEER_COUNT", get_flag_value(exec_args, "--maxpeers", "--max-peers", "--Network.MaxActivePeers"), default="50")
     cl_p2p = _env_or(env, "CL_P2P_PORT", get_flag_value(cons_args, "--port", "--p2p-port", "--tcp-port", "--libp2p-port", "--p2p-tcp-port"), default="9000")
-    cl_p2p_2 = _env_or(env, "CL_P2P_PORT_2", get_flag_value(cons_args, "--quic-port", "--quicPort", "--p2p-quic-port", "--p2p-udp-port", "--discovery-port"), default="9001")
+    cl_p2p_2 = _env_or(
+        env,
+        "CL_P2P_PORT_2",
+        get_flag_value(cons_args, "--quic-port", "--quicPort", "--p2p-quic-port", "--p2p-udp-port", "--discovery-port"),
+        get_flag_value(exec_args, "--caplin.discovery.quicport"),
+        default="9001",
+    )
     cl_rest = _env_or(env, "CL_REST_PORT", get_flag_value(cons_args, "--http-port", "--rest-port", "--rest.port", "--rest-api-port"), default="5052")
     cl_peers = _env_or(env, "CL_MAX_PEER_COUNT", get_flag_value(cons_args, "--target-peers", "--max-peers", "--targetPeers", "--p2p-peer-upper-bound", "--p2p-max-peers"), default="100")
     mev_min_bid = _env_or(env, "MEV_MIN_BID", get_flag_value(parse_unit(contents["mevboost"]).exec_args, "-min-bid") if "mevboost" in contents else "", default="0.006")
@@ -344,6 +350,7 @@ def generate_default_unit(service_key: str, ctx: Dict[str, object]) -> str:
                     str(ctx["cl_peers"]),
                     sync_url,
                     mev_parameters=mev_params,
+                    cl_quic_port=str(ctx["cl_p2p_2"]),
                 )
             return erigon.generate_erigon_standalone_service(
                 network, el_p2p, el_rpc, el_peers, jwt

@@ -21,7 +21,11 @@ from deploy.geth import generate_geth_service
 from deploy.ethrex import generate_ethrex_service
 from deploy.nethermind import generate_nethermind_service
 from deploy.reth import generate_reth_service
-from deploy.erigon import generate_erigon_service, generate_erigon_standalone_service
+from deploy.erigon import (
+    caplin_quic_flag_supported,
+    generate_erigon_service,
+    generate_erigon_standalone_service,
+)
 from deploy.teku import generate_teku_bn_service, generate_teku_vc_service
 from deploy.lodestar import generate_lodestar_bn_service, generate_lodestar_vc_service
 from deploy.nimbus import generate_nimbus_bn_service, generate_nimbus_vc_service
@@ -474,8 +478,36 @@ class TestErigonService:
         assert "After=network-online.target mevboost.service" in result
         assert "Requires=mevboost.service" in result
         assert f"--caplin.discovery.port={CL_P2P_PORT}" in result
+        # eth-docker #2836: QUIC is CL_P2P+1 (9001), not Caplin's native UDP 4001.
+        assert f"--caplin.discovery.quicport={CL_P2P_PORT_2}" in result
         assert f"--beacon.api.port={CL_REST_PORT}" in result
         assert f"--caplin.checkpoint-sync-url={SYNC_URL}/eth/v2/debug/beacon/states/finalized" in result
+
+    def test_quicport_omitted_on_previous_stable(self):
+        """v3.7.0 rejects --caplin.discovery.quicport; the upgrade seed must omit it."""
+        result = generate_erigon_service(
+            "sepolia", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT,
+            JWTSECRET_PATH, CL_P2P_PORT, CL_REST_PORT, CL_MAX_PEER_COUNT,
+            SYNC_URL, erigon_version="v3.7.0",
+        )
+        assert "--caplin.discovery.quicport" not in result
+        assert f"--caplin.discovery.port={CL_P2P_PORT}" in result
+        assert f"--caplin.discovery.tcpport={CL_P2P_PORT}" in result
+
+    def test_quicport_present_on_v371(self):
+        result = generate_erigon_service(
+            "sepolia", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT,
+            JWTSECRET_PATH, CL_P2P_PORT, CL_REST_PORT, CL_MAX_PEER_COUNT,
+            SYNC_URL, erigon_version="v3.7.1",
+        )
+        assert f"--caplin.discovery.quicport={CL_P2P_PORT_2}" in result
+
+    def test_caplin_quic_flag_supported(self):
+        assert caplin_quic_flag_supported("") is True
+        assert caplin_quic_flag_supported("v3.7.0") is False
+        assert caplin_quic_flag_supported("erigon version 3.7.0-abc") is False
+        assert caplin_quic_flag_supported("v3.7.1") is True
+        assert caplin_quic_flag_supported("v3.8.0-rc.0") is True
 
     def test_no_mev(self):
         result = generate_erigon_service(

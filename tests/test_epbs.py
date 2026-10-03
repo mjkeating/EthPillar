@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from deploy.erigon import generate_erigon_service
 from deploy.lighthouse import generate_lighthouse_bn_service, generate_lighthouse_vc_service
 from deploy.lodestar import generate_lodestar_bn_service, generate_lodestar_vc_service
 from deploy.mevboost import generate_mevboost_service
@@ -21,6 +22,7 @@ from manage.epbs import (
     MIGRATION_FORMAT,
     MIGRATION_VERSION,
     EpbsError,
+    caplin_supports_epbs,
     complete_rollback_hint,
     EpbsFilesystem,
     charon_has_builder_api,
@@ -108,8 +110,100 @@ def test_tui_is_gated_to_full_support_only() -> None:
     """MEV-Boost TUI (``epbsTuiSupported``) matches ``support_level == full``."""
     assert support_level("Prysm") == "full"
     assert support_level("Lodestar") == "full"
+    assert support_level("Erigon-Caplin") == "full"
     for client in ("Lighthouse", "Teku", "Nimbus", "Grandine", ""):
         assert support_level(client) != "full"
+
+
+def test_caplin_prepare_and_complete(tmp_path: Path) -> None:
+    """Caplin v3.7.1 prepare writes builders JSON; complete strips the sidecar."""
+    fs = _fs(tmp_path)
+    fs.caplin_builders_path = str(tmp_path / "caplin-builders.json")
+    fs.run_version = lambda _argv: "erigon version 3.7.1-abcdef0\n"
+    _write(fs, "mevboost", generate_mevboost_service("sepolia", "0.006", RELAYS))
+    _write(
+        fs,
+        "execution",
+        generate_erigon_service(
+            "sepolia",
+            "30303",
+            "8545",
+            "50",
+            JWT,
+            "9000",
+            "5052",
+            "100",
+            SYNC,
+            mev_parameters="--caplin.mev-relay-url=http://127.0.0.1:18550",
+        ),
+    )
+    plan = prepare(fs, apply=False)
+    assert plan.support == "full"
+    assert plan.client == "Erigon-Caplin"
+    assert not Path(fs.caplin_builders_path).exists()
+
+    applied = prepare(fs, apply=True)
+    assert applied.applied
+    assert "execution" in applied.services_to_restart
+    exec_text = Path(fs.unit_path("execution")).read_text(encoding="utf-8")
+    assert "--caplin.mev-relay-url=http://127.0.0.1:18550" in exec_text
+    data = json.loads(Path(fs.caplin_builders_path).read_text(encoding="utf-8"))
+    urls = [entry["url"] for entry in data["builders"]]
+    assert len(urls) == 2
+    assert data["min_bid"] == "6000000"
+    assert data["builders"][0]["max_execution_payment"] == "0"
+    assert any("200M" in warning for warning in applied.warnings)
+
+    done = complete(fs, apply=True)
+    assert done.applied
+    assert done.disable_mevboost is True
+    assert getattr(fs, "mevboost_disabled") is True
+    stripped = Path(fs.unit_path("execution")).read_text(encoding="utf-8")
+    assert "--caplin.mev-relay-url" not in stripped
+    assert "execution" in done.services_to_restart
+    kept = json.loads(Path(fs.caplin_builders_path).read_text(encoding="utf-8"))
+    assert len(kept["builders"]) == 2
+
+
+def test_caplin_prerelease_meets_v371_floor(tmp_path: Path) -> None:
+    """A v3.7.1 prerelease meets the Caplin builder floor; v3.7.0 does not."""
+    fs = _fs(tmp_path)
+    unit = generate_erigon_service(
+        "sepolia", "30303", "8545", "50", JWT, "9000", "5052", "100", SYNC,
+    )
+    fs.run_version = lambda _argv: "erigon version 3.7.1-rc.0\n"
+    assert caplin_supports_epbs(fs, unit) is True
+    fs.run_version = lambda _argv: "erigon version 3.7.0-rc.1\n"
+    assert caplin_supports_epbs(fs, unit) is False
+
+
+def test_caplin_prepare_skips_older_than_v371(tmp_path: Path) -> None:
+    """Erigon before v3.7.1 does not get a builder list."""
+    fs = _fs(tmp_path)
+    fs.caplin_builders_path = str(tmp_path / "caplin-builders.json")
+    fs.run_version = lambda _argv: "erigon version 3.7.0\n"
+    _write(fs, "mevboost", generate_mevboost_service("sepolia", "0.006", RELAYS))
+    _write(
+        fs,
+        "execution",
+        generate_erigon_service(
+            "sepolia",
+            "30303",
+            "8545",
+            "50",
+            JWT,
+            "9000",
+            "5052",
+            "100",
+            SYNC,
+            mev_parameters="--caplin.mev-relay-url=http://127.0.0.1:18550",
+        ),
+    )
+    plan = prepare(fs, apply=True)
+    assert any("older than 3.7.1" in action.detail for action in plan.actions)
+    assert not Path(fs.caplin_builders_path).exists()
+    with pytest.raises(EpbsError, match="Complete refused"):
+        complete(fs, apply=True)
 
 
 def test_parse_mevboost_relays_and_min_bid() -> None:

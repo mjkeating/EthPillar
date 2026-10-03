@@ -116,22 +116,22 @@ EOF
 	[ "$status" -eq 1 ]
 }
 
-@test "Erigon-Caplin EL skips QUIC ports" {
+@test "Erigon-Caplin EL expects QUIC on CL_P2P_PORT_2" {
 	write_caplin_execution
 	run is_caplin_node
 	[ "$status" -eq 0 ]
 	run expected_cl_quic_udp_ports
-	[ -z "$output" ]
+	[ "$output" = "9001" ]
 	run cl_expects_quic
-	[ "$status" -eq 1 ]
+	[ "$status" -eq 0 ]
 }
 
 @test "execution.service containing caplin flags is treated as Caplin" {
-	write_execution Erigon "--caplin.discovery.port=9000"
+	write_execution Erigon "--caplin.discovery.port=9000 --caplin.discovery.quicport=19001"
 	run is_caplin_node
 	[ "$status" -eq 0 ]
 	run expected_cl_quic_udp_ports
-	[ -z "$output" ]
+	[ "$output" = "19001" ]
 }
 
 @test "Geth plus Lighthouse is not Caplin" {
@@ -179,10 +179,11 @@ EOF
 	[ "$ELCL_EXPECTED_LISTEN_COUNT" -eq 4 ]
 }
 
-@test "configure_cl_quic_udp_check_ports does not add QUIC for Caplin" {
+@test "configure_cl_quic_udp_check_ports adds 9001 UDP for Caplin" {
 	write_caplin_execution
 	configure_cl_quic_udp_check_ports
-	[ "$udp_check_ports" = "9000,30303" ]
+	[ "$udp_check_ports" = "9000,30303,9001" ]
+	[ "$tcp_check_ports" = "9000,30303" ]
 }
 
 @test "configure_cl_quic_udp_check_ports is idempotent" {
@@ -201,15 +202,20 @@ check_cl_quic_capture() {
 	cat "$TEST_DIR/quic.out"
 }
 
-@test "check_cl_quic WARNs for Caplin and does not FAIL missing 9001" {
+@test "check_cl_quic FAILs missing 9001 listen for Caplin" {
 	write_caplin_execution
+	sudo() { "$@"; }
+	ufw() {
+		echo "Status: active"
+		echo "9001/udp                   ALLOW       Anywhere"
+	}
+	ss() { echo "Netid State Recv-Q Send-Q Local Address:Port"; }
+	export -f sudo ufw ss
 	check_cl_quic_capture
 	[[ "$(cat "$TEST_DIR/quic.out")" == *"Glamsterdam"* ]]
-	[[ "$(cat "$TEST_DIR/quic.out")" == *"Caplin has no QUIC by default"* ]]
-	[[ "$(cat "$TEST_DIR/quic.out")" != *"[FAIL]"* ]]
-	[ "$failed_checks" -eq 0 ]
-	[ "$warning_checks" -eq 1 ]
-	[ "$NODE_CHECKER_AUTO_TROUBLESHOOT" -eq 0 ]
+	[[ "$(cat "$TEST_DIR/quic.out")" == *"[FAIL]"* ]]
+	[[ "$(cat "$TEST_DIR/quic.out")" == *"9001/udp not listening"* ]]
+	[ "$failed_checks" -ge 1 ]
 }
 
 @test "check_cl_quic FAILs UFW allow miss and listen miss for Lighthouse" {
@@ -503,15 +509,16 @@ check_inbound_quic_probe_capture() {
 	[ "$warning_checks" -eq 1 ]
 }
 
-@test "check_inbound_quic_probe skips Caplin without FAIL" {
+@test "check_inbound_quic_probe WARNs for Caplin when aioquic is missing" {
 	write_caplin_execution
 	NODE_CHECKER_PUBLIC_IPV4="203.0.113.50"
+	node_checker_quic_python() { return 1; }
 	check_inbound_quic_probe_capture
 	[[ "$(cat "$TEST_DIR/qprobe.out")" == *"Active inbound QUIC"* ]]
+	[[ "$(cat "$TEST_DIR/qprobe.out")" == *"aioquic"* ]]
 	[[ "$(cat "$TEST_DIR/qprobe.out")" != *"[FAIL]"* ]]
-	[[ "$(cat "$TEST_DIR/qprobe.out")" != *"[PASS]"* ]]
 	[ "$failed_checks" -eq 0 ]
-	[ "$warning_checks" -eq 0 ]
+	[ "$warning_checks" -ge 1 ]
 }
 
 @test "check_inbound_quic_probe --debug prints JSON and never an ENR" {

@@ -30,7 +30,8 @@ For each scenario we assert:
 * Every download URL responds (HEAD, or ranged GET fallback)
 
 Geth is special: binaries are scraped from geth.ethereum.org, not GitHub
-releases. Older versions are discovered from that page rather than GitHub tags.
+releases. Older versions are discovered from that page rather than GitHub tags,
+and only for the architecture ``get_release_info`` will look up.
 
 Requirements
 ------------
@@ -44,6 +45,7 @@ Run via ``bash tests/run_live_release_tests.sh`` (skipped in the default unit ru
 from __future__ import annotations
 
 import os
+import platform
 import re
 import sys
 import time
@@ -141,14 +143,31 @@ def _geth_downloads_page() -> str:
     return response.text
 
 
-def _older_geth_version(latest_version: str) -> str | None:
-    """First Geth version on the downloads page that is not *latest_version*."""
+def _geth_release_arch() -> str:
+    """Linux arch ``get_release_info`` searches for on this machine.
+
+    Same rule as ``get_client_release_info``: ``x86_64`` and ``amd64`` map to
+    amd64, and every other ``platform.machine()`` value maps to arm64.
+    ``get_machine_architecture`` agrees on the hosts EthPillar supports
+    (``x86_64`` → amd64, ``aarch64`` → arm64).
+    """
+    raw_arch = platform.machine().lower()
+    return "amd64" if raw_arch in ("x86_64", "amd64") else "arm64"
+
+
+def _older_geth_version(latest_version: str, arch: str | None = None) -> str | None:
+    """First Geth build for *arch* on the downloads page that is not *latest_version*.
+
+    The downloads page lists linux-amd64 and linux-arm64 together, and a version
+    can exist for only one of them. ``get_release_info`` looks up only the
+    resolved architecture, so discovery must use that same arch. Passing
+    ``arch`` overrides the host (used by unit tests).
+    """
+    resolved_arch = arch or _geth_release_arch()
     latest_norm = _normalize_version(latest_version)
     versions: list[str] = []
-    for match in re.finditer(
-        r"geth-linux-(?:amd64|arm64)-([0-9.]+)-[a-f0-9]+\.tar\.gz",
-        _geth_downloads_page(),
-    ):
+    pattern = rf"geth-linux-{re.escape(resolved_arch)}-([0-9.]+)-[a-f0-9]+\.tar\.gz"
+    for match in re.finditer(pattern, _geth_downloads_page()):
         ver = match.group(1)
         if ver not in versions:
             versions.append(ver)
@@ -326,6 +345,63 @@ def test_older_release_tag_skips_special_release_between_versions(
     assert _older_release_tag("nethermind", "NethermindEth/nethermind", "1.39.0") == "1.38.1"
 
 
+# Page order matches geth.ethereum.org when 1.17.7 exists only for arm64.
+_GETH_ARCH_MISMATCH_PAGE = (
+    "https://gethstore.blob.core.windows.net/builds/"
+    "geth-linux-amd64-1.17.8-a5790770.tar.gz "
+    "https://gethstore.blob.core.windows.net/builds/"
+    "geth-linux-arm64-1.17.8-a5790770.tar.gz "
+    "https://gethstore.blob.core.windows.net/builds/"
+    "geth-linux-arm64-1.17.7-3d858f85.tar.gz "
+    "https://gethstore.blob.core.windows.net/builds/"
+    "geth-linux-amd64-1.17.6-3d84c6b2.tar.gz "
+    "https://gethstore.blob.core.windows.net/builds/"
+    "geth-linux-arm64-1.17.6-3d84c6b2.tar.gz"
+)
+
+
+@patch(
+    "tests.test_release_info_live._geth_downloads_page",
+    return_value=_GETH_ARCH_MISMATCH_PAGE,
+)
+def test_older_geth_version_skips_other_arch_only_release(_mock_page) -> None:
+    """Do not pick a build that exists only for the other architecture.
+
+    Combined amd64|arm64 discovery would return v1.17.7, which
+    ``get_release_info`` cannot resolve on amd64.
+    """
+    assert _older_geth_version("v1.17.8", arch="amd64") == "v1.17.6"
+    assert _older_geth_version("1.17.8", arch="arm64") == "v1.17.7"
+
+
+@patch(
+    "tests.test_release_info_live._geth_downloads_page",
+    return_value=_GETH_ARCH_MISMATCH_PAGE,
+)
+@patch("tests.test_release_info_live._geth_release_arch", return_value="amd64")
+def test_older_geth_version_defaults_to_resolved_arch(_mock_arch, _mock_page) -> None:
+    """When *arch* is omitted, discovery uses the host arch being resolved."""
+    assert _older_geth_version("v1.17.8") == "v1.17.6"
+
+
+@pytest.mark.parametrize(
+    ("machine", "expected"),
+    [
+        ("x86_64", "amd64"),
+        ("amd64", "amd64"),
+        ("aarch64", "arm64"),
+        ("arm64", "arm64"),
+    ],
+)
+def test_geth_release_arch_matches_release_lookup(machine: str, expected: str) -> None:
+    """Match ``get_client_release_info``: amd64 names stay amd64, others are arm64.
+
+    ``x86_64`` and ``aarch64`` are also what ``get_machine_architecture`` maps.
+    """
+    with patch("tests.test_release_info_live.platform.machine", return_value=machine):
+        assert _geth_release_arch() == expected
+
+
 @pytest.mark.live
 @pytest.mark.parametrize("client,repo", CLIENT_REPOS, ids=[c for c, _ in CLIENT_REPOS])
 def test_client_release_info_live(client: str, repo: str | None) -> None:
@@ -340,9 +416,10 @@ def test_client_release_info_live(client: str, repo: str | None) -> None:
 
     1. Resolve LATEST and verify each download URL responds.
     2. Resolve again using the version string from step 1 (explicit tag form).
-    3. Resolve an older release — Geth from the downloads page, others from the
-       next published GitHub release — and verify URLs. For Geth, also assert
-       the resolved URL appears on geth.ethereum.org/downloads.
+    3. Resolve an older release — Geth from the downloads page for this host's
+       architecture, others from the next published GitHub release — and verify
+       URLs. For Geth, also assert the resolved URL appears on
+       geth.ethereum.org/downloads.
     """
     latest = _release_info(client, "LATEST")
     _assert_release_info(latest, client)

@@ -244,6 +244,38 @@ class TestGetClientReleaseInfo:
         with pytest.raises(ValueError):
             get_client_release_info("geth", "LATEST")
 
+    @patch("requests.get")
+    def test_geth_explicit_version_requires_host_arch_build(self, mock_req):
+        """A version published only for the other arch is not installable here.
+
+        Geth 1.17.7 was listed for linux-arm64 and not linux-amd64. LATEST still
+        resolves the first build for the requested arch; an explicit lookup of
+        the other arch's version raises.
+        """
+        from deploy.geth import get_release_info
+
+        mock_req.return_value = MagicMock(
+            status_code=200,
+            text=(
+                "https://gethstore.blob.core.windows.net/builds/"
+                "geth-linux-amd64-1.17.8-a5790770.tar.gz "
+                "https://gethstore.blob.core.windows.net/builds/"
+                "geth-linux-arm64-1.17.8-a5790770.tar.gz "
+                "https://gethstore.blob.core.windows.net/builds/"
+                "geth-linux-arm64-1.17.7-3d858f85.tar.gz "
+                "https://gethstore.blob.core.windows.net/builds/"
+                "geth-linux-amd64-1.17.6-3d84c6b2.tar.gz"
+            ),
+        )
+        latest = get_release_info("LATEST", True)
+        assert latest["version"] == "v1.17.8"
+        assert "linux-amd64-1.17.8" in latest["download_urls"][0]
+        with pytest.raises(ValueError, match=r"linux-amd64 and version v1\.17\.7"):
+            get_release_info("v1.17.7", True)
+        arm_only = get_release_info("v1.17.7", False)
+        assert arm_only["version"] == "v1.17.7"
+        assert "linux-arm64-1.17.7" in arm_only["download_urls"][0]
+
     def test_unsupported_client_raises(self):
         with pytest.raises(ValueError):
             get_client_release_info("notarealclient", "LATEST")

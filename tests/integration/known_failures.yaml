@@ -1,0 +1,43 @@
+# Tracked CI known-failures (integration + version-check harness).
+# A listed cell/client failure counts as KNOWN only when the match signature
+# is present; any other failure in that cell stays red.
+#
+# Kinds:
+#   log_substring / log_regex — cell FAIL whose log contains the pattern
+#   version_mismatch — installed vs expected tag pair (see check_client_versions.sh)
+version: 1
+entries:
+  - id: nimbus-hoodi-genesis-buffer-limit
+    cells:
+      - Nimbus-Nethermind_HOODI
+    clients:
+      - nimbus
+    networks:
+      - HOODI
+    match:
+      kind: log_substring
+      pattern: "Could not read response headers: Buffer limit reached"
+    issue: https://github.com/status-im/nimbus-eth2/issues/9362
+    added: "2026-10-24"
+    reason: >
+      GitHub started sending ~11 KB response headers (incl. ~9 KB CSP);
+      Nimbus's HTTP client buffer overflows when downloading
+      hoodi-genesis.ssz.sz from GitHub releases. trustedNodeSync
+      ExecStartPre fails so consensus never starts.
+
+  - id: grandine-2.0.6-reports-2.0.5
+    clients:
+      - grandine
+    match:
+      kind: version_mismatch
+      installed: "2.0.5"
+      expected: "2.0.6"
+    issue: https://github.com/grandinetech/grandine/issues/838
+    # grandine#838 was closed without a fix; the v2.0.6 binary still reports
+    # 2.0.5. Do not treat a closed issue as "upstream fixed". Clear this entry
+    # when expected Grandine is no longer 2.0.6 (pair not observed).
+    issue_closed_unfixed: true
+    added: "2026-10-24"
+    reason: >
+      Grandine v2.0.6 release asset still prints "Grandine 2.0.5"
+      (upstream packaging / version-report bug).

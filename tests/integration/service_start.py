@@ -1,4 +1,4 @@
-"""Timeouts for blocking ``systemctl start`` in the integration harness.
+"""Timeouts and start-failure journaling for the integration harness.
 
 Nimbus first-start runs ``trustedNodeSync`` as ``ExecStartPre``. That job can
 block well beyond the default 30s subprocess budget even when the checkpoint
@@ -8,11 +8,17 @@ sync after ``ExecStart``, so they keep the short timeout.
 We keep a blocking ``systemctl start`` (not ``--no-block``) so the harness
 does not declare the unit healthy until ExecStartPre finishes and systemd
 has spawned the main process. ActiveState/port polling still runs afterward.
+
+When ``systemctl start`` fails, :func:`journal_error_excerpt` pulls the last
+ERR/error/FATAL lines (else the last few journal lines) so CI failure
+summaries and known-failure signature matching see the real cause — not an
+empty ``systemctl start <unit> failed:`` line.
 """
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional
+import subprocess
+from typing import Dict, List, Optional, Sequence
 
 # Default budget for units whose start job returns quickly (EL, MEV, non-Nimbus CL).
 DEFAULT_SYSTEMCTL_START_TIMEOUT_SEC = 30
@@ -119,3 +125,169 @@ def rewrite_timeout_stop_sec(
         unit_text,
         count=1,
     )
+
+
+# Prefer client ERR/FATAL lines over systemd bookkeeping when summarizing a
+# failed ``systemctl start``. Case-insensitive; matched as whole tokens.
+_JOURNAL_ERROR_TOKEN_RE = re.compile(
+    r"(?:\bERR\b|\bERROR\b|\bFATAL\b|\bCritical\b|\bfailed\b|\bFailed\b)",
+    re.IGNORECASE,
+)
+
+
+def journal_error_excerpt(
+    journal_text: str,
+    *,
+    max_error_lines: int = 3,
+    fallback_lines: int = 10,
+) -> str:
+    """Return a concise journal excerpt for a failed service start.
+
+    Prefers the last *max_error_lines* lines that look like errors (ERR /
+    ERROR / FATAL / failed). Falls back to the last *fallback_lines* of
+    non-empty journal output when no error-shaped lines are present.
+
+    Args:
+        journal_text: Raw ``journalctl`` (or ``systemctl status``) output.
+        max_error_lines: Cap on error-shaped lines kept.
+        fallback_lines: Cap on trailing lines when no error tokens match.
+
+    Returns:
+        A single-line-friendly excerpt (newlines collapsed to `` | ``), or
+        an empty string when *journal_text* is blank.
+    """
+    lines = [ln.strip() for ln in (journal_text or "").splitlines() if ln.strip()]
+    if not lines:
+        return ""
+    error_lines = [ln for ln in lines if _JOURNAL_ERROR_TOKEN_RE.search(ln)]
+    chosen: Sequence[str]
+    if error_lines:
+        chosen = error_lines[-max_error_lines:]
+    else:
+        chosen = lines[-fallback_lines:]
+    # Collapse for the ❌ summary line; full journal still prints separately.
+    return " | ".join(chosen)
+
+
+def read_service_journal(
+    service_name: str,
+    *,
+    lines: int = 40,
+    journalctl_cmd: Optional[Sequence[str]] = None,
+) -> str:
+    """Capture recent ``journalctl -u`` output for *service_name*.
+
+    Args:
+        service_name: Systemd unit name without ``.service``.
+        lines: ``-n`` line budget.
+        journalctl_cmd: Optional full argv override (tests).
+
+    Returns:
+        Combined stdout+stderr text, or ``\"\"`` if journalctl fails.
+    """
+    if journalctl_cmd is not None:
+        cmd = list(journalctl_cmd)
+    else:
+        import os
+
+        prefix: List[str] = []
+        if hasattr(os, "geteuid") and os.geteuid() != 0:
+            prefix = ["sudo"]
+        cmd = prefix + [
+            "journalctl",
+            "-u",
+            service_name,
+            "--no-pager",
+            "-n",
+            str(lines),
+        ]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return (result.stdout or "") + (result.stderr or "")
+
+
+def format_systemctl_start_failure(
+    service_name: str,
+    *,
+    stderr: str = "",
+    journal_text: str = "",
+    timed_out: bool = False,
+    elapsed_sec: Optional[float] = None,
+    limit_sec: Optional[float] = None,
+) -> str:
+    """Build the ``❌ systemctl start …`` summary line including journal errors.
+
+    Args:
+        service_name: Unit name (consensus, execution, …).
+        stderr: ``systemctl start`` stderr (often only the Job-for-… blurb).
+        journal_text: Captured journal / status text to excerpt.
+        timed_out: When True, phrase as a start timeout.
+        elapsed_sec: Elapsed seconds (timeouts).
+        limit_sec: Timeout budget (timeouts).
+
+    Returns:
+        A single failure message suitable for printing after ``❌ ``.
+    """
+    stderr_bit = " ".join((stderr or "").split())
+    excerpt = journal_error_excerpt(journal_text)
+    parts: List[str] = []
+    if timed_out:
+        timing = ""
+        if elapsed_sec is not None and limit_sec is not None:
+            timing = f" after {elapsed_sec:.1f}s (limit {limit_sec:g}s)"
+        elif elapsed_sec is not None:
+            timing = f" after {elapsed_sec:.1f}s"
+        parts.append(f"systemctl start {service_name} timed out{timing}")
+        if stderr_bit:
+            parts.append(stderr_bit)
+    elif stderr_bit:
+        parts.append(f"systemctl start {service_name} failed: {stderr_bit}")
+    elif excerpt:
+        parts.append(f"systemctl start {service_name} failed: {excerpt}")
+        excerpt = ""  # already in parts
+    else:
+        parts.append(f"systemctl start {service_name} failed:")
+    if excerpt and excerpt not in " | ".join(parts):
+        parts.append(excerpt)
+    return " | ".join(parts)
+
+
+def print_systemctl_start_failure(
+    service_name: str,
+    *,
+    stderr: str = "",
+    timed_out: bool = False,
+    elapsed_sec: Optional[float] = None,
+    limit_sec: Optional[float] = None,
+    journal_lines: int = 40,
+) -> str:
+    """Capture the unit journal, print full + summarized failure, return summary.
+
+    Always prints the raw journal (for the per-cell log) and a single ``❌``
+    line that includes the journal excerpt so CI summaries and known-failure
+    signature matching see the real error.
+    """
+    journal_text = read_service_journal(service_name, lines=journal_lines)
+    if journal_text.strip():
+        print("--- journalctl ---", flush=True)
+        print(journal_text.rstrip(), flush=True)
+        print("------------------", flush=True)
+    message = format_systemctl_start_failure(
+        service_name,
+        stderr=stderr,
+        journal_text=journal_text,
+        timed_out=timed_out,
+        elapsed_sec=elapsed_sec,
+        limit_sec=limit_sec,
+    )
+    print(f"  ❌ {message}", flush=True)
+    return message
+

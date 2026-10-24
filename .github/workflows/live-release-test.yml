@@ -21,8 +21,59 @@ jobs:
 
       - name: Live release tests
         run: |
+          mkdir -p tests/integration/results
           docker run --rm \
             -e GITHUB_TOKEN \
+            -e CI \
+            -e GITHUB_ACTIONS=true \
+            -e ETHPILLAR_CI_NOTICES_PATH=/ethpillar/tests/integration/results/ci-notices-live.json \
             -v "${{ github.workspace }}:/ethpillar" \
             ethpillar-test \
             bash /ethpillar/tests/run_live_release_tests.sh
+
+      - name: Known failures & skips summary (live)
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path("tests/integration/results/ci-notices-live.json")
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          notices = []
+          if path.is_file():
+              notices = json.loads(path.read_text(encoding="utf-8")).get("notices") or []
+          lines = [
+              "## Known failures & skips (live release)",
+              "",
+              "| Entry / skip | Cell | Status | Link |",
+              "| --- | --- | --- | --- |",
+          ]
+          if not notices:
+              lines.append("| — | — | none | — |")
+          else:
+              for n in notices:
+                  label = n.get("id") or n.get("client") or n.get("kind") or "—"
+                  reason = (n.get("reason") or "").replace("|", "\\|")
+                  if reason:
+                      label = f"{label}: {reason}"
+                  cell = n.get("cell") or "—"
+                  status = n.get("status") or "—"
+                  link = n.get("link") or n.get("issue") or ""
+                  link_cell = f"[issue]({link})" if link else "—"
+                  lines.append(f"| {label} | {cell} | {status} | {link_cell} |")
+          lines.append("")
+          text = "\n".join(lines) + "\n"
+          print(text)
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write(text)
+          PY
+
+      - name: Upload live CI notices
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-ci-notices-${{ github.run_id }}
+          path: tests/integration/results/ci-notices-live.json
+          retention-days: 30
+          if-no-files-found: ignore

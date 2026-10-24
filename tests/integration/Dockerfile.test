@@ -24,6 +24,7 @@ RUN apt-get update && apt-get upgrade -y \
     dbus \
     sudo \
     python3 \
+    python3-yaml \
     bats \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

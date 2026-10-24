@@ -6,6 +6,8 @@ from tests.integration.service_start import (
     INTEGRATION_TIMEOUT_STOP_SEC,
     NIMBUS_CHECKPOINT_SYNC_START_TIMEOUT_SEC,
     NIMBUS_UNIT_TIMEOUT_START_SEC,
+    format_systemctl_start_failure,
+    journal_error_excerpt,
     parse_timeout_start_sec,
     rewrite_timeout_stop_sec,
     systemctl_start_timeout_sec,
@@ -133,3 +135,53 @@ def test_rewrite_timeout_stop_sec_inserts_when_missing():
         f"[Service]\nTimeoutStopSec={INTEGRATION_TIMEOUT_STOP_SEC}\nUser=consensus"
         in rewritten
     )
+
+
+_NIMBUS_HOODI_JOURNAL = """\
+Oct 24 10:14:40 host systemd[1]: Starting consensus.service...
+Oct 24 10:14:40 host bash[2666]: INF starting trustedNodeSync
+Oct 24 10:14:40 host bash[2666]: ERR 2026-10-24 10:14:40.904+00:00 Failed to obtain genesis state             topics="beacnde" source=https://github.com/eth-clients/hoodi/releases/download/genesis/hoodi-genesis.ssz.sz err="Could not read response headers: Buffer limit reached"
+Oct 24 10:14:40 host systemd[1]: consensus.service: Control process exited, code=exited, status=1/FAILURE
+Oct 24 10:14:40 host systemd[1]: consensus.service: Failed with result 'exit-code'.
+"""
+
+
+def test_journal_error_excerpt_prefers_err_lines():
+    excerpt = journal_error_excerpt(_NIMBUS_HOODI_JOURNAL)
+    assert "Could not read response headers: Buffer limit reached" in excerpt
+    assert "Failed to obtain genesis state" in excerpt
+    # Bookkeeping-only lines should not dominate when ERR is present.
+    assert "Starting consensus.service" not in excerpt
+
+
+def test_journal_error_excerpt_falls_back_to_last_lines():
+    journal = "\n".join(f"info line {i}" for i in range(15))
+    excerpt = journal_error_excerpt(journal, fallback_lines=10)
+    assert "info line 5" in excerpt
+    assert "info line 14" in excerpt
+    assert "info line 4" not in excerpt
+
+
+def test_format_systemctl_start_failure_includes_journal_err():
+    message = format_systemctl_start_failure(
+        "consensus",
+        stderr="Job for consensus.service failed because the control process exited with error code.\n",
+        journal_text=_NIMBUS_HOODI_JOURNAL,
+    )
+    assert message.startswith("systemctl start consensus failed:")
+    assert "Could not read response headers: Buffer limit reached" in message
+    # Empty stderr alone used to yield a useless summary line.
+    empty = format_systemctl_start_failure("execution", stderr="", journal_text="")
+    assert empty == "systemctl start execution failed:"
+
+
+def test_format_systemctl_start_failure_timeout_includes_excerpt():
+    message = format_systemctl_start_failure(
+        "validator",
+        timed_out=True,
+        elapsed_sec=30.0,
+        limit_sec=30,
+        journal_text="Oct 24 host mev-boost[1]: FATAL bind: address already in use\n",
+    )
+    assert "timed out after 30.0s (limit 30s)" in message
+    assert "FATAL bind: address already in use" in message

@@ -465,8 +465,7 @@ PY
     echo "✅ complete: sidecar gone; MEV-Boost stopped; builder list kept"
 
     reload_and_restart execution
-    check_service_health execution \
-        --ignore-journal-pattern "cannot connect to builder client"
+    check_service_health execution
     pid=$(sudo systemctl show -p MainPID --value execution 2>/dev/null || echo "0")
     cmdline=$(tr '\0' ' ' < "/proc/${pid}/cmdline" || true)
     if [[ "$cmdline" == *"--caplin.mev-relay-url"* || "$cmdline" == *"$SIDECAR"* ]]; then
@@ -548,12 +547,10 @@ fi
 echo "✅ complete: BN sidecar gone; MEV-Boost stopped/disabled; VC flags kept"
 
 reload_and_restart consensus validator
-# Pre-Gloas Sepolia may log builder-client errors once the sidecar is gone.
-# Unknown flags / EXEC failures are still fatal.
-check_service_health consensus \
-    --ignore-journal-pattern "cannot connect to builder client"
-check_service_health validator --force-validator \
-    --ignore-journal-pattern "cannot connect to builder client"
+# Sepolia activated Gloas on 2026-10-06; builder-client journal noise from the
+# pre-Gloas era is no longer expected. Unknown flags / EXEC failures stay fatal.
+check_service_health consensus
+check_service_health validator --force-validator
 assert_vc_process_has_epbs_flags
 epbs_cli status
 

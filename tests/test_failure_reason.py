@@ -55,6 +55,26 @@ def test_extract_container_start_failure(tmp_path: Path):
     assert extract_failure_reason(str(log)) == "Failed to start container. Exit code 125"
 
 
+def test_extract_systemctl_start_includes_journal_err(tmp_path: Path):
+    log = tmp_path / "nimbus.log"
+    log.write_text(
+        "\n".join(
+            [
+                "Starting test Nimbus-Nethermind_HOODI...",
+                "  ❌ systemctl start consensus failed: "
+                "Job for consensus.service failed. | "
+                'ERR Failed to obtain genesis state err="Could not read response '
+                'headers: Buffer limit reached"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    reason = extract_failure_reason(str(log))
+    assert "systemctl start consensus failed" in reason
+    assert "Buffer limit reached" in reason
+
+
 def test_extract_missing_log():
     assert extract_failure_reason(None) == "no log available"
     assert extract_failure_reason("/no/such/file.log") == "no log available"

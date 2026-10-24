@@ -40,8 +40,6 @@ from typing import Any, Callable, Iterable
 OVERRIDE_PATH = "/tmp/ethpillar-integration-latest-override.json"
 SEEDS_PATH = "/tmp/ethpillar-integration-upgrade-seeds.json"
 ENV_VAR = "ETHPILLAR_INTEGRATION_LATEST_OVERRIDE"
-# ePBS integration floor for Lighthouse builder_definitions.yml (stable Gloas).
-LIGHTHOUSE_EPBS_TAG = "v8.3.0"
 SEEDS_ENV = "ETHPILLAR_INTEGRATION_UPGRADE_SEEDS"
 _HOOK_ATTR = "_ethpillar_latest_override_wrapped"
 _GETH_HOOK_ATTR = "_ethpillar_geth_latest_override_wrapped"
@@ -407,8 +405,7 @@ def _network_rejects_seed(
 ) -> str | None:
     """Return a skip reason when *seed_tag* is unsafe for *network*, else ``None``.
 
-    On Sepolia Gloas: reject seeds below the client floor, and reject Lighthouse
-    RC→stable downgrades when GitHub LATEST itself cannot sync Sepolia.
+    On Sepolia Gloas: reject seeds below the client minimum-version floor.
     """
     import sys
 
@@ -421,22 +418,15 @@ def _network_rejects_seed(
     if net != "sepolia":
         return None
 
+    # seed_kind / latest kept for call-site compatibility; only the seed floor matters.
+    _ = (seed_kind, latest)
+
     ok_seed, _ = validate_version_for_network(client, seed_tag, net)
     if not ok_seed:
         return (
             f"seed {seed_tag} does not meet Sepolia Gloas floor "
             f"(soft-skip; deploy official LATEST)"
         )
-
-    # Lighthouse: RC seed newer than a pre-Gloas GitHub LATEST would wipe the
-    # beacon DB and install an incompatible binary on Sepolia.
-    if client == "lighthouse" and latest:
-        ok_latest, _ = validate_version_for_network(client, latest, net)
-        if not ok_latest and seed_kind == "rc":
-            return (
-                f"GitHub LATEST {latest} cannot sync Sepolia Gloas; "
-                f"skipping RC seed {seed_tag} downgrade (soft-skip; deploy remapped LATEST)"
-            )
     return None
 
 
@@ -453,13 +443,13 @@ def prepare_rc_overrides(
     previous stable). Clients with ``status != ok`` or no usable seed are
     omitted so deploy stays on official LATEST.
 
-    When *network* is Sepolia, seeds that fail the Gloas floor (and Lighthouse
-    RC downgrades onto a pre-Gloas GitHub LATEST) are soft-skipped.
+    When *network* is Sepolia, seeds that fail the Gloas floor are soft-skipped.
 
     Returns a dict with ``rows``, ``clients``, ``repos``, ``kinds``,
     ``latest`` (official LATEST at seed time), ``skipped``, and ``payload``.
     """
     from find_client_rc import CLIENT_REPOS, find_upgrade_seed
+    from known_failures import emit_soft_skip
 
     # Discover against official LATEST; a leftover override would remap LATEST
     # and make the finder skip the candidate as "same as latest".
@@ -514,7 +504,9 @@ def prepare_rc_overrides(
             if latest:
                 latest_map[client] = latest
         else:
-            skipped[client] = str(row.get("reason") or "no usable upgrade seed")
+            skip_reason = str(row.get("reason") or "no usable upgrade seed")
+            skipped[client] = skip_reason
+            emit_soft_skip(client, skip_reason)
 
     log_rc_override_plan(rows)
     manifest_path = seeds_dest or seeds_path(override=override_path(path))
@@ -555,47 +547,6 @@ def prepare_rc_overrides(
 
 
 prepare_upgrade_seeds = prepare_rc_overrides
-
-
-
-def lighthouse_epbs_pin_tag(latest_tag: str) -> str | None:
-    """Return the Gloas Lighthouse tag when *latest_tag* is older than it.
-
-    GitHub ``/releases/latest`` can lag briefly after a stable cut. The ePBS
-    integration case pins :data:`LIGHTHOUSE_EPBS_TAG` until latest itself is
-    that tag or newer.
-
-    Args:
-        latest_tag: Official Lighthouse latest tag (may be empty).
-
-    Returns:
-        ``v8.3.0`` when latest is missing or older, otherwise None.
-    """
-    from client_requirements import compare_versions
-
-    latest = (latest_tag or "").strip()
-    if not latest:
-        return LIGHTHOUSE_EPBS_TAG
-    if compare_versions(latest, LIGHTHOUSE_EPBS_TAG) >= 0:
-        return None
-    return LIGHTHOUSE_EPBS_TAG
-
-
-def pin_lighthouse_epbs_install(latest_tag: str, path: str | None = None) -> str | None:
-    """Write a Lighthouse-only LATEST override when the Gloas stable is not latest.
-
-    Args:
-        latest_tag: Official Lighthouse latest tag.
-        path: Override file path. Defaults to the integration override path.
-
-    Returns:
-        The pinned tag, or None when no override was written.
-    """
-    tag = lighthouse_epbs_pin_tag(latest_tag)
-    if tag is None:
-        return None
-    write_override({"lighthouse": tag}, path=path, kinds={"lighthouse": "stable"})
-    return tag
 
 
 def install_github_release_hook() -> bool:

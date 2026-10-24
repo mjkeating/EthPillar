@@ -7,6 +7,11 @@ on:
         description: Prefix for the uploaded integration report artifact
         required: true
         type: string
+      filter:
+        description: Optional comma-separated substrings passed as --filter to the matrix
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -48,7 +53,18 @@ jobs:
             checkpoint-${{ runner.os }}-
 
       - name: Run integration matrix
-        run: bash tests/integration/run_docker_tests.sh
+        run: |
+          set -euo pipefail
+          args=()
+          if [[ -n "${{ inputs.filter }}" ]]; then
+            IFS=',' read -ra parts <<< "${{ inputs.filter }}"
+            for part in "${parts[@]}"; do
+              part="$(echo "$part" | xargs)"
+              [[ -n "$part" ]] && args+=(--filter "$part")
+            done
+            echo "Matrix filter: ${args[*]}"
+          fi
+          bash tests/integration/run_docker_tests.sh "${args[@]}"
 
       - name: Fix cache permissions for Actions save
         if: always()

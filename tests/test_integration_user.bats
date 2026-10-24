@@ -36,6 +36,13 @@ setup() {
   ! grep -E 'systemctl.*start.*timeout=30|_systemctl_cmd\("start".*timeout=30' tests/integration/run_inside_docker.py
 }
 
+@test "run_inside_docker folds journal errors into systemctl start failure summary" {
+  grep -Fq 'print_systemctl_start_failure' tests/integration/run_inside_docker.py
+  grep -Fq 'journal_error_excerpt' tests/integration/service_start.py
+  # Uncaptured journalctl alone left CI summaries as "systemctl start X failed:" with no cause.
+  ! grep -nE 'print\(f"  ❌ systemctl start \{service_name\} failed:\\n\{result\.stderr\}"' tests/integration/run_inside_docker.py
+}
+
 @test "integration harness does not invoke systemctl start --no-block" {
   # Comments may mention --no-block; the start argv must stay blocking.
   ! grep -E '_systemctl_cmd\("start", "--no-block"|systemctl start --no-block' tests/integration/run_inside_docker.py

@@ -35,6 +35,18 @@ from checkpoint_cache_common import (  # noqa: E402
     get_cache_root,
     get_manifest_path,
 )
+from known_failures import (  # noqa: E402
+    append_step_summary,
+    classify_failed_cell,
+    emit_ci_notice,
+    load_registry,
+    log_entries_for_cell,
+    notice_all_clear,
+    notice_from_known_hit,
+    parse_notice_lines,
+    write_ci_notices_artifact,
+    CiNotice,
+)
 from port_bindings import cl_supports_rpc_expose, el_supports_rpc_expose  # noqa: E402
 
 # Keep in sync with deploy.orchestrator.PREDEFINED_COMBOS (avoid importing deploy on the host).
@@ -245,6 +257,7 @@ class TestTask:
         self.duration = 0
         self.start_time = 0
         self.failure_reason: Optional[str] = None
+        self.known_failure_id: Optional[str] = None
 
 def generate_tests():
     """Build the full integration matrix as :class:`TestTask` instances."""
@@ -336,26 +349,49 @@ async def run_test(task: TestTask, results_dir: str, semaphore: asyncio.Semaphor
             proc = await asyncio.create_subprocess_shell(exec_cmd)
             await proc.wait()
             
-            task.status = "PASS" if proc.returncode == 0 else "FAIL"
-            task.duration = int(time.time() - task.start_time)
-            if task.status == "FAIL":
+            if proc.returncode == 0:
+                task.status = "PASS"
+            else:
+                task.status = "FAIL"
                 task.failure_reason = extract_failure_reason(task.log_file)
+                log_text = _read_log_text(task.log_file)
+                status, entry = classify_failed_cell(task.log_name, log_text)
+                if entry is not None:
+                    task.status = "KNOWN_FAIL"
+                    task.known_failure_id = entry.id
+                    task.failure_reason = (
+                        f"known failure {entry.id}: {entry.reason}"
+                    )
+            task.duration = int(time.time() - task.start_time)
         finally:
             subprocess.run(f"docker rm -f {task.container_name}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _read_log_text(log_file: Optional[str]) -> str:
+    """Return full log text, or empty string when unavailable."""
+    if not log_file or not os.path.exists(log_file):
+        return ""
+    try:
+        with open(log_file, "r", encoding="utf-8", errors="replace") as handle:
+            return handle.read()
+    except OSError:
+        return ""
 
 async def headless_monitor(tasks: list[TestTask], exec_coros):
     """Run tests in CI/headless mode with simple progress lines instead of Rich UI."""
     completed = set()
 
+    done_statuses = ("PASS", "FAIL", "KNOWN_FAIL", "SKIPPED")
+
     async def monitor():
         while True:
             for task in tasks:
-                if task.status in ("PASS", "FAIL") and task.log_name not in completed:
+                if task.status in done_statuses and task.log_name not in completed:
                     print(f"[{task.status}] {task.log_name} ({task.duration}s)", flush=True)
-                    if task.status == "FAIL" and task.failure_reason:
+                    if task.status in ("FAIL", "KNOWN_FAIL") and task.failure_reason:
                         print(f"       {task.failure_reason}", flush=True)
                     completed.add(task.log_name)
-            if all(task.status in ("PASS", "FAIL") for task in tasks):
+            if all(task.status in done_statuses for task in tasks):
                 break
             await asyncio.sleep(5)
 
@@ -405,6 +441,9 @@ async def ui_loop(tasks: list[TestTask]):
             for t in tasks:
                 if t.status == "PASS":
                     status_lookup[t.log_name] = "[green]PASS[/green]"
+                    dur_lookup[t.log_name] = f"{t.duration}s"
+                elif t.status == "KNOWN_FAIL":
+                    status_lookup[t.log_name] = "[yellow]KNOWN_FAIL[/yellow]"
                     dur_lookup[t.log_name] = f"{t.duration}s"
                 elif t.status == "FAIL":
                     status_lookup[t.log_name] = "[red]FAIL[/red]"
@@ -456,6 +495,7 @@ def generate_html_report(tasks, results_dir, total_duration, timestamp, commit):
     html_path = os.path.join(results_dir, "index.html")
     passed = len([t for t in tasks if t.status == "PASS"])
     failed = len([t for t in tasks if t.status == "FAIL"])
+    known_failed = len([t for t in tasks if t.status == "KNOWN_FAIL"])
     skipped = len([t for t in tasks if t.status == "SKIPPED"])
     overall_result = "PASS" if failed == 0 else "FAIL"
     overall_class = "status-pass" if overall_result == "PASS" else "status-fail"
@@ -475,6 +515,7 @@ def generate_html_report(tasks, results_dir, total_duration, timestamp, commit):
         tr:hover {{ background-color: #f8f9fa; }}
         .status-pass {{ color: #28a745; font-weight: bold; }}
         .status-fail {{ color: #dc3545; font-weight: bold; }}
+        .status-known_fail {{ color: #fd7e14; font-weight: bold; }}
         .status-skipped {{ color: #ffc107; font-weight: bold; }}
         a {{ color: #007bff; text-decoration: none; }}
         a:hover {{ text-decoration: underline; }}
@@ -488,6 +529,7 @@ def generate_html_report(tasks, results_dir, total_duration, timestamp, commit):
             tr:hover {{ background-color: #2a2a2a; }}
             .status-pass {{ color: #4cd964; }}
             .status-fail {{ color: #ff3b30; }}
+            .status-known_fail {{ color: #ff9500; }}
             .status-skipped {{ color: #ffcc00; }}
             a {{ color: #4dabf7; }}
         }}
@@ -504,6 +546,7 @@ def generate_html_report(tasks, results_dir, total_duration, timestamp, commit):
             Total Tests: {len(tasks)} <br>
             Passed: {passed} <br>
             Failed: {failed} <br>
+            Known failures: {known_failed} <br>
             Skipped: {skipped}
         </div>
         <table>
@@ -523,7 +566,7 @@ def generate_html_report(tasks, results_dir, total_duration, timestamp, commit):
         status_class = f"status-{t.status.lower()}"
         log_link = f"<a href='{os.path.basename(t.log_file)}' target='_blank'>View Log</a>" if t.log_file else "-"
         error_cell = ""
-        if t.status == "FAIL":
+        if t.status in ("FAIL", "KNOWN_FAIL"):
             error_cell = t.failure_reason or extract_failure_reason(t.log_file)
             # Escape minimal HTML entities for the report table.
             error_cell = (
@@ -614,6 +657,61 @@ def fix_cache_permissions_for_ci() -> None:
             subprocess.run(["sudo", "chmod", "-R", "a+rX", path], check=False)
 
 
+def collect_ci_notices(tasks: List[TestTask]) -> List[CiNotice]:
+    """Scan cell logs + known-failure classification into a de-duplicated notice list.
+
+    Re-emits GHA annotations on the host (container stdout is captured in log files).
+    """
+    registry = load_registry()
+    notices: List[CiNotice] = []
+    seen: set[tuple[str, str, str, str]] = set()
+
+    def _add(notice: CiNotice) -> None:
+        key = (notice.kind, notice.status, notice.id or notice.client, notice.cell)
+        if key in seen:
+            return
+        seen.add(key)
+        notices.append(notice)
+        emit_ci_notice(notice.to_dict())
+
+    for task in tasks:
+        log_text = _read_log_text(task.log_file)
+        for parsed in parse_notice_lines(log_text):
+            if not parsed.cell:
+                parsed.cell = task.log_name
+            _add(parsed)
+
+        if task.status == "KNOWN_FAIL" and task.known_failure_id:
+            entry = next((e for e in registry if e.id == task.known_failure_id), None)
+            if entry is not None:
+                _add(notice_from_known_hit(entry, cell=task.log_name))
+            continue
+
+        if task.status == "PASS":
+            for entry in log_entries_for_cell(task.log_name, entries=registry):
+                # Signature absent on a passing cell → upstream may be fixed
+                # (unless issue_closed_unfixed; issue_state_for_entry skips those).
+                if entry.match_kind == "log_substring" and entry.pattern in log_text:
+                    continue
+                if entry.match_kind == "log_regex" and entry.pattern and re.search(
+                    entry.pattern, log_text
+                ):
+                    continue
+                _add(notice_all_clear(entry, cell=task.log_name))
+
+    return notices
+
+
+def publish_ci_notices(notices: List[CiNotice], results_dir: str) -> str:
+    """Write ``ci-notices.json`` under *results_dir* and append the step summary."""
+    artifact = write_ci_notices_artifact(
+        notices, os.path.join(results_dir, "ci-notices.json")
+    )
+    append_step_summary(notices)
+    print(f"CI notices artifact: {artifact} ({len(notices)} row(s))", flush=True)
+    return str(artifact)
+
+
 async def main():
     """Entry point: build image, warm caches, run matrix, emit report, set exit code."""
     parser = argparse.ArgumentParser()
@@ -702,7 +800,16 @@ async def main():
     html_path = generate_html_report(tasks, results_dir, total_duration, timestamp, get_git_commit())
     print(f"\n✅ Report generated: {html_path}")
     print(f"⏱️ Total runtime: {total_duration}s")
-    
+
+    notices = collect_ci_notices(tasks)
+    publish_ci_notices(notices, results_dir)
+
+    known = [t for t in tasks if t.status == "KNOWN_FAIL"]
+    if known:
+        print(f"⚠️  {len(known)} known failure(s) (do not fail the run):")
+        for task in known:
+            print(f"  • {task.log_name}: {task.failure_reason or task.known_failure_id}")
+
     failed = [t for t in tasks if t.status == "FAIL"]
     if failed:
         print(f"❌ {len(failed)} tests failed.")
@@ -711,7 +818,7 @@ async def main():
             print(f"  • {task.log_name}: {reason}")
         sys.exit(1)
     else:
-        print("✅ All integration tests passed!")
+        print("✅ All integration tests passed (known failures allowed)!")
         sys.exit(0)
 
 if __name__ == "__main__":

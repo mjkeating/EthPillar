@@ -32,13 +32,12 @@ CAPLIN_POLL_ATTEMPTS = 72      # 360s — HOODI checkpoint + header sync before 
 from checkpoint_cache_common import checkpoint_sync_url_for_network  # noqa: E402
 from latest_override import (  # noqa: E402
     ENV_VAR as LATEST_OVERRIDE_ENV,
-    LIGHTHOUSE_EPBS_TAG,
     clear_override,
     normalize_deploy_clients,
     override_path,
-    pin_lighthouse_epbs_install,
     prepare_rc_overrides,
 )
+from known_failures import emit_soft_skip  # noqa: E402
 from latest_snapshot import ENV_VAR as LATEST_SNAPSHOT_ENV, SNAPSHOT_PATH, write_snapshot  # noqa: E402
 from port_bindings import (  # noqa: E402
     client_from_service,
@@ -56,6 +55,7 @@ from port_bindings import (  # noqa: E402
 )
 from service_start import (  # noqa: E402
     INTEGRATION_TIMEOUT_STOP_SEC,
+    print_systemctl_start_failure,
     rewrite_timeout_stop_sec,
     systemctl_start_timeout_sec,
     unit_has_nimbus_checkpoint_sync,
@@ -353,52 +353,6 @@ def _missing_module(module: str) -> bool:
         return True
 
 
-def _pin_lighthouse_epbs(args: Any) -> None:
-    """Pin the Lighthouse ePBS install to v8.3.0 when GitHub latest is older.
-
-    Production installs track ``/releases/latest``. This migration case needs a
-    binary that reads ``builder_definitions.yml``. When latest is already
-    v8.3.0 or newer, no override is written.
-    """
-    names = " ".join(
-        part.lower()
-        for part in (
-            getattr(args, "cc", "") or "",
-            getattr(args, "vc", "") or "",
-            getattr(args, "combo", "") or "",
-        )
-        if part
-    )
-    if "lighthouse" not in names:
-        return
-    latest = ""
-    try:
-        from deploy.common import get_github_release
-
-        latest = str(get_github_release("sigp/lighthouse", "LATEST").get("tag_name") or "")
-    except Exception as exc:  # noqa: BLE001 — pin the known stable if latest cannot be read
-        print(
-            f"[ePBS] Could not read Lighthouse LATEST ({exc}); "
-            f"pinning {LIGHTHOUSE_EPBS_TAG}",
-            flush=True,
-        )
-    pinned = pin_lighthouse_epbs_install(latest)
-    if pinned is None:
-        print(
-            f"[ePBS] Lighthouse LATEST {latest} already includes builder_definitions.yml; "
-            "not pinning",
-            flush=True,
-        )
-        return
-    os.environ[LATEST_OVERRIDE_ENV] = override_path()
-    print(
-        f"[ePBS] Pinning Lighthouse install to {pinned} "
-        f"(GitHub latest is {latest or 'unknown'})",
-        flush=True,
-    )
-
-
-
 def run_install(args: Any, fee_address: str):
     """Run ``deploy-node.py`` with integration overrides (checkpoint URL, caches)."""
     print(f"\n🚀 Running: deploy/deploy-node.py for {args.combo or args.ec}...")
@@ -434,8 +388,6 @@ def run_install(args: Any, fee_address: str):
             )
             prepare_rc_overrides(clients, network=args.network)
             os.environ[LATEST_OVERRIDE_ENV] = override_path()
-        elif getattr(args, "test_epbs", False):
-            _pin_lighthouse_epbs(args)
         subprocess.run(cmd, capture_output=False, check=True, env=integration_subprocess_env())
     except subprocess.CalledProcessError as e:
         print(f"❌ Script failed with return code {e.returncode}")
@@ -475,9 +427,7 @@ def check_service_journal_errors(
 
     Args:
         service_name: Systemd unit name without ``.service``.
-        ignore_patterns: Fatal-pattern substrings to skip (for example
-            ``cannot connect to builder client`` after ePBS complete on a
-            pre-Gloas network).
+        ignore_patterns: Fatal-pattern substrings to skip when matching.
 
     Returns:
         True if no matching fatal pattern is present (or journalctl failed
@@ -662,12 +612,13 @@ def check_service_start(
             )
         except subprocess.TimeoutExpired:
             elapsed = time.monotonic() - start_t0
-            print(
-                f"  ❌ systemctl start {service_name} timed out after "
-                f"{elapsed:.1f}s (limit {start_timeout}s)",
-                flush=True,
+            print_systemctl_start_failure(
+                service_name,
+                timed_out=True,
+                elapsed_sec=elapsed,
+                limit_sec=float(start_timeout),
+                journal_lines=40,
             )
-            subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "40"])
             return False
         elapsed = time.monotonic() - start_t0
         print(
@@ -675,8 +626,11 @@ def check_service_start(
             flush=True,
         )
         if result.returncode != 0:
-            print(f"  ❌ systemctl start {service_name} failed:\n{result.stderr}", flush=True)
-            subprocess.run(["journalctl", "-u", service_name, "--no-pager", "-n", "20"])
+            print_systemctl_start_failure(
+                service_name,
+                stderr=result.stderr or "",
+                journal_lines=40,
+            )
             return False
 
         # Step 3: Wait and check health
@@ -1184,10 +1138,18 @@ def run_web3signer_smoke() -> int:
         print("❌ Web3Signer install failed", flush=True)
         return 1
     subprocess.run(["sudo", "systemctl", "daemon-reload"], check=False)
-    started = subprocess.run(["sudo", "systemctl", "start", "web3signer"], check=False)
+    started = subprocess.run(
+        ["sudo", "systemctl", "start", "web3signer"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
     if started.returncode != 0:
-        print("❌ systemctl start web3signer failed", flush=True)
-        subprocess.run(["sudo", "journalctl", "-u", "web3signer", "-n", "80", "--no-pager"])
+        print_systemctl_start_failure(
+            "web3signer",
+            stderr=started.stderr or "",
+            journal_lines=80,
+        )
         return 1
 
     import json
@@ -1320,6 +1282,10 @@ if __name__ == "__main__":
                     "[Upgrade seed] No seed override was active; "
                     "upgrade uses official LATEST (real-upgrade assert will soft-skip)",
                     flush=True,
+                )
+                emit_soft_skip(
+                    "upgrade",
+                    "no seed override was active; real-upgrade assert will soft-skip",
                 )
             print("\n=========================================", flush=True)
             print(" Running Updates Integration Test...", flush=True)

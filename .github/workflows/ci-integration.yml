@@ -4,6 +4,12 @@ name: CI — Integration
 # Scheduled full-suite runs use ci-nightly.yml; use workflow_dispatch for ad-hoc integration only.
 on:
   workflow_dispatch:
+    inputs:
+      filter:
+        description: Optional comma-separated cell substrings (passed as --filter)
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -20,3 +26,4 @@ jobs:
     secrets: inherit
     with:
       artifact_name_prefix: integration-report
+      filter: ${{ inputs.filter }}

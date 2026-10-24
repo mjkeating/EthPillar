@@ -12,10 +12,14 @@ set -e
 export ETHPILLAR_CHECKPOINT_CACHE_DIR="${ETHPILLAR_CHECKPOINT_CACHE_DIR:-${HOME}/.cache/ethpillar/checkpoint_cache}"
 mkdir -p "$ETHPILLAR_CHECKPOINT_CACHE_DIR"
 
-# Ensure rich is installed
+# Ensure rich + PyYAML are installed (YAML known-failures registry on the host).
 if ! python3 -c "import rich" 2>/dev/null; then
     echo "Installing required Python library 'rich' for the terminal UI..."
     pip3 install rich --quiet
+fi
+if ! python3 -c "import yaml" 2>/dev/null; then
+    echo "Installing required Python library 'PyYAML' for known-failures registry..."
+    pip3 install pyyaml --quiet
 fi
 
 # Pass all arguments to the Python script

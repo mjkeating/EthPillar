@@ -21,28 +21,7 @@ from tests.integration.latest_override import (
     remap_latest_tag,
     write_override,
     write_seeds_manifest,
-    lighthouse_epbs_pin_tag,
-    pin_lighthouse_epbs_install,
 )
-
-
-def test_lighthouse_epbs_pin_only_when_latest_is_older(tmp_path):
-    assert lighthouse_epbs_pin_tag("v8.2.3") == "v8.3.0"
-    assert lighthouse_epbs_pin_tag("") == "v8.3.0"
-    assert lighthouse_epbs_pin_tag("v8.3.0-rc.0") == "v8.3.0"
-    assert lighthouse_epbs_pin_tag("v8.3.0") is None
-    assert lighthouse_epbs_pin_tag("v8.3.1") is None
-
-    path = str(tmp_path / "override.json")
-    assert pin_lighthouse_epbs_install("v8.3.0", path=path) is None
-    assert not Path(path).exists()
-    assert pin_lighthouse_epbs_install("v8.2.3", path=path) == "v8.3.0"
-    saved = load_override(path)
-    assert saved["clients"]["lighthouse"] == "v8.3.0"
-    assert saved["repos"]["sigp/lighthouse"] == "v8.3.0"
-    assert saved["kinds"]["lighthouse"] == "stable"
-    assert "reth" not in saved["clients"]
-
 
 
 def test_remap_latest_tag_noop_without_file(tmp_path):
@@ -226,12 +205,14 @@ def test_prepare_soft_skips_pre_gloas_seed_on_sepolia(tmp_path):
     assert not Path(path).exists()
 
 
-def test_prepare_soft_skips_lighthouse_rc_downgrade_on_sepolia(tmp_path):
+def test_prepare_keeps_lighthouse_rc_when_seed_meets_gloas_floor(tmp_path):
+    """Lighthouse-specific RC→pre-Gloas-LATEST soft-skip was removed post-Gloas.
+
+    Only the general Sepolia minimum-version floor still rejects seeds.
+    """
     path = str(tmp_path / "override.json")
 
     def fake_find_rc(client: str, _repo):
-        # Seed meets the Gloas floor; GitHub LATEST does not. An RC→stable
-        # upgrade harness would wipe the BN DB then install a pre-Gloas binary.
         return {
             "client": "lighthouse",
             "rc_tag": "v8.3.1-rc.0",
@@ -242,21 +223,11 @@ def test_prepare_soft_skips_lighthouse_rc_downgrade_on_sepolia(tmp_path):
             "reason": "prerelease resolvable via release_info",
         }
 
-    skipped = prepare_rc_overrides(
-        ["lighthouse"],
-        path=path,
-        find_rc_fn=fake_find_rc,
-        network="sepolia",
-    )
-    assert skipped["clients"] == {}
-    assert "cannot sync Sepolia Gloas" in skipped["skipped"]["lighthouse"]
-
-    # Same seed is accepted when the network is not Sepolia.
     kept = prepare_rc_overrides(
         ["lighthouse"],
         path=path,
         find_rc_fn=fake_find_rc,
-        network="hoodi",
+        network="sepolia",
     )
     assert kept["clients"]["lighthouse"] == "v8.3.1-rc.0"
 

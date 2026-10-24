@@ -6,6 +6,12 @@ on:
   schedule:
     - cron: "0 6 * * *"
   workflow_dispatch:
+    inputs:
+      filter:
+        description: Optional comma-separated cell substrings for the integration matrix
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -29,3 +35,4 @@ jobs:
     secrets: inherit
     with:
       artifact_name_prefix: nightly-integration
+      filter: ${{ inputs.filter || '' }}

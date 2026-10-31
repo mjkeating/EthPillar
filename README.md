@@ -38,7 +38,7 @@ Glamsterdam-ready. Adds ePBS migration and native ePBS installs on Sepolia, Obol
 - **Obol Charon DV**: middleware + CDVN migration. [Guide](docs/charon.md)
 - **Web3Signer**: localhost remote signer for validator keys. [Guide](docs/web3signer.md)
 - **Monitoring**: per-client Prometheus scrape jobs and Grafana dashboards
-- **CLI**: `ethpillar status|start|stop|restart|check-updates|upgrade|logs`
+- **CLI**: `ethpillar status|start|stop|restart|check-updates|upgrade|logs` (ethpillar --help)
 - **Reliability**: download verification, non-root Python venv writes, known-CI-failure tracking
 ---
 

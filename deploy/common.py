@@ -5,7 +5,6 @@ import hashlib
 import platform
 import shutil
 import subprocess
-import time
 import requests
 import json
 import tarfile
@@ -313,12 +312,9 @@ def stream_download(
 ) -> None:
     """Download ``url`` to ``dest_path`` with the shared retry policy.
 
-    The body is written to ``dest_path + ".partial"``. ``before_commit`` runs
-    after the body is complete and before that partial is renamed onto
-    ``dest_path``. A timeout, connection error, HTTP 429, or HTTP 5xx retries
-    the whole download. HTTP 404 and other 4xx fail immediately. Each failed
-    attempt deletes the partial file so it cannot be mistaken for a finished
-    download. ``dest_path`` is left unchanged until the rename.
+    Delegates to :func:`deploy.http_retry.download_to_path`. ``requests.get`` is
+    passed from this module so tests can patch it. ``before_commit`` may raise
+    :class:`ChecksumMismatch`; that is not retried.
 
     Args:
         url: URL to download.
@@ -327,83 +323,23 @@ def stream_download(
         show_progress: Draw a byte progress bar when tqdm is used.
         on_attempt: Called at the start of every attempt (reset checksum state).
         on_chunk: Called with each non-empty body chunk of the current attempt.
-        before_commit: Called after a complete body is on disk. Raise
-            :class:`ChecksumMismatch` to reject the bytes without retrying.
+        before_commit: Called after a complete body is on disk, before rename.
 
     Raises:
         http_retry.AttemptsExhausted: Every attempt failed with a retryable error.
         requests.RequestException: A non-retryable HTTP or network error.
         ChecksumMismatch: ``before_commit`` rejected the body.
     """
-    partial = dest_path + ".partial"
-    _remove_file(partial)
-    progress = None
-    if show_progress:
-        from tqdm import tqdm as progress
-
-    def _past_deadline(started: float) -> None:
-        if time.monotonic() - started >= http_retry.HTTP_STREAM_DEADLINE:
-            raise requests.Timeout(
-                f"exceeded {http_retry.HTTP_STREAM_DEADLINE}s overall download timeout"
-            )
-
-    def _attempt() -> None:
-        if on_attempt is not None:
-            on_attempt()
-        _remove_file(partial)
-        response = None
-        bar = None
-        try:
-            response = requests.get(
-                url,
-                stream=True,
-                headers={"User-Agent": http_retry.USER_AGENT},
-                timeout=http_retry.HTTP_TIMEOUT,
-            )
-            status = getattr(response, "status_code", None)
-            if http_retry.is_retryable_status(status):
-                raise requests.HTTPError(
-                    f"HTTP {status} for {url}",
-                    response=response,
-                )
-            response.raise_for_status()
-            total = 0
-            try:
-                total = int(response.headers.get("content-length", 0) or 0)
-            except (TypeError, ValueError):
-                total = 0
-            if progress is not None:
-                bar = progress(total=total, unit="B", unit_scale=True)
-            started = time.monotonic()
-            _past_deadline(started)
-            with open(partial, "wb") as handle:
-                for chunk in response.iter_content(1024 * 64):
-                    _past_deadline(started)
-                    if not chunk:
-                        continue
-                    if bar is not None:
-                        bar.update(len(chunk))
-                    handle.write(chunk)
-                    if on_chunk is not None:
-                        on_chunk(chunk)
-            _past_deadline(started)
-            if before_commit is not None:
-                before_commit()
-            os.replace(partial, dest_path)
-        finally:
-            if bar is not None:
-                bar.close()
-            if response is not None:
-                close = getattr(response, "close", None)
-                if callable(close):
-                    try:
-                        close()
-                    except Exception:
-                        pass
-            if os.path.exists(partial):
-                _remove_file(partial)
-
-    http_retry.retry_call(_attempt, description=f"{label} ({url})")
+    http_retry.download_to_path(
+        url,
+        dest_path,
+        label=label,
+        show_progress=show_progress,
+        on_attempt=on_attempt,
+        on_chunk=on_chunk,
+        before_commit=before_commit,
+        get=requests.get,
+    )
 
 
 def download_file(

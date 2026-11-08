@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -29,9 +30,11 @@ from deploy.http_retry import (
     HTTP_TIMEOUT,
     AttemptsExhausted,
     get_with_retry,
+    headers_for_url,
     is_github_host,
     is_retryable_exception,
     is_retryable_status,
+    main,
     retry_call,
 )
 from manage.grafana import download_grafana_dashboard
@@ -49,20 +52,23 @@ def test_retry_policy_constants():
     assert HTTP_STREAM_DEADLINE == 3600
 
 
-def test_shell_helper_uses_the_same_policy():
+def test_shell_wrapper_delegates_to_the_python_cli():
     text = (ROOT / "helpers" / "github_fetch.sh").read_text(encoding="utf-8")
-    assert "GITHUB_FETCH_ATTEMPTS=4" in text
-    assert "GITHUB_FETCH_CONNECT_TIMEOUT=10" in text
-    assert "GITHUB_FETCH_READ_TIMEOUT=60" in text
-    assert "GITHUB_FETCH_API_MAX_TIME=60" in text
-    assert "GITHUB_FETCH_DOWNLOAD_MAX_TIME=3600" in text
-    assert 'GITHUB_FETCH_BACKOFF="1 2 4"' in text
+    assert "python -m deploy.http_retry" in text or "-m deploy.http_retry" in text
+    assert "github_curl()" in text
+    assert "fetch" in text
+    assert "download" in text
+    assert re.search(r"(^|\n)\s*curl\s", text) is None
+    assert "GITHUB_FETCH_BACKOFF" not in text
+    assert re.search(r"(^|\n)\s*wget\s", text) is None
 
 
-def test_release_lookups_share_one_requests_get():
-    """New GitHub calls belong in github_get / stream_download, not a fresh requests.get."""
+def test_release_lookups_do_not_open_their_own_request():
+    """GitHub GETs go through http_retry, not a fresh requests.get( in common."""
     text = (ROOT / "deploy" / "common.py").read_text(encoding="utf-8")
-    assert text.count("requests.get(") == 1
+    assert "requests.get(" not in text
+    assert "download_to_path(" in text
+    assert "get_with_retry(" in text
 
 
 @pytest.mark.parametrize(
@@ -387,3 +393,142 @@ def test_grafana_com_dashboard_stays_a_single_urllib_attempt(monkeypatch, tmp_pa
     assert dest.read_bytes() == b'{"from":"grafana"}'
     assert seen["timeout"] == 60
     assert "grafana.com" in seen["url"]
+
+
+def test_headers_for_url_sends_token_only_to_the_api(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "secret-token")
+    api = headers_for_url("https://api.github.com/repos/org/repo/releases/latest")
+    assert api["Authorization"] == "Bearer secret-token"
+    assert api["User-Agent"] == "ethpillar"
+    asset = headers_for_url(
+        "https://github.com/org/repo/releases/download/v1/app.tar.gz",
+        {"Accept": "application/octet-stream"},
+    )
+    assert "Authorization" not in asset
+    assert asset["Accept"] == "application/octet-stream"
+    raw = headers_for_url("https://raw.githubusercontent.com/org/repo/main/speedtest.py")
+    assert "Authorization" not in raw
+
+
+class _Bytes:
+    def __init__(self, payload: bytes, status: int = 200):
+        self.status_code = status
+        self.content = payload
+        self.headers = {"content-length": str(len(payload))}
+        self._payload = payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"HTTP {self.status_code}", response=self)
+
+    def iter_content(self, block_size):  # noqa: ARG002
+        yield self._payload
+
+    def close(self):
+        return None
+
+
+@patch(SLEEP)
+@patch("deploy.http_retry.requests.get")
+def test_cli_fetch_writes_only_the_body(mock_get, mock_sleep, capsys):
+    mock_get.return_value = _Bytes(b'{"tag_name":"v1.12"}\n')
+    assert main(["fetch", "https://api.github.com/repos/flashbots/mev-boost/releases/latest"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == '{"tag_name":"v1.12"}\n'
+    assert captured.err == ""
+    mock_sleep.assert_not_called()
+    assert mock_get.call_args.kwargs["timeout"] == (10, 60)
+    assert mock_get.call_args.kwargs["headers"]["User-Agent"] == "ethpillar"
+
+
+@patch(SLEEP)
+@patch("deploy.http_retry.requests.get")
+def test_cli_fetch_retries_503_then_prints_the_successful_body(mock_get, mock_sleep, capsys):
+    mock_get.side_effect = [_Bytes(b"busy", status=503), _Bytes(b"ready")]
+    url = "https://api.github.com/repos/example/repo/tags"
+    assert main(["fetch", url]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "ready"
+    assert "retrying in 1s" in captured.err
+    assert "503" in captured.err
+    mock_sleep.assert_called_once_with(1)
+
+
+@patch(SLEEP)
+@patch("deploy.http_retry.requests.get")
+def test_cli_fetch_fails_fast_on_404(mock_get, mock_sleep, capsys):
+    mock_get.return_value = _Bytes(b"missing", status=404)
+    url = "https://api.github.com/repos/example/repo/releases/tags/v9"
+    assert main(["fetch", url]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "HTTP 404" in captured.err
+    assert "after 4 attempts" not in captured.err
+    mock_get.assert_called_once()
+    mock_sleep.assert_not_called()
+
+
+@patch(SLEEP)
+@patch("deploy.http_retry.requests.get")
+def test_cli_fetch_reports_exhausted_timeouts(mock_get, mock_sleep, capsys):
+    mock_get.side_effect = requests.Timeout("read timed out")
+    url = "https://api.github.com/repos/example/repo/releases/latest"
+    assert main(["fetch", url]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "after 4 attempts" in captured.err
+    assert mock_sleep.call_args_list == [((1,),), ((2,),), ((4,),)]
+
+
+@patch(SLEEP)
+@patch("deploy.http_retry.requests.get")
+def test_cli_fetch_sends_token_and_extra_accept_header(mock_get, mock_sleep, monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "secret-token")
+    mock_get.return_value = _Bytes(b"{}")
+    assert main([
+        "fetch",
+        "-H",
+        "Accept: application/vnd.github+json",
+        "https://api.github.com/repos/org/repo/releases/latest",
+    ]) == 0
+    headers = mock_get.call_args.kwargs["headers"]
+    assert headers["Authorization"] == "Bearer secret-token"
+    assert headers["Accept"] == "application/vnd.github+json"
+    mock_sleep.assert_not_called()
+
+
+@patch(SLEEP)
+@patch("deploy.http_retry.requests.get")
+def test_cli_download_keeps_the_previous_file_on_404(mock_get, mock_sleep, tmp_path, capsys):
+    mock_get.return_value = _Bytes(b"nope", status=404)
+    dest = tmp_path / "besu.tar.gz"
+    dest.write_bytes(b"previous-good")
+    url = "https://github.com/besu-eth/besu/releases/download/26.10.2/besu.tar.gz"
+    assert main(["download", url, str(dest)]) == 1
+    assert dest.read_bytes() == b"previous-good"
+    assert not (tmp_path / "besu.tar.gz.partial").exists()
+    err = capsys.readouterr().err
+    assert "HTTP 404" in err
+    mock_get.assert_called_once()
+    mock_sleep.assert_not_called()
+    assert "Authorization" not in mock_get.call_args.kwargs["headers"]
+
+
+@patch(SLEEP)
+@patch("deploy.http_retry.requests.get")
+def test_cli_download_replaces_dest_only_after_the_full_body(mock_get, mock_sleep, tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "secret-token")
+    payload = b"full-archive"
+    mock_get.side_effect = [
+        _Body(b"", fail_after=b"partial"),
+        _Bytes(payload),
+    ]
+    dest = tmp_path / "mev-boost.tar.gz"
+    dest.write_bytes(b"old-good")
+    url = "https://github.com/flashbots/mev-boost/releases/download/v1.12/mev-boost.tar.gz"
+    assert main(["download", url, str(dest)]) == 0
+    assert dest.read_bytes() == payload
+    assert not (tmp_path / "mev-boost.tar.gz.partial").exists()
+    assert mock_get.call_count == 2
+    assert "Authorization" not in mock_get.call_args.kwargs["headers"]
+    mock_sleep.assert_called_once_with(1)

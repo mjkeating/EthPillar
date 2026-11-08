@@ -38,18 +38,18 @@ function upgradeBinaries(){
 
 # Gets latest tag
 function getLatestVersion(){
-	TAG=$(curl -s $GITHUB_URL | jq -r .tag_name )
+	TAG=$(github_curl "$GITHUB_URL" | jq -r .tag_name )
 	# Exit in case of null tag
 	[[ -z $TAG ]] || [[ $TAG == "null"  ]] && echo "ERROR: Couldn't find the latest version tag" && exit 1
 }
 
 # Downloads latest release
 function downloadClient(){
-	BINARIES_URL="$(curl -s $GITHUB_URL | jq -r ".assets[] | select(.name) | .browser_download_url" | grep --ignore-case ${RELEASE_SUFFIX})"
+	BINARIES_URL="$(github_curl "$GITHUB_URL" | jq -r ".assets[] | select(.name) | .browser_download_url" | grep --ignore-case ${RELEASE_SUFFIX})"
 	echo Downloading URL: $BINARIES_URL
 	cd $HOME
 	# Download
-	wget -O $APP_NAME.tar.gz $BINARIES_URL
+	github_download "$BINARIES_URL" "$APP_NAME.tar.gz" || exit 1
 	# Untar
 	tar -xzvf $APP_NAME.tar.gz -C $HOME
 	# Cleanup

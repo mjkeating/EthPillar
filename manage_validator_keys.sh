@@ -55,7 +55,7 @@ function downloadEthstakerDepositCli(){
     trap 'rm -rf "$TEMP_DIR"' EXIT
 
     # Download
-    if ! curl -fSL "$BINARIES_URL" -o "${TEMP_DIR}/${BINARY_FILE}"; then
+    if ! github_download "$BINARIES_URL" "${TEMP_DIR}/${BINARY_FILE}"; then
         echo "ERROR: Unable to download $BINARIES_URL" >&2
         exit 1
     fi

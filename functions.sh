@@ -20,6 +20,10 @@ set -o history -o histexpand
 # Load BN and EL ENDPOINTS (integration tests may set ETHPILLAR_ENV_FILE to a sidecar env)
 source "${ETHPILLAR_ENV_FILE:-./env}"
 
+# GitHub download retries (release assets, API lookups, raw.githubusercontent).
+# shellcheck disable=SC1091
+source "${BASE_DIR}/helpers/github_fetch.sh"
+
 # Stores validator index
 declare -a INDICES
 
@@ -2826,7 +2830,14 @@ testBandwidth(){
     echo "################################################################"
     ohai "Requirements: A full node uses at least 10Mbit/s upload and 10Mbit/s download."
     ohai "Starting speedtest ..."
-    curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python3 -
+    local _speedtest
+    _speedtest=$(mktemp)
+    if github_download "https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py" "$_speedtest"; then
+        python3 "$_speedtest" || true
+    else
+        echo "ERROR: Unable to download speedtest." >&2
+    fi
+    rm -f -- "$_speedtest" "${_speedtest}.partial"
     ohai "Press ENTER to continue"
     read
 }

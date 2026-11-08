@@ -47,7 +47,7 @@ function _getLatestVersion(){
   TAG_URL="https://api.github.com/repos/status-im/nimbus-eth2/releases/latest"
   CHANGES_URL="https://github.com/status-im/nimbus-eth2/releases"
   #Get tag name and remove leading 'v'
-  TAG=$(curl -s $TAG_URL | jq -r .tag_name | sed 's/.*\(v[0-9]*\.[0-9]*\.[0-9]*\).*/\1/')
+  TAG=$(github_curl "$TAG_URL" | jq -r .tag_name | sed 's/.*\(v[0-9]*\.[0-9]*\.[0-9]*\).*/\1/')
   # Exit in case of null tag
   [[ -z $TAG ]] || [[ $TAG == "null"  ]] && echo "ERROR: Couldn't find the latest version tag" && exit 1
 }
@@ -87,10 +87,10 @@ function _removeAll() {
 function _downloadBinaries(){
 		#Download and installbinaries
 		RELEASE_URL="https://api.github.com/repos/status-im/nimbus-eth2/releases/latest"
-		BINARIES_URL="$(curl -s $RELEASE_URL | jq -r ".assets[] | select(.name) | .browser_download_url" | grep --ignore-case "_${_platform}_${_arch}.*.tar.gz$")"
+		BINARIES_URL="$(github_curl "$RELEASE_URL" | jq -r ".assets[] | select(.name) | .browser_download_url" | grep --ignore-case "_${_platform}_${_arch}.*.tar.gz$")"
 		echo Downloading URL: $BINARIES_URL
 		cd $HOME
-		wget -O nimbus.tar.gz $BINARIES_URL
+		github_download "$BINARIES_URL" nimbus.tar.gz || exit 1
 		if [ ! -f nimbus.tar.gz ]; then
 			echo "Error: Downloading nimbus archive failed!"
 			exit 1

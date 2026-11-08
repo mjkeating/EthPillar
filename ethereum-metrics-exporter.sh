@@ -46,18 +46,18 @@ function promptViewLogs(){
 
 # Gets latest tag of ethereum-metrics-exporter
 function getLatestVersion(){
-  TAG=$(curl -s $GITHUB_URL | jq -r .tag_name )
+  TAG=$(github_curl "$GITHUB_URL" | jq -r .tag_name )
   # Exit in case of null tag
   [[ -z $TAG ]] || [[ $TAG == "null"  ]] && echo "ERROR: Couldn't find the latest version tag" && exit 1
 }
 
 # Downloads latest release of ethereum-metrics-exporter
 function downloadClient(){
-	BINARIES_URL="$(curl -s "$GITHUB_URL" | jq -r ".assets[] | select(.name) | .browser_download_url" | grep --ignore-case "${_platform}"_"${_arch}".tar.gz$)"
+	BINARIES_URL="$(github_curl "$GITHUB_URL" | jq -r ".assets[] | select(.name) | .browser_download_url" | grep --ignore-case "${_platform}"_"${_arch}".tar.gz$)"
 	echo Downloading URL: "$BINARIES_URL"
 	cd "$HOME" || true
 	# Download
-	wget -O ethereum-metrics-exporter.tar.gz "$BINARIES_URL"
+	github_download "$BINARIES_URL" ethereum-metrics-exporter.tar.gz || exit 1
 	# Untar
 	tar -xzvf ethereum-metrics-exporter.tar.gz -C "$HOME"
 	# Cleanup

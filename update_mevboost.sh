@@ -33,7 +33,7 @@ function getCurrentVersion(){
 function selectCustomTag(){
 	local _listTags _tag
 	# Published releases only — git tags like v1.11.0 may exist without release assets.
-	_listTags=$(curl -fsSL "https://api.github.com/repos/flashbots/mev-boost/releases?per_page=100" \
+	_listTags=$(github_curl "https://api.github.com/repos/flashbots/mev-boost/releases?per_page=100" \
 		| jq -r '.[] | select(.draft == false) | .tag_name' | sort -Vr)
 	if [ -z "$_listTags" ]; then
 		error "❌ Could not retrieve releases. Try again later."

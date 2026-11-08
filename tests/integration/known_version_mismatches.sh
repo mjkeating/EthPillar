@@ -2,7 +2,9 @@
 # Known upstream packaging bugs where GitHub release tag != binary --version.
 # Sourced by check_client_versions.sh (integration verify) and bats unit tests.
 # Entries live in known_failures.yaml (kind: version_mismatch); this wrapper
-# keeps the bash call site stable.
+# keeps the bash call site stable. Set ETHPILLAR_KNOWN_FAILURES_PATH to load
+# a different registry (unit/bats fixtures). The variable is inherited by the
+# Python loader; this wrapper does not read the live file itself.
 #
 # shellcheck source=ethpillar_test_python.sh
 source "$(dirname "${BASH_SOURCE[0]}")/ethpillar_test_python.sh"

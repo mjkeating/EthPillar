@@ -38,5 +38,4 @@ setup() {
     "$ETHPILLAR_TEST_PYTHON" "$BATS_TEST_DIRNAME/integration/known_failures.py" list
   [ "$status" -eq 0 ]
   [[ "$output" == *"grandine-2.0.6-reports-2.0.5"* ]]
-  [[ "$output" == *"nimbus-hoodi-genesis-buffer-limit"* ]]
 }

@@ -7,24 +7,6 @@
 #   version_mismatch — installed vs expected tag pair (see check_client_versions.sh)
 version: 1
 entries:
-  - id: nimbus-hoodi-genesis-buffer-limit
-    cells:
-      - Nimbus-Nethermind_HOODI
-    clients:
-      - nimbus
-    networks:
-      - HOODI
-    match:
-      kind: log_substring
-      pattern: "Could not read response headers: Buffer limit reached"
-    issue: https://github.com/status-im/nimbus-eth2/issues/9362
-    added: "2026-10-24"
-    reason: >
-      GitHub started sending ~11 KB response headers (incl. ~9 KB CSP);
-      Nimbus's HTTP client buffer overflows when downloading
-      hoodi-genesis.ssz.sz from GitHub releases. trustedNodeSync
-      ExecStartPre fails so consensus never starts.
-
   - id: grandine-2.0.6-reports-2.0.5
     clients:
       - grandine

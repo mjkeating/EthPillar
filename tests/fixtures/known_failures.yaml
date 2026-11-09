@@ -1,0 +1,45 @@
+# Synthetic known-failures registry for unit and bats tests.
+# Ids in this file must never appear in tests/integration/known_failures.yaml.
+# Point ETHPILLAR_KNOWN_FAILURES_PATH here (or pass the path to load_registry)
+# so matcher, all-clear, and list tests do not depend on live entries.
+version: 1
+entries:
+  - id: fixture-log-substring-marker
+    cells:
+      - FixtureCL-FixtureEL_FIXTURENET
+    clients:
+      - fixturecl
+    networks:
+      - FIXTURENET
+    match:
+      kind: log_substring
+      pattern: "fixture-signature: marker-reached"
+    issue: https://example.invalid/fixture/issues/101
+    added: "2026-01-01"
+    reason: >
+      Synthetic log substring used only by unit tests.
+
+  - id: fixture-log-regex-marker
+    cells:
+      - FixtureCL-FixtureEL_FIXTURENET
+    clients:
+      - fixturecl
+    match:
+      kind: log_regex
+      pattern: "fixture-regex: code=[0-9]+"
+    added: "2026-01-01"
+    reason: >
+      Synthetic log regex used only by unit tests.
+
+  - id: fixture-version-closed-unfixed
+    clients:
+      - fixturevm
+    match:
+      kind: version_mismatch
+      installed: "9.9.1"
+      expected: "9.9.2"
+    issue: https://example.invalid/fixture/issues/202
+    issue_closed_unfixed: true
+    added: "2026-01-01"
+    reason: >
+      Synthetic version pair whose issue was closed without a fix.

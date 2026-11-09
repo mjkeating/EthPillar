@@ -4,6 +4,11 @@ Reads :file:`known_failures.yaml`. Used by:
   - ``check_client_versions.sh`` / ``known_version_mismatches.sh`` (version pairs)
   - ``run_docker_tests.py`` (classify FAIL logs, emit GHA annotations, step summary)
   - soft-skip / live-skip call sites via :func:`emit_ci_notice`
+
+``load_registry`` uses an explicit path when one is passed. Otherwise
+``ETHPILLAR_KNOWN_FAILURES_PATH`` selects the file, and the shipped registry
+next to this module is the default. Unit and bats tests point that variable
+at ``tests/fixtures/known_failures.yaml``.
 """
 from __future__ import annotations
 
@@ -17,6 +22,8 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 REGISTRY_PATH = Path(__file__).resolve().parent / "known_failures.yaml"
+# Set to a fixture (or any other YAML file) to override REGISTRY_PATH.
+REGISTRY_PATH_ENV = "ETHPILLAR_KNOWN_FAILURES_PATH"
 NOTICE_PREFIX = "ETHPILLAR_CI_NOTICE"
 
 
@@ -120,8 +127,27 @@ def _network_mentioned(cell: str, network: str) -> bool:
     return net in cell.upper().replace("-", "_")
 
 
+def resolve_registry_path(path: Path | str | None = None) -> Path:
+    """Return the registry file to load.
+
+    An explicit *path* wins over ``ETHPILLAR_KNOWN_FAILURES_PATH``. A blank
+    override is ignored so an empty environment variable still selects the
+    shipped registry.
+    """
+    if path is not None and str(path).strip():
+        return Path(path)
+    override = os.environ.get(REGISTRY_PATH_ENV, "").strip()
+    if override:
+        return Path(override)
+    return REGISTRY_PATH
+
+
 def load_registry(path: Path | str | None = None) -> list[KnownFailureEntry]:
     """Load and normalize known-failure entries from YAML.
+
+    Args:
+        path: Registry file. When omitted, :func:`resolve_registry_path`
+            applies (environment override, then the shipped file).
 
     Raises:
         ImportError: When PyYAML is missing. Callers must not treat this as an
@@ -135,7 +161,7 @@ def load_registry(path: Path | str | None = None) -> list[KnownFailureEntry]:
             "use the project .venv (ETHPILLAR_PYTHON) or install python3-yaml"
         ) from exc
 
-    registry = Path(path) if path else REGISTRY_PATH
+    registry = resolve_registry_path(path)
     raw = yaml.safe_load(registry.read_text(encoding="utf-8")) or {}
     entries: list[KnownFailureEntry] = []
     for item in raw.get("entries") or []:
@@ -181,7 +207,11 @@ def version_mismatch_is_known(
 
 
 def known_upstream_version_mismatch(client: str, installed: str, expected: str) -> bool:
-    """Bash-compatible bool: True when the installed/expected pair is tracked."""
+    """Bash-compatible bool: True when the installed/expected pair is tracked.
+
+    Reads the registry selected by :func:`resolve_registry_path` (shipped file
+    or ``ETHPILLAR_KNOWN_FAILURES_PATH``).
+    """
     return version_mismatch_is_known(client, installed, expected) is not None
 
 
@@ -538,7 +568,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not args or args[0] in {"-h", "--help"}:
         print(
             "Usage: known_failures.py version-mismatch CLIENT INSTALLED EXPECTED\n"
-            "       known_failures.py list",
+            "       known_failures.py list\n"
+            f"Registry: ${REGISTRY_PATH_ENV} or {REGISTRY_PATH}",
             file=sys.stderr,
         )
         return 2

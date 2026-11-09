@@ -3,13 +3,16 @@ import sys
 import re
 import hashlib
 import platform
+import shutil
 import subprocess
 import requests
 import json
 import tarfile
 import tempfile
 from consolemenu import PromptUtils, Screen
-from typing import Optional, List
+from typing import Callable, Optional, List
+
+from deploy import http_retry
 import glob
 INSTALL_DIR = "/usr/local/bin"
 DOWNLOAD_DIR = "/tmp"
@@ -150,14 +153,38 @@ def setup_client_user_and_dir(user: str, client_name: str) -> None:
     subprocess.run(["sudo", "chown", "-R", f"{user}:{user}", data_dir], check=True)
 
 
-def _reject_download(dest_path: str, message: str) -> None:
-    """Delete a failed download and stop the install."""
+def _remove_file(path: str) -> None:
+    """Remove ``path`` if it exists. Ignore races and permission errors."""
     try:
-        os.remove(dest_path)
+        os.remove(path)
     except OSError:
         pass
+
+
+def _reject_download(dest_path: str, message: str) -> None:
+    """Delete a file that must not be installed, then stop the install."""
+    _remove_file(dest_path)
     print(message)
     exit(1)
+
+
+def _fail_download(message: str) -> None:
+    """Stop the install. Does not delete a destination that was never replaced."""
+    print(message)
+    exit(1)
+
+
+class ChecksumMismatch(Exception):
+    """Downloaded bytes do not match the published checksum. Not retried."""
+
+
+def github_get(url: str, **kwargs):
+    """GET a GitHub URL with :func:`deploy.http_retry.get_with_retry`.
+
+    ``requests.get`` is resolved in this module so tests can patch it.
+    Release-asset callers must not put a GitHub API token in ``headers``.
+    """
+    return http_retry.get_with_retry(requests.get, url, **kwargs)
 
 
 # Pinned OpenPGP keys for detached signatures. Fingerprints are compared after
@@ -273,6 +300,48 @@ def verify_detached_signature(payload_path: str, signature_path: str, key_name: 
             raise ValueError(f"OpenPGP signature rejected. {detail}")
 
 
+def stream_download(
+    url: str,
+    dest_path: str,
+    *,
+    label: str = "file",
+    show_progress: bool = True,
+    on_attempt: Optional[Callable[[], None]] = None,
+    on_chunk: Optional[Callable[[bytes], None]] = None,
+    before_commit: Optional[Callable[[], None]] = None,
+) -> None:
+    """Download ``url`` to ``dest_path`` with the shared retry policy.
+
+    Delegates to :func:`deploy.http_retry.download_to_path`. ``requests.get`` is
+    passed from this module so tests can patch it. ``before_commit`` may raise
+    :class:`ChecksumMismatch`; that is not retried.
+
+    Args:
+        url: URL to download.
+        dest_path: Final file path.
+        label: Text included in errors and the progress display.
+        show_progress: Draw a byte progress bar when tqdm is used.
+        on_attempt: Called at the start of every attempt (reset checksum state).
+        on_chunk: Called with each non-empty body chunk of the current attempt.
+        before_commit: Called after a complete body is on disk, before rename.
+
+    Raises:
+        http_retry.AttemptsExhausted: Every attempt failed with a retryable error.
+        requests.RequestException: A non-retryable HTTP or network error.
+        ChecksumMismatch: ``before_commit`` rejected the body.
+    """
+    http_retry.download_to_path(
+        url,
+        dest_path,
+        label=label,
+        show_progress=show_progress,
+        on_attempt=on_attempt,
+        on_chunk=on_chunk,
+        before_commit=before_commit,
+        get=requests.get,
+    )
+
+
 def download_file(
     url: str,
     dest_path: str,
@@ -284,8 +353,10 @@ def download_file(
 ) -> None:
     """Download a file with a progress bar and verify a published checksum.
 
-    When ``expected_sha256`` or ``expected_md5`` is set, the digest is computed
-    while the body is written. A mismatch deletes the file and exits.
+    Transient failures (timeouts, connection errors, HTTP 429, and HTTP 5xx)
+    retry inside :func:`stream_download`. A checksum or signature mismatch is
+    never retried and never ignored: the partial download is removed and the
+    install stops. HTTP 404 and other 4xx also stop on the first attempt.
 
     Args:
         url: The URL to download from.
@@ -296,49 +367,60 @@ def download_file(
         signature_url: Detached signature to check after the checksum matches.
         signature_key: Name of a pinned public key in :data:`_SIGNATURE_KEYS`.
     """
-    from tqdm import tqdm
     print(f">> Downloading {label} > URL: {url}")
+    filename = os.path.basename(dest_path)
     sha256 = hashlib.sha256() if expected_sha256 else None
     md5 = hashlib.md5() if expected_md5 else None
+
+    def _reset_digests() -> None:
+        nonlocal sha256, md5
+        sha256 = hashlib.sha256() if expected_sha256 else None
+        md5 = hashlib.md5() if expected_md5 else None
+
+    def _update_digests(chunk: bytes) -> None:
+        if sha256 is not None:
+            sha256.update(chunk)
+        if md5 is not None:
+            md5.update(chunk)
+
+    def _verify_digests() -> None:
+        if expected_sha256:
+            actual = sha256.hexdigest() if sha256 is not None else ""
+            if actual != expected_sha256.lower():
+                raise ChecksumMismatch(
+                    f"Error: SHA-256 mismatch for {filename}.\n"
+                    f"  expected {expected_sha256.lower()}\n"
+                    f"  actual   {actual}"
+                )
+        if expected_md5:
+            actual = md5.hexdigest() if md5 is not None else ""
+            if actual != expected_md5.lower():
+                raise ChecksumMismatch(
+                    f"Error: MD5 mismatch for {filename}.\n"
+                    f"  expected {expected_md5.lower()}\n"
+                    f"  actual   {actual}"
+                )
+
     try:
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
-        total_size = int(response.headers.get('content-length', 0))
-        block_size = 1024 * 64
-        t = tqdm(total=total_size, unit='B', unit_scale=True)
+        stream_download(
+            url,
+            dest_path,
+            label=label,
+            on_attempt=_reset_digests,
+            on_chunk=_update_digests,
+            before_commit=_verify_digests if (expected_sha256 or expected_md5) else None,
+        )
+    except ChecksumMismatch as exc:
+        _fail_download(str(exc))
+    except http_retry.AttemptsExhausted as exc:
+        _fail_download(
+            f"Error: Unable to download {label} after {exc.attempts} attempts. {exc.last}"
+        )
+    except requests.RequestException as exc:
+        _fail_download(f"Error: Unable to download {label}. {exc}")
+    except OSError as exc:
+        _fail_download(f"Error: Unable to download {label}. {exc}")
 
-        with open(dest_path, "wb") as f:
-            for chunk in response.iter_content(block_size):
-                if chunk:
-                    t.update(len(chunk))
-                    f.write(chunk)
-                    if sha256 is not None:
-                        sha256.update(chunk)
-                    if md5 is not None:
-                        md5.update(chunk)
-        t.close()
-    except requests.exceptions.RequestException as e:
-        _reject_download(dest_path, f"Error: Unable to download file. Try again later. {e}")
-
-    filename = os.path.basename(dest_path)
-    if expected_sha256:
-        actual = sha256.hexdigest() if sha256 is not None else ""
-        if actual != expected_sha256.lower():
-            _reject_download(
-                dest_path,
-                f"Error: SHA-256 mismatch for {filename}.\n"
-                f"  expected {expected_sha256.lower()}\n"
-                f"  actual   {actual}",
-            )
-    if expected_md5:
-        actual = md5.hexdigest() if md5 is not None else ""
-        if actual != expected_md5.lower():
-            _reject_download(
-                dest_path,
-                f"Error: MD5 mismatch for {filename}.\n"
-                f"  expected {expected_md5.lower()}\n"
-                f"  actual   {actual}",
-            )
     if expected_sha256 or expected_md5:
         algorithms = []
         if expected_sha256:
@@ -351,18 +433,20 @@ def download_file(
             _reject_download(dest_path, f"Error: no pinned public key for the {filename} signature.")
         sig_path = dest_path + ".asc"
         try:
-            sig_response = requests.get(signature_url, headers={"User-Agent": "ethpillar"}, timeout=60)
+            sig_response = github_get(signature_url, headers={"User-Agent": http_retry.USER_AGENT})
             sig_response.raise_for_status()
             with open(sig_path, "wb") as handle:
                 handle.write(sig_response.content)
             verify_detached_signature(dest_path, sig_path, signature_key)
+        except http_retry.AttemptsExhausted as exc:
+            _reject_download(
+                dest_path,
+                f"Error: signature verification failed for {filename} after {exc.attempts} attempts. {exc.last}",
+            )
         except (requests.RequestException, ValueError, OSError) as exc:
             _reject_download(dest_path, f"Error: signature verification failed for {filename}. {exc}")
         finally:
-            try:
-                os.remove(sig_path)
-            except OSError:
-                pass
+            _remove_file(sig_path)
         print(f">> Signature verified: {filename}")
     print(f">> Successfully downloaded: {filename}")
 
@@ -652,12 +736,16 @@ def setup_ephemery_network(genesis_repository: str) -> None:
 
     def get_github_release(repo: str) -> Optional[str]:
         url = f"https://api.github.com/repos/{repo}/releases/latest"
-        response = requests.get(url)
+        try:
+            response = github_get(url, headers=_github_api_headers())
+        except (http_retry.AttemptsExhausted, requests.RequestException) as exc:
+            print(f"Failed to retrieve genesis release for {repo}: {exc}")
+            return None
         if response.status_code == 200:
             data = json.loads(response.text)
             return data.get('tag_name')
-        else:
-            return None
+        print(f"Failed to retrieve genesis release for {repo}: HTTP {response.status_code}")
+        return None
 
     def download_genesis_release(genesis_release: str) -> None:
         # remove old genesis and setup dir
@@ -669,15 +757,19 @@ def setup_ephemery_network(genesis_repository: str) -> None:
         # get latest genesis
         url = f"https://github.com/{genesis_repository}/releases/download/{genesis_release}/testnet-all.tar.gz"
         print(f">> Downloading {genesis_release} genesis files > URL: {url}")
-        response = requests.get(url, stream=True)
-        if response.status_code == 200:
-            temp_dir = tempfile.mkdtemp()
-            with tarfile.open(fileobj=response.raw, mode='r|gz') as tar:
-                tar.extractall(f"{temp_dir}")
+        temp_dir = tempfile.mkdtemp()
+        archive = os.path.join(temp_dir, "testnet-all.tar.gz")
+        try:
+            stream_download(url, archive, label=f"{genesis_release} genesis files")
+            with tarfile.open(archive, "r:gz") as tar:
+                tar.extractall(temp_dir)
+            os.remove(archive)
             subprocess.run(['sudo', 'sh', '-c', f'mv {temp_dir}/* {testnet_dir}'], check=True)
             print(f">> Successfully downloaded {genesis_release} genesis files")
-        else:
-            print("Failed to download genesis release")
+        except (http_retry.AttemptsExhausted, requests.RequestException, OSError, tarfile.TarError, EOFError) as exc:
+            print(f"Failed to download genesis release: {exc}")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     genesis_release = get_github_release(genesis_repository)
     if genesis_release:
@@ -1334,7 +1426,7 @@ def _github_release_tag_candidates(version_tag: str) -> list[str]:
 def _fetch_github_release_by_tag(repo: str, tag: str) -> Optional[dict]:
     """Return release JSON for *tag*, or ``None`` when no published release exists."""
     url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
-    res = requests.get(url, headers=_github_api_headers(), timeout=30)
+    res = github_get(url, headers=_github_api_headers())
     if res.status_code == 404:
         return None
     res.raise_for_status()
@@ -1347,7 +1439,7 @@ def _find_github_release_by_normalized_tag(repo: str, version_tag: str) -> Optio
     page = 1
     while page <= 10:
         url = f"https://api.github.com/repos/{repo}/releases?per_page=100&page={page}"
-        res = requests.get(url, headers=_github_api_headers(), timeout=30)
+        res = github_get(url, headers=_github_api_headers())
         res.raise_for_status()
         releases = res.json()
         if not releases:
@@ -1373,7 +1465,7 @@ def get_github_release(repo: str, version_tag: str) -> dict:
     """
     if version_tag.upper() == "LATEST":
         url = f"https://api.github.com/repos/{repo}/releases/latest"
-        res = requests.get(url, headers=_github_api_headers(), timeout=30)
+        res = github_get(url, headers=_github_api_headers())
         res.raise_for_status()
         release = res.json()
     else:
@@ -1388,7 +1480,7 @@ def get_github_release(repo: str, version_tag: str) -> dict:
 
         if release is None:
             url = f"https://api.github.com/repos/{repo}/releases/tags/{version_tag}"
-            res = requests.get(url, headers=_github_api_headers(), timeout=30)
+            res = github_get(url, headers=_github_api_headers())
             res.raise_for_status()
             release = res.json()
 
@@ -1412,7 +1504,7 @@ def get_github_tag_commit(repo: str, tag_name: str) -> Optional[str]:
         return None
     try:
         ref_url = f"https://api.github.com/repos/{repo}/git/refs/tags/{tag}"
-        res = requests.get(ref_url, headers=_github_api_headers(), timeout=30)
+        res = github_get(ref_url, headers=_github_api_headers())
         if res.status_code == 404:
             return None
         res.raise_for_status()
@@ -1432,12 +1524,13 @@ def get_github_tag_commit(repo: str, tag_name: str) -> Optional[str]:
             return obj_sha
         if obj_type == "tag":
             tag_url = obj.get("url") or f"https://api.github.com/repos/{repo}/git/tags/{obj_sha}"
-            tag_res = requests.get(tag_url, headers=_github_api_headers(), timeout=30)
+            tag_res = github_get(tag_url, headers=_github_api_headers())
             tag_res.raise_for_status()
             peeled = (tag_res.json().get("object") or {}).get("sha")
             return peeled or None
         return None
-    except (requests.RequestException, ValueError, TypeError, KeyError):
+    except (requests.RequestException, ValueError, TypeError, KeyError) as exc:
+        print(f"Warning: could not resolve commit for {repo}@{tag}: {exc}", file=sys.stderr)
         return None
 
 
@@ -1471,10 +1564,15 @@ def _parse_sha256_checksum_text(text: str, filename: str) -> str:
 
 
 def _sha256_from_sidecar(url: str, filename: str) -> str:
-    """Download a checksum sidecar and return the SHA-256 it publishes."""
+    """Download a checksum sidecar and return the SHA-256 it publishes.
+
+    Timeouts, connection errors, HTTP 429, and HTTP 5xx are retried. A missing
+    sidecar (HTTP 404) or any other 4xx fails immediately. The parsed digest is
+    still required; a failed download is never treated as "no checksum".
+    """
     try:
         # Release asset URLs reject a GitHub API token (401). User-Agent only.
-        response = requests.get(url, headers={"User-Agent": "ethpillar"}, timeout=30)
+        response = github_get(url, headers={"User-Agent": "ethpillar"})
         response.raise_for_status()
     except requests.RequestException as exc:
         raise ValueError(f"Could not download checksum sidecar for {filename}: {exc}") from exc

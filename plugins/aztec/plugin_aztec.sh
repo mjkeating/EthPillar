@@ -10,6 +10,9 @@ set -euo pipefail
 
 SOURCE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+# shellcheck disable=SC1091
+source "$SOURCE_DIR/../../helpers/github_fetch.sh"
+
 # Variables
 RELEASE_URL="https://api.github.com/repos/AztecProtocol/aztec-packages/releases/latest"
 DESCRIPTION="🪿 Aztec Sequencer Node: a privacy first L2 on Ethereum by Aztec Labs"
@@ -50,7 +53,7 @@ function get_arch(){
 
 # Gets latest tag
 function getLatestVersion(){
-  TAG=$(curl -s $RELEASE_URL | jq -r .tag_name )
+  TAG=$(github_curl "$RELEASE_URL" | jq -r .tag_name )
   if [[ -z "$TAG" ]]; then error "Failed to fetch latest version"; fi
 }
 
@@ -68,12 +71,12 @@ function install_docker() {
 function install_foundry() {
   _architecture=$(get_arch)
   RELEASE_URL="https://api.github.com/repos/foundry-rs/foundry/releases/latest"
-  BINARIES_URL="$(curl -s "$RELEASE_URL" | jq -r ".assets[] | select(.name) | .browser_download_url" | grep --ignore-case alpine_"${_architecture}".tar.gz$)"
+  BINARIES_URL="$(github_curl "$RELEASE_URL" | jq -r ".assets[] | select(.name) | .browser_download_url" | grep --ignore-case alpine_"${_architecture}".tar.gz$)"
   echo Downloading URL: "$BINARIES_URL"
   cd "$HOME" || true
   tmpdir=$(mktemp -d)
   cd "$tmpdir" || error "Unable to change to tmpdir"
-  wget -O foundry.tar.gz "$BINARIES_URL"
+  github_download "$BINARIES_URL" foundry.tar.gz || error "Unable to download foundry archive"
   if [ ! -f foundry.tar.gz ]; then
     echo "Error: Downloading foundry archive failed!"
     exit 1

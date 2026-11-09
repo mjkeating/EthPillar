@@ -10,6 +10,10 @@ import urllib.request
 from pathlib import Path
 from typing import List, Optional, Union
 
+import requests
+
+from deploy.http_retry import AttemptsExhausted, is_github_host, read_url_bytes
+
 GRAFANA_INI_PATH = Path("/etc/grafana/grafana.ini")
 DEFAULT_GRAFANA_HTTP_PORT = 3000
 DEFAULT_GRAFANA_DASHBOARDS = Path("/etc/grafana/provisioning/dashboards")
@@ -275,16 +279,30 @@ def ensure_prometheus_datasource_uid(datasources_yml: Path) -> bool:
 def download_grafana_dashboard(dest: Path, url: str) -> None:
     """Download a Grafana dashboard JSON to ``dest``.
 
+    Dashboards hosted on GitHub (``raw.githubusercontent.com``, gist raw URLs)
+    retry timeouts, connection errors, HTTP 429, and HTTP 5xx. Other hosts,
+    including grafana.com, stay a single attempt.
+
     Args:
         dest: Local path to write the JSON file.
         url: HTTP URL of the dashboard JSON.
 
     Raises:
-        RuntimeError: When the download returns an empty body.
+        RuntimeError: When the download fails or returns an empty body.
     """
-    req = urllib.request.Request(url, headers={"User-Agent": "ethpillar"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = resp.read()
+    if is_github_host(url):
+        try:
+            data = read_url_bytes(requests.get, url, headers={"User-Agent": "ethpillar"})
+        except AttemptsExhausted as exc:
+            raise RuntimeError(
+                f"Failed to download Grafana dashboard from {url} after {exc.attempts} attempts: {exc.last}"
+            ) from exc
+        except requests.RequestException as exc:
+            raise RuntimeError(f"Failed to download Grafana dashboard from {url}: {exc}") from exc
+    else:
+        req = urllib.request.Request(url, headers={"User-Agent": "ethpillar"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = resp.read()
     if not data:
         raise RuntimeError(f"Empty response downloading Grafana dashboard from {url}")
     write_privileged_file(dest, data)

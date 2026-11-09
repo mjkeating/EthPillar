@@ -24,7 +24,7 @@ function getCurrentVersion(){
 
 function selectCustomTag(){
 	local _listTags _tag
-	_listTags=$(curl -fsSL "https://api.github.com/repos/Consensys-Incorporated/web3signer/releases?per_page=100" \
+	_listTags=$(github_curl "https://api.github.com/repos/Consensys-Incorporated/web3signer/releases?per_page=100" \
 		| jq -r '.[] | select(.draft == false) | .tag_name' | sort -Vr)
 	if [ -z "$_listTags" ]; then
 		error "❌ Could not retrieve releases. Try again later."

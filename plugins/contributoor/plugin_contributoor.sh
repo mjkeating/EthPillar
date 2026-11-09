@@ -9,6 +9,9 @@
 
 SOURCE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+# shellcheck disable=SC1091
+source "$SOURCE_DIR/../../helpers/github_fetch.sh"
+
 # Variables
 RELEASE_URL="https://api.github.com/repos/ethpandaops/contributoor/releases/latest"
 GITHUB_RELEASE_NODES="https://github.com/ethpandaops/contributoor/releases"
@@ -24,18 +27,18 @@ SERVICE_FILE="/etc/systemd/system/contributoor.service"
 
 # Gets latest tag
 function getLatestVersion(){
-  TAG=$(curl -s $RELEASE_URL | jq -r .tag_name )
+  TAG=$(github_curl "$RELEASE_URL" | jq -r .tag_name )
 }
 
 # Downloads latest release
 function downloadClient(){
-  json=$(curl -s $RELEASE_URL) || true
+  json=$(github_curl "$RELEASE_URL") || exit 1
   BINARIES_URL=$(echo "$json" | jq -r ".assets[] | select(.name) | .browser_download_url" | grep --ignore-case "${_platform}"_"${_arch}")
   echo Downloading URL: "$BINARIES_URL"
   # Make temporary directory
   TEMP_DIR=$(mktemp -d)
   # Download
-  wget -O "$TEMP_DIR"/$APP_NAME.tar.gz "$BINARIES_URL"
+  github_download "$BINARIES_URL" "$TEMP_DIR/$APP_NAME.tar.gz" || exit 1
   # Untar
   tar -xzvf "$TEMP_DIR"/$APP_NAME.tar.gz -C "$TEMP_DIR"
   # Install binary

@@ -9,6 +9,9 @@
 
 SOURCE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+# shellcheck disable=SC1091
+source "$SOURCE_DIR/../../helpers/github_fetch.sh"
+
 # Variables
 RELEASE_URL="https://api.github.com/repos/TobiWo/eth-valctl/releases/latest"
 GITHUB_RELEASE_NODES="https://github.com/TobiWo/eth-valctl/releases"
@@ -21,7 +24,7 @@ PLUGIN_SOURCE_PATH="$SOURCE_DIR"
 
 # Gets latest tag
 function getLatestVersion(){
-  TAG=$(curl -s $RELEASE_URL | jq -r .tag_name )
+  TAG=$(github_curl "$RELEASE_URL" | jq -r .tag_name )
   if [[ -z "$TAG" ]]; then echo "Failed to fetch latest version"; exit 1; fi
 }
 
@@ -34,7 +37,7 @@ function downloadClient(){
     echo "Unsupported architecture: $_arch"
     exit 1
   fi
-  json=$(curl -s $RELEASE_URL) || true
+  json=$(github_curl "$RELEASE_URL") || exit 1
   BINARIES_URL=$(echo "$json" | jq -r ".assets[] | select(.name) | .browser_download_url" | grep --ignore-case "${_platform}"-"${_custom}")
   if [[ -z "$BINARIES_URL" ]]; then
     echo "Error: No download URL found for ${_platform}-${_custom}"
@@ -44,7 +47,7 @@ function downloadClient(){
   # Make temporary directory
   TEMP_DIR=$(mktemp -d)
   # Download
-  wget -O "$TEMP_DIR"/"$APP_NAME".tar.gz "$BINARIES_URL"
+  github_download "$BINARIES_URL" "$TEMP_DIR/$APP_NAME.tar.gz" || exit 1
   # Untar
   tar -xzvf "$TEMP_DIR"/"$APP_NAME".tar.gz -C "$TEMP_DIR"
   # Install binary

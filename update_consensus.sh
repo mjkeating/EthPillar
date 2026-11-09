@@ -50,7 +50,7 @@ function selectCustomTag(){
 	    ;;
 	esac
 	local _listTags _tag
-	_listTags=$(curl -fsSL https://api.github.com/repos/"${_repo}"/tags | jq -r '.[].name' | sort -hr)
+	_listTags=$(github_curl "https://api.github.com/repos/${_repo}/tags" | jq -r '.[].name' | sort -hr)
 	if [ -z "$_listTags" ]; then
 		error "❌ Could not retrieve tags for ${_repo}. Try again later."
 	fi

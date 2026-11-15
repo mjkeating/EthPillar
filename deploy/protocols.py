@@ -116,6 +116,20 @@ WEB3SIGNER_GENERATORS: Dict[str, List[str]] = {
     "web3signer": ["generate_web3signer_service"],
 }
 
+
+@runtime_checkable
+class SsvClientModule(Protocol):
+    """SSV Network operator node + DKG module contract."""
+
+    def get_release_info(self, version_tag: str, arch_amd64: bool) -> Dict[str, Any]: ...
+    def generate_ssv_node_service(self, eth_network: str, config_path: str = ...) -> str: ...
+    def generate_ssv_dkg_service(self, eth_network: str, config_path: str = ...) -> str: ...
+
+
+SSV_GENERATORS: Dict[str, List[str]] = {
+    "ssv": ["generate_ssv_node_service", "generate_ssv_dkg_service"],
+}
+
 CONSENSUS_BEACON_GENERATORS: Dict[str, List[str]] = {
     "lighthouse": ["generate_lighthouse_bn_service"],
     "nimbus": ["generate_nimbus_bn_service"],
@@ -138,6 +152,7 @@ ALL_CLIENT_MODULES: Dict[str, List[str]] = {
     **MEVBOOST_GENERATORS,
     **CHARON_GENERATORS,
     **WEB3SIGNER_GENERATORS,
+    **SSV_GENERATORS,
     **{k: CONSENSUS_BEACON_GENERATORS[k] + CONSENSUS_VALIDATOR_GENERATORS.get(k, [])
        for k in CONSENSUS_BEACON_GENERATORS},
 }

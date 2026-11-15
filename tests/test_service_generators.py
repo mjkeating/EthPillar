@@ -5,6 +5,7 @@ Tier 1 — Pure function tests using golden-string comparisons.
 These verify that each generator produces the exact service file content
 that the original deploy scripts produced.
 """
+import re
 import sys
 import os
 from unittest import result
@@ -16,6 +17,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from deploy.common import BASE_DATA_DIR, INSTALL_DIR
 from deploy.mevboost import generate_mevboost_service
 from deploy.charon import generate_charon_service, CHARON_LOCK_FILE, CHARON_PRIVATE_KEY_FILE, CHARON_DATA_DIR
+from deploy.ssv import (
+    generate_ssv_config,
+    generate_ssv_dkg_service,
+    generate_ssv_node_service,
+    SSV_DATA_DIR,
+    SSV_PRIVATE_KEY_FILE,
+    SSV_PASSWORD_FILE,
+)
 from deploy.besu import generate_besu_service
 from deploy.geth import generate_geth_service
 from deploy.ethrex import generate_ethrex_service
@@ -123,6 +132,37 @@ class TestCharonService:
 
 
 # ═══════════════════════════════════════════════
+# SSV operator node / DKG tests
+# ═══════════════════════════════════════════════
+
+class TestSsvService:
+    """Test SSV node config and systemd unit generation."""
+
+    def test_node_unit_and_config(self):
+        unit = generate_ssv_node_service("hoodi")
+        assert "Description=SSV Operator Node for HOODI" in unit
+        assert "User=ssv" in unit
+        assert f"WorkingDirectory={SSV_DATA_DIR}" in unit
+        assert "ssvnode start-node" in unit
+        assert f"--config={SSV_DATA_DIR}/config.yaml" in unit
+        check_constant_substitutions(unit)
+
+        cfg = generate_ssv_config("hoodi", "http://127.0.0.1:5052", "ws://127.0.0.1:8546")
+        assert "Network: hoodi" in cfg
+        assert "BeaconNodeAddr: http://127.0.0.1:5052" in cfg
+        assert "ETH1Addr: ws://127.0.0.1:8546" in cfg
+        assert f"PrivateKeyFile: {SSV_PRIVATE_KEY_FILE}" in cfg
+        assert f"PasswordFile: {SSV_PASSWORD_FILE}" in cfg
+
+    def test_dkg_unit(self):
+        unit = generate_ssv_dkg_service("mainnet")
+        assert "Description=SSV DKG Operator for MAINNET" in unit
+        assert "ssv-dkg start-operator" in unit
+        assert "--configPath=./operator.yaml" in unit
+        check_constant_substitutions(unit)
+
+
+# ═══════════════════════════════════════════════
 # MEV-Boost service tests
 # ═══════════════════════════════════════════════
 
@@ -209,6 +249,18 @@ class TestBesuService:
         assert "--data-storage-format=BONSAI" in result
         assert 'Environment="JAVA_OPTS=-Xmx5g"' in result
         assert "User=execution" in result
+        # Default: no WS (SSV passes enable_ws=True)
+        assert "--rpc-ws-enabled" not in result
+        assert "--rpc-ws-port" not in result
+
+    def test_mainnet_service_enable_ws(self):
+        result = generate_besu_service(
+            "mainnet", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH,
+            enable_ws=True,
+        )
+        assert "--rpc-ws-enabled=true" in result
+        assert "--rpc-ws-host=127.0.0.1" in result
+        assert "--rpc-ws-port=8546" in result
 
     def test_ephemery_custom_network(self):
         """Ephemery uses custom genesis file and bootnodes."""
@@ -299,6 +351,7 @@ class TestGethService:
         assert "--http \\" in result
         assert "--authrpc.port 8551 \\" in result
         assert "--ws \\" in result
+        assert "--ws.addr 127.0.0.1 \\" in result
         assert "--ws.port 8546 \\" in result
         assert "--ws.api eth,net,web3" in result
         assert "--state.scheme=path \\" in result
@@ -394,11 +447,21 @@ class TestNethermindService:
         assert f"--Network.P2PPort {EL_P2P_PORT}" in result
         assert f"--Network.MaxActivePeers {EL_MAX_PEER_COUNT}" in result
         assert f"--JsonRpc.Port {EL_RPC_PORT}" in result
+        assert "--JsonRpc.Host 127.0.0.1" not in result
+        assert "--JsonRpc.WebSocketsPort" not in result
         assert f"--JsonRpc.JwtSecretFile {JWTSECRET_PATH}" in result
         assert f"WorkingDirectory={BASE_DATA_DIR}/nethermind" in result
         assert f"Environment=\"DOTNET_BUNDLE_EXTRACT_BASE_DIR={BASE_DATA_DIR}/nethermind/bundle-extract\"" in result
         assert "--Sync.AncientBodiesBarrier=15537394" in result
         check_constant_substitutions(result)
+
+    def test_mainnet_service_enable_ws(self):
+        result = generate_nethermind_service(
+            "mainnet", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT,
+            JWTSECRET_PATH, enable_ws=True,
+        )
+        assert "--JsonRpc.Host 127.0.0.1" in result
+        assert "--JsonRpc.WebSocketsPort 8546" in result
 
     def test_sepolia_service(self):
         sync_params = '--Sync.AncientBodiesBarrier=1450408 --Sync.AncientReceiptsBarrier=1450408'
@@ -443,8 +506,20 @@ class TestRethService:
         assert "--enable-discv5-discovery" not in result
         assert f"--max-outbound-peers {reth_max_peers}" in result
         assert f"--max-inbound-peers {reth_max_peers}" in result
+        assert "--ws" not in result
+        assert "--ws.addr" not in result
+        assert "--ws.port" not in result
         assert "Environment=RUST_LOG=info" in result
         assert "--prune.bodies.pre-merge" in result
+
+    def test_mainnet_service_enable_ws(self):
+        result = generate_reth_service(
+            "mainnet", EL_P2P_PORT, EL_P2P_PORT_2, EL_RPC_PORT,
+            25, JWTSECRET_PATH, enable_ws=True,
+        )
+        assert "--ws \\" in result or "--ws\n" in result or "--ws " in result
+        assert "--ws.addr 127.0.0.1" in result
+        assert "--ws.port 8546" in result
 
     def test_ephemery_custom_network(self):
         custom_network = '--chain /opt/ethpillar/testnet/genesis.json --bootnodes enr1,enr2'
@@ -486,6 +561,9 @@ def assert_erigon_metrics_port_matches_scrape(unit: str) -> None:
     assert "--pprof.addr" not in unit
     assert "--metrics.addr" not in unit
     assert "--http.api=web3,eth,net,engine" in unit
+    # Default Erigon units omit WS; SSV installs pass enable_ws=True.
+    assert re.search(r"(?m)(?:^|[\s\\])--ws(?:[=\s.\\]|$)", unit) is None
+    assert "--ws.port=8546" not in unit
 
 
 class TestErigonService:
@@ -556,6 +634,16 @@ class TestErigonService:
         )
         assert_erigon_metrics_port_matches_scrape(result)
 
+    def test_enable_ws(self):
+        result = generate_erigon_service(
+            "mainnet", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT,
+            JWTSECRET_PATH, CL_P2P_PORT, CL_REST_PORT, CL_MAX_PEER_COUNT,
+            SYNC_URL, enable_ws=True,
+        )
+        assert "--ws \\" in result or "--ws\n" in result or re.search(r"(?m)--ws$", result)
+        assert "--ws.addr=127.0.0.1" in result
+        assert "--ws.port=8546" in result
+
 
 # ═══════════════════════════════════════════════
 # Erigon Standalone (no Caplin) service tests
@@ -576,6 +664,15 @@ class TestErigonStandaloneService:
         assert f"--authrpc.jwtsecret={JWTSECRET_PATH}" in result
         assert "--externalcl" in result
         assert "User=execution" in result
+        assert "--ws.port=8546" not in result
+
+    def test_enable_ws(self):
+        result = generate_erigon_standalone_service(
+            "mainnet", EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH,
+            enable_ws=True,
+        )
+        assert "--ws.addr=127.0.0.1" in result
+        assert "--ws.port=8546" in result
 
     def test_holesky_service(self):
         result = generate_erigon_standalone_service(

@@ -65,6 +65,57 @@ WantedBy=multi-user.target
     assert actual == expected
 
 
+def test_besu_enable_ws_exact_match():
+    """SSV installs opt into localhost WS via enable_ws=True."""
+    eth_network = "mainnet"
+    EL_P2P_PORT = 30303
+    EL_RPC_PORT = 8545
+    EL_MAX_PEER_COUNT = 50
+    JWTSECRET_PATH = "/secrets/jwtsecret"
+
+    expected = f'''[Unit]
+Description=Besu Execution Layer Client service for {eth_network.upper()}
+After=network-online.target
+Wants=network-online.target
+Documentation=https://docs.coincashew.com
+
+[Service]
+Type=simple
+User=execution
+Group=execution
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=900
+Environment="JAVA_OPTS=-Xmx5g"
+ExecStart={INSTALL_DIR}/besu/bin/besu \\
+    --network={eth_network} \\
+    --p2p-port={EL_P2P_PORT} \\
+    --rpc-http-port={EL_RPC_PORT} \\
+    --engine-rpc-port=8551 \\
+    --max-peers={EL_MAX_PEER_COUNT} \\
+    --metrics-enabled=true \\
+    --metrics-port=6060 \\
+    --rpc-http-enabled=true \\
+    --rpc-ws-enabled=true \\
+    --rpc-ws-host=127.0.0.1 \\
+    --rpc-ws-port=8546 \\
+    --sync-mode=SNAP \\
+    --data-storage-format=BONSAI \\
+    --data-path="{BASE_DATA_DIR}/besu" \\
+    --engine-jwt-secret={JWTSECRET_PATH}
+
+[Install]
+WantedBy=multi-user.target
+'''
+
+    actual = generate_besu_service(
+        eth_network, EL_P2P_PORT, EL_RPC_PORT, EL_MAX_PEER_COUNT, JWTSECRET_PATH,
+        enable_ws=True,
+    )
+    assert actual == expected
+
+
 def test_mevboost_exact_match():
     # Simulate variables from original deploy-teku-besu.py
     eth_network = "mainnet"

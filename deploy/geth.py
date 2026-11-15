@@ -51,6 +51,7 @@ def generate_geth_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
         "--state.scheme=path",
         f"--authrpc.jwtsecret={jwtsecret_path}",
         "--ws",
+        "--ws.addr 127.0.0.1",
         "--ws.port 8546",
         "--ws.api eth,net,web3"
     ]

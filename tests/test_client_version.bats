@@ -9,12 +9,15 @@ setup() {
   export VALIDATOR_SERVICE_FILE=$(mktemp)
   export CHARON_SERVICE_FILE=$(mktemp)
   export MEVBOOST_SERVICE_FILE=$(mktemp)
+  export SSV_NODE_SERVICE_FILE=$(mktemp)
+  export SSV_DKG_SERVICE_FILE=$(mktemp)
 }
 
 teardown() {
   rm -rf "$TEST_BIN_DIR"
   rm -f "$EXEC_SERVICE_FILE" "$CONSENSUS_SERVICE_FILE" "$VALIDATOR_SERVICE_FILE" \
-      "$CHARON_SERVICE_FILE" "$MEVBOOST_SERVICE_FILE"
+      "$CHARON_SERVICE_FILE" "$MEVBOOST_SERVICE_FILE" \
+      "$SSV_NODE_SERVICE_FILE" "$SSV_DKG_SERVICE_FILE"
 }
 
 write_stub_binary() {
@@ -508,4 +511,26 @@ EOF
 @test "version_matches_latest falls back to semver when either commit missing" {
   version_matches_latest "v1.45.0" "v1.45.0" "668ea9d" ""
   version_matches_latest "v1.45.0" "v1.45.0" "" "6051fa3"
+}
+
+# ── SSV node / DKG version probes ────────────────────────────────────────────
+
+@test "getSsvCurrentVersion parses ssvnode version output" {
+  local stub="$TEST_BIN_DIR/ssvnode"
+  write_stub_binary "$stub" 'echo "v2.5.1"'
+  cat <<EOF > "$SSV_NODE_SERVICE_FILE"
+ExecStart=$stub start-node
+EOF
+  getSsvCurrentVersion
+  [ "$VERSION" = "v2.5.1" ]
+}
+
+@test "getSsvDkgCurrentVersion parses ssv-dkg version output" {
+  local stub="$TEST_BIN_DIR/ssv-dkg"
+  write_stub_binary "$stub" 'echo "ssv-dkg version v3.1.1"'
+  cat <<EOF > "$SSV_DKG_SERVICE_FILE"
+ExecStart=$stub start-operator
+EOF
+  getSsvDkgCurrentVersion
+  [ "$VERSION" = "v3.1.1" ]
 }

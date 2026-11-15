@@ -273,13 +273,20 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
     if getattr(args, "charon", False):
         binaries.append("charon"); users.append("charon"); services.append("charon")
 
+    if getattr(args, "ssv", False):
+        binaries.extend(["ssvnode", "ssv-dkg"])
+        users.append("ssv")
+        services.extend(["ssv-node", "ssv-dkg"])
+
     # VC artifacts
     target_vc = vc if vc else cc if cc else combo
     # Grandine is special: it has an integrated VC, so if Grandine is the target VC, 
     # we don't expect a separate validator service.
     is_grandine_integrated = "grandine" in target_vc
+    # SSV replaces the traditional VC duty path — no validator.service.
+    ssv_enabled = bool(getattr(args, "ssv", False))
     
-    if not is_node_only and not is_failover and not is_grandine_integrated:
+    if not is_node_only and not is_failover and not is_grandine_integrated and not ssv_enabled:
         # If VC is "Same as CC" or not specified, check based on CC/Combo
         if "lighthouse" in target_vc:
             users.append("validator"); services.append("validator")
@@ -298,8 +305,24 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
     return list(set(binaries)), list(set(users)), _sort_services(list(set(services)), caplin_mev=caplin_mev)
 
 
-DEFAULT_SERVICE_HEALTH_ORDER = ("execution", "mevboost", "consensus", "charon", "validator")
-CAPLIN_MEV_SERVICE_HEALTH_ORDER = ("mevboost", "execution", "consensus", "charon", "validator")
+DEFAULT_SERVICE_HEALTH_ORDER = (
+    "execution",
+    "mevboost",
+    "consensus",
+    "charon",
+    "ssv-node",
+    "ssv-dkg",
+    "validator",
+)
+CAPLIN_MEV_SERVICE_HEALTH_ORDER = (
+    "mevboost",
+    "execution",
+    "consensus",
+    "charon",
+    "ssv-node",
+    "ssv-dkg",
+    "validator",
+)
 
 
 def _sort_services(services: List[str], caplin_mev: bool = False) -> List[str]:
@@ -367,6 +390,7 @@ def run_install(args: Any, fee_address: str):
     elif args.mev:
         cmd.append("--with_mevboost")
     if getattr(args, "charon", False): cmd.append("--with_charon")
+    if getattr(args, "ssv", False): cmd.append("--with_ssv")
     if args.vc_only_bn_address: cmd.extend(["--vc_only_bn_address", args.vc_only_bn_address])
     checkpoint_url = checkpoint_sync_url_for_network(args.network)
     if checkpoint_url:
@@ -578,6 +602,28 @@ def check_service_start(
     if service_name == "charon" and not os.path.isfile("/var/lib/charon/.charon/cluster-lock.json"):
         print("  ⚠️  Skipping charon health check: no cluster-lock.json (expected in test environment)")
         return True
+
+    if service_name in ("ssv-node", "ssv-dkg"):
+        # Datadir is mode 700 (ssv); probe via sudo like production tooling.
+        key_ok = (
+            subprocess.run(
+                ["sudo", "test", "-f", "/var/lib/ssv/encrypted_private_key.json"],
+                check=False,
+            ).returncode
+            == 0
+            and subprocess.run(
+                ["sudo", "test", "-f", "/var/lib/ssv/password"],
+                check=False,
+            ).returncode
+            == 0
+        )
+        if not key_ok:
+            print(
+                f"  ⚠️  Skipping {service_name} health check: no operator keystore "
+                "(expected in test environment)",
+                flush=True,
+            )
+            return True
 
     if systemd_available():
         print(f"  [systemd] Validating {service_name} service via systemctl...", flush=True)
@@ -986,6 +1032,86 @@ def _verify_rpc_exposure(args: Any, expected_services: List[str]) -> bool:
     return success
 
 
+def _sudo_read_text(path: str) -> Optional[str]:
+    """Read a root/service-owned file via sudo; return None if missing."""
+    exists = subprocess.run(["sudo", "test", "-f", path], check=False)
+    if exists.returncode != 0:
+        return None
+    result = subprocess.run(
+        ["sudo", "cat", path],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
+def _verify_ssv_install() -> bool:
+    """Assert SSV units, shared secrets paths, and no traditional validator.service."""
+    ok = True
+    node_unit = "/etc/systemd/system/ssv-node.service"
+    dkg_unit = "/etc/systemd/system/ssv-dkg.service"
+    vc_unit = "/etc/systemd/system/validator.service"
+    config_path = "/var/lib/ssv/config.yaml"
+    dkg_config = "/var/lib/ssv/operator.yaml"
+
+    if os.path.isfile(vc_unit):
+        print("❌ validator.service present with SSV (expected absent)")
+        ok = False
+    else:
+        print("✅ validator.service absent (SSV replaces traditional VC)")
+
+    for path, label in ((node_unit, "ssv-node.service"), (dkg_unit, "ssv-dkg.service")):
+        if not os.path.isfile(path):
+            print(f"❌ missing {label}")
+            ok = False
+            continue
+        with open(path, encoding="utf-8") as handle:
+            body = handle.read()
+        if "User=ssv" not in body:
+            print(f"❌ {label} missing User=ssv")
+            ok = False
+        else:
+            print(f"✅ {label} runs as ssv")
+
+    cfg = _sudo_read_text(config_path)
+    if cfg is None:
+        print(f"❌ missing {config_path}")
+        ok = False
+    else:
+        for needle in (
+            "BeaconNodeAddr:",
+            "ETH1Addr:",
+            "PrivateKeyFile: /var/lib/ssv/encrypted_private_key.json",
+            "PasswordFile: /var/lib/ssv/password",
+            "Path: /var/lib/ssv/db",
+        ):
+            if needle not in cfg:
+                print(f"❌ config.yaml missing {needle!r}")
+                ok = False
+            else:
+                print(f"✅ config.yaml has {needle}")
+
+    dkg = _sudo_read_text(dkg_config)
+    if dkg is None:
+        print(f"❌ missing {dkg_config}")
+        ok = False
+    else:
+        for needle in (
+            "privKey: ./encrypted_private_key.json",
+            "privKeyPassword: ./password",
+        ):
+            if needle not in dkg:
+                print(f"❌ operator.yaml missing {needle!r}")
+                ok = False
+            else:
+                print(f"✅ operator.yaml has {needle}")
+
+    return ok
+
+
 def verify(args: Any):
     """Assert expected binaries, users, services, permissions, and service health."""
     print(f"\n🔍 Verifying Artifacts...", flush=True)
@@ -1043,6 +1169,11 @@ def verify(args: Any):
                 success = False
             elif args.mev:
                 print("✅ charon.service includes --builder-api")
+
+    if getattr(args, "ssv", False):
+        if not _verify_ssv_install():
+            success = False
+
     for u in expected_users:
         present = check_user(u)
         print(f"{'✅' if present else '❌'} User  : {u}")
@@ -1262,6 +1393,12 @@ if __name__ == "__main__":
         help='Forward --builder_mode to deploy-node.py (native ePBS fresh install)',
     )
     parser.add_argument('--charon', action='store_true', default=False, help='Install Obol Charon DVT middleware')
+    parser.add_argument(
+        '--ssv',
+        action='store_true',
+        default=False,
+        help='Install SSV Operator (ssv-node + ssv-dkg) instead of a traditional VC',
+    )
     parser.add_argument('--config', type=str, default='Solo Staking Node')
     parser.add_argument('--network', type=str, default='SEPOLIA')
     parser.add_argument('--vc_only_bn_address', type=str, default="http://192.168.1.123:5052")

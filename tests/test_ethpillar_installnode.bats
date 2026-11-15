@@ -93,6 +93,12 @@ EOF
     [ ! -s "$COMMAND_LOG" ]
 }
 
+@test "installNode: is no-op if ssv-node.service exists" {
+    touch "$TEST_SYSTEMD_DIR/ssv-node.service"
+    installNode
+    [ ! -s "$COMMAND_LOG" ]
+}
+
 @test "installNode: handles whiptail cancellation" {
     cat <<EOF > "$MOCK_BIN_DIR/whiptail"
 #!/bin/bash

@@ -261,6 +261,20 @@ check_web3signer_version() {
   assert_matches_latest "Web3Signer" "web3signer" "$version"
 }
 
+check_ssv_version() {
+  [[ -f /etc/systemd/system/ssv-node.service ]] || return 0
+  local version
+  INSTALLED_COMMIT=""
+  if ! getSsvCurrentVersion; then
+    echo "❌ SSV version parse failed: ${VERSION:-empty}"
+    fail=1
+    return 0
+  fi
+  version=$VERSION
+  echo "✅ SSV Operator version: ${version}"
+  assert_matches_latest "SSV" "ssv" "$version"
+}
+
 # Optional role filter so Upgrade two-phase can assert only the client that
 # just moved to LATEST (a still-seeded sibling must not fail the check).
 # Comma-separated: el,cl,vc,mevboost,charon. Empty / unset = all present roles.
@@ -285,6 +299,7 @@ should_check_role vc && check_vc_version
 should_check_role mevboost && check_mevboost_version
 should_check_role charon && check_charon_version
 should_check_role web3signer && check_web3signer_version
+should_check_role ssv && check_ssv_version
 
 if [[ "$fail" -ne 0 ]]; then
   exit 1

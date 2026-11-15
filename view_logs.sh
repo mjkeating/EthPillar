@@ -87,9 +87,16 @@ if grep -q 'keystore-dir' /etc/systemd/system/consensus.service 2>/dev/null; the
 
 hasCharon=false
 isCharonEnabled && hasCharon=true
+hasSsv=false
+isSsvEnabled && hasSsv=true
+hasSsvDkg=false
+isSsvDkgEnabled && hasSsvDkg=true
 VC_LOG_CMD=$(journalctl_ccze_pipeline -fu validator --no-hostname)
 [[ ${hasCharon} == "true" ]] && VC_LOG_CMD=$(journalctl_ccze_pipeline -fu validator -u charon --no-hostname)
 CHARON_LOG_CMD=$(journalctl_ccze_pipeline -fu charon --no-hostname)
+# Node + DKG share one pane so SSV-only / EL+CL+SSV dashboards include both.
+SSV_LOG_CMD=$(journalctl_ccze_pipeline -fu ssv-node --no-hostname)
+[[ ${hasSsvDkg} == "true" ]] && SSV_LOG_CMD=$(journalctl_ccze_pipeline -fu ssv-node -u ssv-dkg --no-hostname)
 
 # Portrait view for narrow terminals <= 80 col
 if [[ $cols -lt 81 ]]; then
@@ -99,6 +106,16 @@ if [[ $cols -lt 81 ]]; then
            send-keys "${CONSENSUS_LOG_CMD}" C-m \; \
            split-window -v \; \
            send-keys "${VC_LOG_CMD}" C-m \; \
+           select-pane -t 0 \; \
+           split-window -v \; \
+           send-keys "${EXECUTION_LOG_CMD}" C-m \; \
+           select-layout even-vertical \;
+   elif [[ -f /etc/systemd/system/execution.service ]] && [[ -f /etc/systemd/system/consensus.service ]] && [[ ${hasSsv} == "true" ]]; then
+      # EL+CL+SSV Operator
+      tmux new-session -d -s logs \; \
+           send-keys "${CONSENSUS_LOG_CMD}" C-m \; \
+           split-window -v \; \
+           send-keys "${SSV_LOG_CMD}" C-m \; \
            select-pane -t 0 \; \
            split-window -v \; \
            send-keys "${EXECUTION_LOG_CMD}" C-m \; \
@@ -151,6 +168,14 @@ if [[ $cols -lt 81 ]]; then
            send-keys 'btop --utf-force' C-m \; \
            select-layout even-vertical \;
       fi
+   elif [[ ${hasSsv} == "true" ]]; then
+      # SSV Operator only (remote BN/EL)
+      tmux new-session -d -s logs \; \
+           send-keys "${SSV_LOG_CMD}" C-m \; \
+           split-window -h \; \
+           select-pane -t 1 \; \
+           send-keys 'btop --utf-force' C-m \; \
+           select-layout even-vertical \;
    fi
 else
    # Create full screen panes for validator node or non-staking node
@@ -177,6 +202,17 @@ else
            split-window -v \; \
            send-keys "${EXECUTION_LOG_CMD}" C-m \;
       fi
+   elif [[ -f /etc/systemd/system/execution.service ]] && [[ -f /etc/systemd/system/consensus.service ]] && [[ ${hasSsv} == "true" ]]; then
+      # EL+CL+SSV Operator
+      tmux new-session -d -s logs \; \
+           send-keys "${CONSENSUS_LOG_CMD}" C-m \; \
+           split-window -h \; \
+           send-keys 'btop --utf-force' C-m \; \
+           split-window -v \; \
+           send-keys "${SSV_LOG_CMD}" C-m \; \
+           select-pane -t 0 \; \
+           split-window -v \; \
+           send-keys "${EXECUTION_LOG_CMD}" C-m \;
    elif [[ -f /etc/systemd/system/execution.service ]] && [[ -f /etc/systemd/system/consensus.service ]] && [[ ${isGrandineIntegrated} == "true" ]]; then
       # Grandine integrated: consensus carries BN+VC, show it alongside execution and btop
       tmux new-session -d -s logs \; \
@@ -231,6 +267,14 @@ else
            send-keys 'btop --utf-force' C-m \; \
            select-layout even-vertical \;
       fi
+   elif [[ ${hasSsv} == "true" ]]; then
+      # SSV Operator only (remote BN/EL): node+DKG stream and btop
+      tmux new-session -d -s logs \; \
+           send-keys "${SSV_LOG_CMD}" C-m \; \
+           split-window -h \; \
+           select-pane -t 1 \; \
+           send-keys 'btop --utf-force' C-m \; \
+           select-layout even-vertical \;
    fi
 fi
 

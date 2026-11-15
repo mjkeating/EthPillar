@@ -236,6 +236,50 @@ getCharonCurrentVersion() {
   fi
 }
 
+# Sets VERSION from installed ``ssvnode version`` (best-effort).
+getSsvCurrentVersion() {
+  local ssv_svc="${SSV_NODE_SERVICE_FILE:-/etc/systemd/system/ssv-node.service}"
+  local bin output
+  VERSION=""
+  INSTALLED_COMMIT=""
+  bin=$(get_systemd_exec_path "$ssv_svc" "/usr/local/bin/ssvnode")
+  if [[ -z "$bin" || ! -x "$bin" ]]; then
+    VERSION="Unable to query SSV version from binary."
+    return 1
+  fi
+  output=$("$bin" version 2>/dev/null || "$bin" --version 2>/dev/null || true)
+  VERSION=$(grep -oiE 'v?[0-9]+\.[0-9]+(\.[0-9]+)?' <<< "$output" | head -1 || true)
+  if [[ -z "$VERSION" ]]; then
+    VERSION="Unable to query SSV version from binary."
+    return 1
+  fi
+  # Prefer || so a version that already has a v-prefix does not make this
+  # function return 1 (bash exit status of a failed [[ ]]).
+  [[ "$VERSION" == v* ]] || VERSION="v${VERSION}"
+  return 0
+}
+
+# Sets VERSION from installed ``ssv-dkg version`` (best-effort).
+getSsvDkgCurrentVersion() {
+  local dkg_svc="${SSV_DKG_SERVICE_FILE:-/etc/systemd/system/ssv-dkg.service}"
+  local bin output
+  VERSION=""
+  INSTALLED_COMMIT=""
+  bin=$(get_systemd_exec_path "$dkg_svc" "/usr/local/bin/ssv-dkg")
+  if [[ -z "$bin" || ! -x "$bin" ]]; then
+    VERSION="Unable to query SSV DKG version from binary."
+    return 1
+  fi
+  output=$("$bin" version 2>/dev/null || "$bin" --version 2>/dev/null || true)
+  VERSION=$(grep -oiE 'v?[0-9]+\.[0-9]+(\.[0-9]+)?' <<< "$output" | head -1 || true)
+  if [[ -z "$VERSION" ]]; then
+    VERSION="Unable to query SSV DKG version from binary."
+    return 1
+  fi
+  [[ "$VERSION" == v* ]] || VERSION="v${VERSION}"
+  return 0
+}
+
 # Sets VERSION from ``web3signer --version``.
 getWeb3SignerCurrentVersion() {
   local signer_svc="${WEB3SIGNER_SERVICE_FILE:-/etc/systemd/system/web3signer.service}"
@@ -908,8 +952,10 @@ format_version_label() {
 }
 
 # Load installed + LATEST fields for one stack target (execution/consensus/
-# validator/mevboost/charon). Sets VERSION, INSTALLED_COMMIT, TAG, TAG_COMMIT
-# via the same TUI helpers promptYesNo uses (get*CurrentVersion + release_info).
+# validator/mevboost/charon/web3signer/ssv-node/ssv-dkg). Sets VERSION,
+# INSTALLED_COMMIT, TAG, TAG_COMMIT via the same TUI helpers promptYesNo uses
+# (get*CurrentVersion + release_info). ssv-dkg uses getSsvDkgCurrentVersion and
+# the ssv-dkg GitHub release (not the ssv-node tag).
 # Returns 0 when fields are resolved, 1 on error.
 load_client_versions() {
     local target="$1"
@@ -987,6 +1033,22 @@ load_client_versions() {
                 return 1
             }
             ;;
+        ssv-node|ssv)
+            getSsvCurrentVersion || true
+            [[ -z "$VERSION" ]] && VERSION="unknown"
+            fetch_latest_release "ssv" --strip-v || {
+                echo "ssv: could not resolve LATEST"
+                return 1
+            }
+            ;;
+        ssv-dkg)
+            getSsvDkgCurrentVersion || true
+            [[ -z "$VERSION" ]] && VERSION="unknown"
+            fetch_latest_release "ssv-dkg" --strip-v || {
+                echo "ssv-dkg: could not resolve LATEST"
+                return 1
+            }
+            ;;
         *)
             echo "Unsupported check target: $target" >&2
             return 1
@@ -1039,6 +1101,18 @@ isWeb3SignerEnabled(){
     [[ -f "$signer_svc" ]]
 }
 
+# Return whether SSV operator node is installed (ssv-node.service present).
+isSsvEnabled(){
+    local ssv_svc="${SSV_NODE_SERVICE_FILE:-/etc/systemd/system/ssv-node.service}"
+    [[ -f "$ssv_svc" ]]
+}
+
+# Return whether SSV DKG sidecar is installed.
+isSsvDkgEnabled(){
+    local dkg_svc="${SSV_DKG_SERVICE_FILE:-/etc/systemd/system/ssv-dkg.service}"
+    [[ -f "$dkg_svc" ]]
+}
+
 # EthPillar Charon cluster datadir (overridable in tests via CHARON_CLUSTER_DIR).
 getCharonClusterDir(){
     echo "${CHARON_CLUSTER_DIR:-/var/lib/charon/.charon}"
@@ -1066,18 +1140,29 @@ getCharonP2pPort(){
     fi
 }
 
-# Stop validator → charon → consensus before BN maintenance (update/resync).
+# Stop validator → charon → ssv(+dkg) → consensus before BN maintenance (update/resync).
 stopConsensusStackForUpdate(){
     test -f /etc/systemd/system/validator.service && sudo systemctl stop validator 2>/dev/null || true
     isCharonEnabled && sudo systemctl stop charon 2>/dev/null || true
+    isSsvDkgEnabled && sudo systemctl stop ssv-dkg 2>/dev/null || true
+    isSsvEnabled && sudo systemctl stop ssv-node 2>/dev/null || true
     test -f /etc/systemd/system/consensus.service && sudo systemctl stop consensus 2>/dev/null || true
 }
 
-# Start consensus → charon → validator after BN maintenance.
+# Start consensus → ssv(+dkg) → charon → validator after BN maintenance.
 startConsensusStackAfterUpdate(){
     test -f /etc/systemd/system/consensus.service && sudo systemctl start consensus 2>/dev/null || true
+    isSsvEnabled && sudo systemctl start ssv-node 2>/dev/null || true
+    isSsvDkgEnabled && sudo systemctl start ssv-dkg 2>/dev/null || true
     isCharonEnabled && sudo systemctl start charon 2>/dev/null || true
     test -f /etc/systemd/system/validator.service && sudo systemctl start validator 2>/dev/null || true
+}
+
+# Retire a systemd unit via shared Python helper (stop+disable+*.bak+reload+verify).
+# Prefer this whenever a unit is taken out of service permanently.
+retireSystemdUnit(){
+    local unit="${1:?unit name or path required}"
+    PYTHONPATH="${BASE_DIR}" python3 -m deploy.systemd_units retire "$unit"
 }
 
 # Stop validator (and Charon when DVT) before VC binary update.
@@ -1113,6 +1198,7 @@ reloadEnvOverridesAndMaybeRestart(){
     test -f /etc/systemd/system/consensus.service && sudo systemctl try-restart consensus 2>/dev/null || true
     test -f /etc/systemd/system/mevboost.service && sudo systemctl try-restart mevboost 2>/dev/null || true
     isCharonEnabled && sudo systemctl try-restart charon 2>/dev/null || true
+    isSsvEnabled && sudo systemctl try-restart ssv-node 2>/dev/null || true
     test -f /etc/systemd/system/validator.service && sudo systemctl try-restart validator 2>/dev/null || true
 }
 
@@ -1122,6 +1208,37 @@ ufwAllowCharonP2p(){
     port=$(getCharonP2pPort)
     [[ -n "$port" ]] || return 0
     sudo ufw allow "${port}/tcp" comment 'Allow Charon P2P port'
+}
+
+# Read SSV ports from config.yaml / operator.yaml (fallback to env defaults).
+# Prints: tcp udp metrics api dkg
+ssvPortsFromConfig(){
+    PYTHONPATH="${BASE_DIR}" python3 -c \
+        'from deploy.ssv import read_ssv_ports; p=read_ssv_ports(); print(p["tcp"], p["udp"], p["metrics"], p["api"], p["dkg"])'
+}
+
+# Allow SSV P2P (TCP+UDP) and DKG TCP in UFW (no-op when SSV not installed).
+# Deny metrics/API from the WAN — SSV binds :port on all interfaces by default.
+ufwAllowSsvPorts(){
+    local tcp_port udp_port metrics_port api_port dkg_port ports
+    isSsvEnabled || return 0
+    ports="$(ssvPortsFromConfig 2>/dev/null || true)"
+    # shellcheck disable=SC2086
+    set -- ${ports}
+    tcp_port="${1:-${SSV_P2P_TCP_PORT:-13001}}"
+    udp_port="${2:-${SSV_P2P_UDP_PORT:-12001}}"
+    metrics_port="${3:-${SSV_METRICS_PORT:-15000}}"
+    api_port="${4:-${SSV_API_PORT:-16000}}"
+    dkg_port="${5:-${SSV_DKG_PORT:-3030}}"
+    sudo ufw allow "${tcp_port}/tcp" comment 'Allow SSV P2P TCP'
+    sudo ufw allow "${udp_port}/udp" comment 'Allow SSV P2P UDP'
+    if isSsvDkgEnabled; then
+        sudo ufw allow "${dkg_port}/tcp" comment 'Allow SSV DKG'
+    fi
+    # Prefer deny over allow so metrics/API are not reachable remotely even
+    # when UFW default incoming is allow (docs claim localhost-only).
+    sudo ufw deny "${metrics_port}/tcp" comment 'Deny SSV metrics (localhost scrape)' 2>/dev/null || true
+    sudo ufw deny "${api_port}/tcp" comment 'Deny SSV API (localhost only)' 2>/dev/null || true
 }
 
 # First word of Description= — same heuristic as getClient / node-checker.
@@ -1328,6 +1445,9 @@ ufwBuildFirewallMenu(){
     _ufw_menu_add_pair elcl_p2p "EL/CL P2P: Allow TCP/UDP (from execution & consensus, incl. QUIC)"
     if isCharonEnabled; then
         _ufw_menu_add_pair charon "${OBOL_CHARON}: Allow P2P port (from charon.service)"
+    fi
+    if isSsvEnabled; then
+        _ufw_menu_add_pair ssv "SSV: Allow P2P TCP/UDP and DKG (from env ports)"
     fi
     _ufw_menu_add_pair disable "Disable firewall"
     _ufw_menu_add_pair reset "Reset firewall rules: Delete all rules"
@@ -2025,7 +2145,155 @@ runImportCharonKeySharesYes(){
     bash "${BASE_DIR}/manage_validator_keys.sh" charon-import-yes
 }
 
+# Migrate legacy systemd SSV (ssvnode/ssvdkg name variants) → EthPillar.
+# Quarantines old units as *.service.bak; preserves multi-endpoint BN/EL configs.
+migrateSsvFull(){
+    local plan_file _migrate_log_dir _migrate_log
+    local -a _run_args=()
+
+    if ! whiptail --title "Migrate SSV from systemd" --yesno \
+"Migrate an existing systemd SSV operator to EthPillar:
+
+  - Discover ssvnode / ssvdkg unit name variants
+  - Stop, disable, rename legacy units to *.service.bak
+  - Reuse binaries when they match GitHub LATEST (else rebuild/download)
+  - Copy keystore + DB into /var/lib/ssv/
+  - Keep BeaconNodeAddr / ETH1Addr (incl. multi EL/CL) in config.yaml
+
+WARNING: Do not run legacy and EthPillar SSV at the same time.
+
+Continue?" 20 78; then
+        return 0
+    fi
+
+    if [[ ! -e /usr/local/bin/ethpillar ]]; then
+        ohai "Installing ethpillar symlink"
+        sudo ln -sf "${BASE_DIR}/ethpillar.sh" /usr/local/bin/ethpillar
+    fi
+    ensure_python_deps
+
+    plan_file=$(mktemp)
+    set +e
+    PYTHONPATH="${BASE_DIR}" python3 -m deploy.ssv_migrate plan \
+        >"$plan_file" 2>/tmp/ethpillar-ssv-migrate-err
+    local rc=$?
+    set -e
+    if [[ $rc -ne 0 ]]; then
+        whiptail --title "SSV migration error" --msgbox \
+"$(cat /tmp/ethpillar-ssv-migrate-err 2>/dev/null
+  echo ""
+  cat "$plan_file" 2>/dev/null || echo "Failed to build plan.")" 20 88
+        rm -f "$plan_file"
+        return 1
+    fi
+
+    whiptail --title "SSV migration plan" --textbox "$plan_file" 24 88
+
+    _migrate_log_dir="${HOME}/.ethpillar/logs"
+    mkdir -p "$_migrate_log_dir"
+    _migrate_log="${_migrate_log_dir}/ssv-migrate-$(date +%Y%m%d-%H%M%S).log"
+    {
+        echo "=== EthPillar SSV systemd migration $(date -Is) ==="
+        echo "log: ${_migrate_log}"
+        echo ""
+        cat "$plan_file"
+        echo ""
+    } >>"$_migrate_log"
+    ohai "Migration log: ${_migrate_log}"
+
+    if ! whiptail --title "Migrate SSV from systemd" --yesno \
+"Proceed with this plan?
+
+Legacy units will be renamed to *.service.bak (rollback documented in the plan)." 12 70; then
+        rm -f "$plan_file"
+        return 0
+    fi
+
+    if [[ -f /etc/systemd/system/ssv-node.service ]] \
+        && sudo test -f /var/lib/ssv/encrypted_private_key.json 2>/dev/null; then
+        if whiptail --title "EthPillar SSV already present" --yesno \
+"EthPillar ssv-node.service and a keystore already exist.
+
+Overwrite with --force?" 10 70; then
+            _run_args+=(--force)
+        else
+            rm -f "$plan_file"
+            return 0
+        fi
+    fi
+
+    if whiptail --title "Start after migrate" --yesno \
+"Start EthPillar ssv-node (and ssv-dkg if present) after migration?
+
+Choose No to enable units only and start manually after verifying config." 12 70; then
+        _run_args+=(--start)
+    fi
+
+    set +e
+    PYTHONPATH="${BASE_DIR}" python3 -m deploy.ssv_migrate run "${_run_args[@]}" \
+        2>&1 | tee -a "$_migrate_log"
+    rc=${PIPESTATUS[0]}
+    set -e
+    rm -f "$plan_file"
+    if [[ $rc -ne 0 ]]; then
+        whiptail --title "SSV migration failed" --msgbox \
+"Migration failed (exit ${rc}).
+
+See log:
+${_migrate_log}" 12 70
+        return 1
+    fi
+    whiptail --title "SSV migration complete" --msgbox \
+"Migration finished.
+
+Log: ${_migrate_log}
+
+Rollback:
+  PYTHONPATH=${BASE_DIR} python3 -m deploy.ssv_migrate rollback [--start]
+
+(Retires EthPillar ssv-* to *.bak first, then restores legacy *.service.bak.)" 16 72
+    return 0
+}
+
 # Manual setup: copy a CDVN/DKG .charon tree into EthPillar's Charon datadir.
+# Import SSV operator encrypted key + password into /var/lib/ssv/.
+importSsvOperatorKeystore(){
+    local SRC
+    SRC=$(whiptail --title "Import SSV operator keystore" --inputbox \
+"Directory containing:
+  encrypted_private_key.json
+  password
+
+Files are copied into /var/lib/ssv/ and shared by
+ssv-node and ssv-dkg. Back them up separately." 16 70 --ok-button "Submit" 3>&1 1>&2 2>&3) || return
+
+    SRC="${SRC/#\~/$HOME}"
+    if [[ ! -d "$SRC" ]]; then
+        whiptail --title "Import SSV operator keystore" --msgbox \
+"Directory not found:
+${SRC}" 9 70
+        return 1
+    fi
+    # Stop before overwrite so a running node cannot race the keystore files.
+    isSsvDkgEnabled && sudo systemctl stop ssv-dkg 2>/dev/null || true
+    isSsvEnabled && sudo systemctl stop ssv-node 2>/dev/null || true
+    if ! PYTHONPATH="${BASE_DIR}" python3 -m deploy.ssv import-keystore "$SRC"; then
+        whiptail --title "Import SSV operator keystore" --msgbox \
+"Import failed. Ensure both files exist in:
+${SRC}" 10 70
+        return 1
+    fi
+    if whiptail --title "Import SSV operator keystore" --yesno \
+"Operator keystore imported into /var/lib/ssv/.
+
+Back up encrypted_private_key.json and password
+on a separate device.
+
+Start ssv-node now?" 14 70; then
+        sudo systemctl start ssv-node
+    fi
+}
+
 importCharonClusterFolder(){
     local SRC DEST
     DEST="$(getCharonClusterDir)"

@@ -142,6 +142,18 @@ function printInstalledVersions() {
     _W3S="Web3Signer: ${VERSION:-unknown}"
   fi
 
+  local ssv_svc="${SSV_NODE_SERVICE_FILE:-/etc/systemd/system/ssv-node.service}"
+  local dkg_svc="${SSV_DKG_SERVICE_FILE:-/etc/systemd/system/ssv-dkg.service}"
+  local _SSV="" _SSV_DKG=""
+  if [[ -f "$ssv_svc" ]]; then
+    getSsvCurrentVersion || true
+    _SSV="SSV Operator: ${VERSION:-unknown}"
+  fi
+  if [[ -f "$dkg_svc" ]]; then
+    getSsvDkgCurrentVersion || true
+    _SSV_DKG="SSV DKG: ${VERSION:-unknown}"
+  fi
+
   local _lines=()
   _lines+=("Consensus client: ${_CL}")
   _lines+=("Execution client: ${_EL}")
@@ -149,6 +161,8 @@ function printInstalledVersions() {
   _lines+=("${_MB}")
   [[ -n "$_CH" ]] && _lines+=("${_CH}")
   [[ -n "$_W3S" ]] && _lines+=("${_W3S}")
+  [[ -n "$_SSV" ]] && _lines+=("${_SSV}")
+  [[ -n "$_SSV_DKG" ]] && _lines+=("${_SSV_DKG}")
   _lines+=("EthPillar: ${EP_VERSION}")
   printf '%s\n' "${_lines[@]}"
 }
@@ -156,9 +170,9 @@ function printInstalledVersions() {
 menuMain(){
 
 # Define systemctl services
-_SERVICES=("execution" "consensus" "validator" "mevboost" "charon" "web3signer" "csm_nimbusvalidator" "dora")
-_SERVICES_NAME=("Execution Client" "Consensus Client" "Validator Client" "MEV-Boost" "Obol Charon DV" "Web3Signer" "CSM Nimbus Validator Plugin" "Dora the Explorer")
-_SERVICES_ICON=("🔗" "🧠" "🚀" "⚡" "${OBOL_INF}" "🔏" "💧" "🔎")
+_SERVICES=("execution" "consensus" "validator" "mevboost" "charon" "web3signer" "ssv-node" "csm_nimbusvalidator" "dora")
+_SERVICES_NAME=("Execution Client" "Consensus Client" "Validator Client" "MEV-Boost" "Obol Charon DV" "Web3Signer" "SSV Operator" "CSM Nimbus Validator Plugin" "Dora the Explorer")
+_SERVICES_ICON=("🔗" "🧠" "🚀" "⚡" "${OBOL_INF}" "🔏" "🟣" "💧" "🔎")
 
 function testAndServiceCommand() {
   local _cmd="$1"
@@ -257,6 +271,9 @@ while true; do
         ;;
       🔏)
         submenuWeb3Signer
+        ;;
+      🟣)
+        submenuSsv
         ;;
       💧)
         submenuPluginCSMValidator
@@ -766,6 +783,89 @@ while true; do
 done
 }
 
+submenuSsv(){
+while true; do
+    getBackTitle
+    SUBOPTIONS=(
+      1 "View ssv-node (+ ssv-dkg) logs"
+      2 "Start ssv-node"
+      3 "Stop ssv-node"
+      4 "Restart ssv-node"
+      5 "Edit ssv-node config.yaml"
+      6 "Update SSV binaries"
+      7 "Import operator keystore"
+      8 "View ssv-dkg logs only"
+      9 "Start ssv-dkg"
+      10 "Stop ssv-dkg"
+      11 "Edit DKG operator.yaml"
+      - ""
+      12 "Back to main menu"
+    )
+
+    SUBCHOICE=$(whiptail --clear --cancel-button "Back" \
+      --backtitle "$BACKTITLE" \
+      --title "SSV Operator" \
+      --menu "Node + DKG share /var/lib/ssv/ secrets. Metrics/API: UFW-deny (scrape via localhost)." \
+      0 0 0 \
+      "${SUBOPTIONS[@]}" \
+      3>&1 1>&2 2>&3)
+
+    if [ $? -gt 0 ]; then
+        break
+    fi
+
+    case $SUBCHOICE in
+      1)
+        # Include DKG when present so node+DKG share one follow stream.
+        if isSsvDkgEnabled; then
+          view_journal_logs -u ssv-node -u ssv-dkg --no-hostname -f
+        else
+          view_journal_logs -fu ssv-node
+        fi
+        ;;
+      2)
+        sudo service ssv-node start
+        ;;
+      3)
+        sudo service ssv-node stop
+        ;;
+      4)
+        sudo service ssv-node restart
+        ;;
+      5)
+        sudo "${EDITOR:-nano}" /var/lib/ssv/config.yaml
+        if whiptail --title "SSV config" --yesno "Restart ssv-node to apply changes?" 8 60; then
+          sudo service ssv-node restart
+        fi
+        ;;
+      6)
+        runScript update_ssv.sh
+        ;;
+      7)
+        importSsvOperatorKeystore
+        ;;
+      8)
+        view_journal_logs -fu ssv-dkg
+        ;;
+      9)
+        sudo service ssv-dkg start
+        ;;
+      10)
+        sudo service ssv-dkg stop
+        ;;
+      11)
+        sudo "${EDITOR:-nano}" /var/lib/ssv/operator.yaml
+        if whiptail --title "SSV DKG" --yesno "Restart ssv-dkg to apply changes?" 8 60; then
+          sudo service ssv-dkg restart
+        fi
+        ;;
+      12)
+        break
+        ;;
+    esac
+done
+}
+
 submenuCharon(){
 while true; do
     getBackTitle
@@ -959,7 +1059,7 @@ while true; do
         if whiptail --title "Shutdown" --defaultno --yesno "Are you sure you want to shutdown?" 8 78; then sudo shutdown now; fi
         ;;
       📦)
-        whiptail --title "Installed versions" --msgbox "$(printInstalledVersions)" 12 78
+        whiptail --title "Installed versions" --msgbox "$(printInstalledVersions)" 16 78
         ;;
       📊)
         # Install btop process monitoring
@@ -1341,6 +1441,7 @@ while true; do
         fi
         ufwAllowExpectedP2pPorts
         ufwAllowCharonP2p
+        ufwAllowSsvPorts
         sudo ufw enable
         sudo ufw status numbered
         ohai "UFW firewall enabled."
@@ -1371,6 +1472,11 @@ while true; do
       charon)
         ufwAllowCharonP2p
         ohai "Charon P2P port $(getCharonP2pPort) allowed (TCP)."
+        sleep 2
+        ;;
+      ssv)
+        ufwAllowSsvPorts
+        ohai "SSV P2P (${SSV_P2P_TCP_PORT:-13001}/tcp, ${SSV_P2P_UDP_PORT:-12001}/udp) and DKG (${SSV_DKG_PORT:-3030}/tcp) allowed."
         sleep 2
         ;;
       disable)
@@ -1890,6 +1996,10 @@ function getBackTitle(){
       [[ "${isIntegrated:-false}" == "true" ]] && CLIENT_TEXT="| $CL_TEXT | 👥 $EL |"
       BACKTITLE="$NETWORK_TEXT | $EL_TEXT $CLIENT_TEXT | $END_TEXT"
       ;;
+    "SSV Operator")
+      getSsvCurrentVersion || true
+      BACKTITLE="$NETWORK_TEXT | 🟣 SSV ${VERSION:-unknown} | $END_TEXT"
+      ;;
     *)
       BACKTITLE="$NETWORK_TEXT"
       ;;
@@ -1904,9 +2014,9 @@ function checkV1StakingSetup(){
   fi
 }
 
-# If no execution, consensus or validator service and no Aztec install exist, start install workflow
+# If no execution, consensus, validator, SSV, or Aztec install exist, start install workflow
 function installNode(){
-  if [[ ! -f /etc/systemd/system/consensus.service && ! -f /etc/systemd/system/execution.service && ! -f /etc/systemd/system/validator.service && ! -d /opt/ethpillar/aztec ]]; then
+  if [[ ! -f /etc/systemd/system/consensus.service && ! -f /etc/systemd/system/execution.service && ! -f /etc/systemd/system/validator.service && ! -f /etc/systemd/system/ssv-node.service && ! -d /opt/ethpillar/aztec ]]; then
           local _ROLE cols lines width height
           # Stay inside an 80x24 terminal. Width is capped at 78 so the frame
           # fits; descriptions are short enough to sit beside the longest tag.
@@ -2003,6 +2113,9 @@ function setNodeMode(){
     else
         NODE_MODE="Validator Client Only"
     fi
+  elif [[ -f "${SSV_NODE_SERVICE_FILE:-/etc/systemd/system/ssv-node.service}" ]]; then
+    # SSV-only host (remote BN/EL) or migrate cutover without local EC/CC/VC units.
+    NODE_MODE="SSV Operator"
   elif [[ -d /opt/ethpillar/aztec ]] && [[ ! -f "$consensus_svc" ]]; then
       NODE_MODE="Aztec Node | Remote RPC"
   else
@@ -2047,6 +2160,20 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
       esac
     done
     migrateCdvnFull "$_migrate_path"
+    exit $?
+  fi
+
+  # ethpillar --migrate_ssv
+  if [[ "${1:-}" == "--migrate_ssv" ]]; then
+    setWhiptailColors
+    shift
+    if [[ $# -gt 0 ]]; then
+      echo "Unknown option: $1" >&2
+      echo "Usage: ethpillar --migrate_ssv" >&2
+      echo "Advanced: PYTHONPATH=. python3 -m deploy.ssv_migrate plan|run [flags]" >&2
+      exit 1
+    fi
+    migrateSsvFull
     exit $?
   fi
 

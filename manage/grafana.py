@@ -18,8 +18,13 @@ GRAFANA_INI_PATH = Path("/etc/grafana/grafana.ini")
 DEFAULT_GRAFANA_HTTP_PORT = 3000
 DEFAULT_GRAFANA_DASHBOARDS = Path("/etc/grafana/provisioning/dashboards")
 DEFAULT_DATASOURCES_YML = Path("/etc/grafana/provisioning/datasources/datasources.yml")
+# deleteDatasources first: Grafana 12+/13 treats a uid mismatch on an existing
+# Prometheus row as a fatal "data source not found" and never binds :3000.
 _DEFAULT_PROMETHEUS_DATASOURCE = (
     "apiVersion: 1\n"
+    "deleteDatasources:\n"
+    "  - name: Prometheus\n"
+    "    orgId: 1\n"
     "datasources:\n"
     "  - name: Prometheus\n"
     "    type: prometheus\n"
@@ -27,6 +32,7 @@ _DEFAULT_PROMETHEUS_DATASOURCE = (
     "    url: http://localhost:9090\n"
     "    access: proxy\n"
     "    isDefault: true\n"
+    "    editable: true\n"
 )
 
 
@@ -261,16 +267,33 @@ def ensure_prometheus_datasource_uid(datasources_yml: Path) -> bool:
         write_privileged_file(datasources_yml, _DEFAULT_PROMETHEUS_DATASOURCE)
         return True
 
-    if re.search(r"uid:\s*['\"]?prometheus['\"]?", text):
-        return False
-
-    updated, count = re.subn(
-        r"(name:\s*Prometheus\r?\n\s*type:\s*prometheus\r?\n)",
-        r"\1    uid: prometheus\n",
-        text,
-        count=1,
-    )
-    if count:
+    changed = False
+    updated = text
+    if not re.search(r"uid:\s*['\"]?prometheus['\"]?", updated):
+        updated, count = re.subn(
+            r"(name:\s*Prometheus\r?\n\s*type:\s*prometheus\r?\n)",
+            r"\1    uid: prometheus\n",
+            updated,
+            count=1,
+        )
+        changed = count > 0
+    # Grafana 12+/13: recreate-by-uid needs an explicit delete of the old row.
+    if "deleteDatasources:" not in updated and re.search(
+        r"name:\s*Prometheus", updated
+    ):
+        updated = re.sub(
+            r"(?m)^apiVersion:\s*1\s*\n",
+            (
+                "apiVersion: 1\n"
+                "deleteDatasources:\n"
+                "  - name: Prometheus\n"
+                "    orgId: 1\n"
+            ),
+            updated,
+            count=1,
+        )
+        changed = True
+    if changed:
         write_privileged_file(datasources_yml, updated)
         return True
     return False

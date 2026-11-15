@@ -13,8 +13,9 @@ from orchestrator import (
     VALID_ROLES, resolve_role_flags, get_combo_menu, get_vc_menu,
     get_ec_menu, get_cc_menu, get_vc_options_for_cc, get_predefined_vc_mode_options,
     resolve_vc_name, run_install,
-    CHARON_VC_LABEL, WEB3SIGNER_VC_LABEL, OBOL_CHARON, is_charon_vc_choice,
-    is_web3signer_vc_choice, lodestar_bn_vc_incompatibility_message,
+    CHARON_VC_LABEL, WEB3SIGNER_VC_LABEL, SSV_VC_LABEL, OBOL_CHARON,
+    is_charon_vc_choice, is_web3signer_vc_choice, is_ssv_vc_choice,
+    lodestar_bn_vc_incompatibility_message,
 )
 import config
 
@@ -75,6 +76,13 @@ parser.add_argument(
     default=False,
     help="Install Web3Signer and point the VC at it for remote signing (localhost :9000). "
     "The beacon node URL is unchanged. Not compatible with --with_charon.",
+)
+parser.add_argument(
+    "--with_ssv",
+    action="store_true",
+    default=False,
+    help="Install SSV Operator node (+ DKG) instead of a traditional validator client. "
+    "Not compatible with --with_charon or --with_web3signer.",
 )
 parser.add_argument("--jwtsecret", type=str, default=JWTSECRET_PATH)
 parser.add_argument("--graffiti", type=str, default=GRAFFITI)
@@ -147,12 +155,22 @@ else:
 
 flags["charon"] = bool(args.with_charon)
 flags["web3signer"] = bool(args.with_web3signer)
+flags["ssv"] = bool(args.with_ssv)
 if flags["charon"] and flags["web3signer"]:
     print(
         "ERROR: Web3Signer and Obol Charon cannot be combined. Install one signing mode.",
         file=sys.stderr,
     )
     exit(1)
+if flags["ssv"] and (flags["charon"] or flags["web3signer"]):
+    print(
+        "ERROR: SSV Operator cannot be combined with Charon or Web3Signer.",
+        file=sys.stderr,
+    )
+    exit(1)
+if flags["ssv"]:
+    # SSV replaces the traditional VC duty path.
+    flags["validator"] = False
 # Consensus switch: apply Teku/Nimbus companion flags when Charon is already installed.
 if args.switch_client == "consensus" and not flags["charon"]:
     if os.path.isfile("/etc/systemd/system/charon.service"):
@@ -173,6 +191,12 @@ if args.vc == WEB3SIGNER_VC_LABEL:
     print(
         f"ERROR: --vc '{WEB3SIGNER_VC_LABEL}' is not a validator client. "
         "Use --with_web3signer --vc <Lighthouse|Nimbus|Teku|Lodestar|Prysm|Grandine (integrated)>."
+    )
+    exit(1)
+if args.vc == SSV_VC_LABEL:
+    print(
+        f"ERROR: --vc '{SSV_VC_LABEL}' is not a traditional validator client. "
+        "Use --with_ssv (installs ssv-node instead of validator.service)."
     )
     exit(1)
 if flags["charon"] and args.vc == "Grandine (integrated)":
@@ -210,14 +234,15 @@ elif flags['validator_only']:
         if skip_prompts:
             vc_name = cc_name or args.cc or "Lighthouse"
         else:
-            vc_menu = get_vc_menu(include_charon=True, include_web3signer=True)
+            vc_menu = get_vc_menu(
+                include_charon=True, include_web3signer=True, include_ssv=True
+            )
             index = SelectionMenu.get_selection(vc_menu, title='Validator Client Selection', subtitle='Select your Validator Client:', show_exit_option=False)
             choice = vc_menu[index]
             if is_charon_vc_choice(choice):
-                if flags.get("web3signer"):
+                if flags.get("web3signer") or flags.get("ssv"):
                     print(
-                        "ERROR: Web3Signer and Obol Charon cannot be combined. "
-                        "Install one signing mode.",
+                        "ERROR: Obol Charon cannot be combined with Web3Signer or SSV.",
                         file=sys.stderr,
                     )
                     exit(1)
@@ -231,10 +256,9 @@ elif flags['validator_only']:
                 )
                 vc_name = signer_menu[signer_idx]
             elif is_web3signer_vc_choice(choice):
-                if flags.get("charon"):
+                if flags.get("charon") or flags.get("ssv"):
                     print(
-                        "ERROR: Web3Signer and Obol Charon cannot be combined. "
-                        "Install one signing mode.",
+                        "ERROR: Web3Signer cannot be combined with Charon or SSV.",
                         file=sys.stderr,
                     )
                     exit(1)
@@ -247,6 +271,16 @@ elif flags['validator_only']:
                     show_exit_option=False,
                 )
                 vc_name = signer_menu[signer_idx]
+            elif is_ssv_vc_choice(choice):
+                if flags.get("charon") or flags.get("web3signer"):
+                    print(
+                        "ERROR: SSV Operator cannot be combined with Charon or Web3Signer.",
+                        file=sys.stderr,
+                    )
+                    exit(1)
+                flags["ssv"] = True
+                flags["validator"] = False
+                vc_name = None
             else:
                 vc_name = choice
     else:
@@ -280,7 +314,10 @@ elif role == "Custom Setup":
             if val_prompt == 0:
                 flags['validator'] = True
                 vc_opts = get_vc_options_for_cc(
-                    cc_name, include_charon=True, include_web3signer=True
+                    cc_name,
+                    include_charon=True,
+                    include_web3signer=True,
+                    include_ssv=True,
                 )
                 subtitle = (
                     'Select your Validator Client:'
@@ -292,10 +329,9 @@ elif role == "Custom Setup":
                 )
                 choice = vc_opts[index]
                 if is_charon_vc_choice(choice):
-                    if flags.get("web3signer"):
+                    if flags.get("web3signer") or flags.get("ssv"):
                         print(
-                            "ERROR: Web3Signer and Obol Charon cannot be combined. "
-                            "Install one signing mode.",
+                            "ERROR: Obol Charon cannot be combined with Web3Signer or SSV.",
                             file=sys.stderr,
                         )
                         exit(1)
@@ -311,10 +347,9 @@ elif role == "Custom Setup":
                     )
                     vc_name = resolve_vc_name(cc_name, signer_opts[signer_idx])
                 elif is_web3signer_vc_choice(choice):
-                    if flags.get("charon"):
+                    if flags.get("charon") or flags.get("ssv"):
                         print(
-                            "ERROR: Web3Signer and Obol Charon cannot be combined. "
-                            "Install one signing mode.",
+                            "ERROR: Web3Signer cannot be combined with Charon or SSV.",
                             file=sys.stderr,
                         )
                         exit(1)
@@ -327,6 +362,16 @@ elif role == "Custom Setup":
                         show_exit_option=False,
                     )
                     vc_name = resolve_vc_name(cc_name, signer_opts[signer_idx])
+                elif is_ssv_vc_choice(choice):
+                    if flags.get("charon") or flags.get("web3signer"):
+                        print(
+                            "ERROR: SSV Operator cannot be combined with Charon or Web3Signer.",
+                            file=sys.stderr,
+                        )
+                        exit(1)
+                    flags["ssv"] = True
+                    flags["validator"] = False
+                    vc_name = None
                 else:
                     vc_name = resolve_vc_name(cc_name, choice)
             else:
@@ -359,12 +404,14 @@ else:
             vc_name = args.vc
         elif skip_prompts or flags.get("charon") or flags.get("web3signer"):
             vc_name = cc_name
+        elif flags.get("ssv"):
+            vc_name = None
         else:
             mode_opts = get_predefined_vc_mode_options()
             mode_idx = SelectionMenu.get_selection(
                 mode_opts,
                 title='Validator Client',
-                subtitle='Use same client as consensus, Obol Charon DV, or Web3Signer?',
+                subtitle='Same as CC, Obol Charon DV, Web3Signer, or SSV Operator?',
                 show_exit_option=False,
             )
             if is_charon_vc_choice(mode_opts[mode_idx]):
@@ -389,6 +436,10 @@ else:
                     show_exit_option=False,
                 )
                 vc_name = resolve_vc_name(cc_name, signer_opts[signer_idx])
+            elif is_ssv_vc_choice(mode_opts[mode_idx]):
+                flags["ssv"] = True
+                flags["validator"] = False
+                vc_name = None
             else:
                 vc_name = cc_name
 

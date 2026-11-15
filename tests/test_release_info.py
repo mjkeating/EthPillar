@@ -220,6 +220,28 @@ class TestGetClientReleaseInfo:
         assert info["filenames"][0] == "charon-v1.10.3-linux-amd64.tar.gz"
         mock_gh.assert_called_once_with("ObolNetwork/charon", "LATEST")
 
+    @patch("deploy.common.get_github_release")
+    def test_ssv_node_source_build_release(self, mock_gh):
+        mock_gh.return_value = _make_github_release("v2.5.1", [])
+        mock_gh.return_value["tarball_url"] = (
+            "https://api.github.com/repos/ssvlabs/ssv/tarball/v2.5.1"
+        )
+        info = get_client_release_info("ssv", "LATEST")
+        assert info["version"] == "v2.5.1"
+        assert info.get("source_build") is True
+        mock_gh.assert_called_once_with("ssvlabs/ssv", "LATEST")
+
+    @patch("deploy.common.get_github_release")
+    def test_ssv_dkg_uses_dkg_repo_assets(self, mock_gh):
+        mock_gh.return_value = _make_github_release("v3.1.1", [
+            "ssv-dkg-v3.1.1-linux-amd64.zip",
+            "ssv-dkg-v3.1.1-linux-arm64.zip",
+        ])
+        info = get_client_release_info("ssv-dkg", "LATEST")
+        assert info["version"] == "v3.1.1"
+        assert "ssv-dkg" in info["filenames"][0]
+        mock_gh.assert_called_once_with("ssvlabs/ssv-dkg", "LATEST")
+
     @patch("deploy.common.requests.get")
     @patch("deploy.common.get_github_release")
     def test_web3signer_prefers_tarball_over_checksum(self, mock_gh, mock_get):

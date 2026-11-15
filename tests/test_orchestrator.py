@@ -20,7 +20,8 @@ from deploy.orchestrator import (
     get_vc_options_for_cc, get_predefined_vc_mode_options, resolve_vc_name, is_charon_vc_choice,
     run_install, is_valid_combination,
     PREDEFINED_COMBOS, EXECUTION_CLIENTS, CONSENSUS_CLIENTS,
-    CHARON_VC_LABEL, WEB3SIGNER_VC_LABEL, _int_param, _with_dvt_params,
+    CHARON_VC_LABEL, WEB3SIGNER_VC_LABEL, SSV_VC_LABEL, _int_param, _with_dvt_params,
+    is_ssv_vc_choice,
     lodestar_bn_vc_incompatibility_message, LODESTAR_BN_INCOMPATIBLE_VCS,
 )
 
@@ -129,6 +130,8 @@ class TestCustomClientMenuLogic:
     def test_charon_signer_menu_excludes_charon_and_integrated_grandine(self):
         menu = get_vc_options_for_cc("Lighthouse", for_charon_signer=True)
         assert CHARON_VC_LABEL not in menu
+        assert WEB3SIGNER_VC_LABEL not in menu
+        assert SSV_VC_LABEL not in menu
         assert "Grandine (integrated)" not in menu
         assert menu[0] == "Same as CC"
 
@@ -150,6 +153,7 @@ class TestCustomClientMenuLogic:
         menu = get_vc_options_for_cc("Teku", for_web3signer_vc=True)
         assert CHARON_VC_LABEL not in menu
         assert WEB3SIGNER_VC_LABEL not in menu
+        assert SSV_VC_LABEL not in menu
         assert menu[0] == "Same as CC"
         assert "Lighthouse" in menu
 
@@ -158,10 +162,12 @@ class TestCustomClientMenuLogic:
         assert menu[0] == "Grandine (integrated)"
         assert CHARON_VC_LABEL not in menu
         assert WEB3SIGNER_VC_LABEL not in menu
+        assert SSV_VC_LABEL not in menu
 
     def test_default_vc_menu_omits_web3signer(self):
         menu = get_vc_options_for_cc("Lighthouse")
         assert WEB3SIGNER_VC_LABEL not in menu
+        assert SSV_VC_LABEL not in menu
         assert menu[-1] == CHARON_VC_LABEL
 
     def test_vc_only_menu_lists_web3signer_after_charon(self):
@@ -172,9 +178,23 @@ class TestCustomClientMenuLogic:
         assert CHARON_VC_LABEL not in coupled
         assert WEB3SIGNER_VC_LABEL not in coupled
 
-    def test_predefined_role_menu_lists_web3signer_after_charon(self):
+    def test_vc_menu_lists_ssv_when_requested(self):
+        menu = get_vc_menu(
+            include_charon=True, include_web3signer=True, include_ssv=True
+        )
+        assert menu[-1] == SSV_VC_LABEL
+        assert WEB3SIGNER_VC_LABEL in menu
+        assert is_ssv_vc_choice(SSV_VC_LABEL)
+        assert not is_ssv_vc_choice("Lodestar")
+
+    def test_predefined_role_menu_lists_ssv_after_web3signer(self):
         menu = get_predefined_vc_mode_options()
-        assert menu == ["Same as CC", CHARON_VC_LABEL, WEB3SIGNER_VC_LABEL]
+        assert menu == [
+            "Same as CC",
+            CHARON_VC_LABEL,
+            WEB3SIGNER_VC_LABEL,
+            SSV_VC_LABEL,
+        ]
 
     def test_with_dvt_params_appends_client_specific_flags(self):
         assert _with_dvt_params("--builder", "Lodestar", True) == "--builder --distributed"
@@ -346,6 +366,11 @@ class TestRunInstallRouting:
         mocks = self._run("Custom Setup", "Besu", "Teku", "Teku", flags_override={"validator": True})
         # Note: tk_dl should only be called ONCE (assert_called_once is in _verify_only_called)
         self._verify_only_called(mocks, ['besu', 'tk_dl', 'tk_bn', 'tk_vc'])
+        assert mocks['besu'].call_args.kwargs.get('enable_ws') is False
+
+    def test_non_ssv_reth_does_not_enable_ws(self):
+        mocks = self._run("Solo Staking Node", "Reth", "Lighthouse")
+        assert mocks['reth'].call_args.kwargs.get('enable_ws') is False
 
     def test_custom_no_validator_skips_vc_entirely(self):
         mocks = self._run("Custom Setup", "Nethermind", "Lighthouse", None, flags_override={"validator": False})

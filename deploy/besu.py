@@ -5,7 +5,8 @@ from deploy.service_generators import form_exec_start, generate_systemd_template
 
 def generate_besu_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
                           el_max_peer_count: str, jwtsecret_path: str,
-                          network_override: Optional[str] = None) -> str:
+                          network_override: Optional[str] = None,
+                          enable_ws: bool = False) -> str:
     """Generate Besu execution client systemd service file content.
 
     Args:
@@ -15,6 +16,7 @@ def generate_besu_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
         el_max_peer_count: Max peer count
         jwtsecret_path: Path to JWT secret file
         network_override: Optional network flag override (for ephemery custom config)
+        enable_ws: When True, expose localhost WebSocket on :8546 (SSV eth1)
 
     Returns:
         Service file content as a string
@@ -34,11 +36,19 @@ def generate_besu_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
         "--metrics-enabled=true",
         "--metrics-port=6060",
         "--rpc-http-enabled=true",
+    ]
+    if enable_ws:
+        _args.extend([
+            "--rpc-ws-enabled=true",
+            "--rpc-ws-host=127.0.0.1",
+            "--rpc-ws-port=8546",
+        ])
+    _args.extend([
         "--sync-mode=SNAP",
         "--data-storage-format=BONSAI",
         f"--data-path=\"{BASE_DATA_DIR}/besu\"",
         f"--engine-jwt-secret={jwtsecret_path}"
-    ]
+    ])
     _exec_start = form_exec_start(_args)
 
     return generate_systemd_template(
@@ -78,8 +88,12 @@ def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
 
 def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: str, 
                                 el_max_peer_count: str, jwtsecret_path: str,
-                                network_override: Optional[str] = None) -> Tuple[str, str]:
+                                network_override: Optional[str] = None,
+                                enable_ws: bool = False) -> Tuple[str, str]:
     """Download and install Besu binary and service.
+
+    Args:
+        enable_ws: Forwarded to :func:`generate_besu_service` (SSV needs localhost WS).
 
     Returns:
         besu_version: The version string of the installed Besu
@@ -117,7 +131,7 @@ def download_and_install_besu(eth_network: str, el_p2p_port: str, el_rpc_port: s
     # Generate Service File Content
     service_content = generate_besu_service(
         eth_network, el_p2p_port, el_rpc_port, el_max_peer_count, 
-        jwtsecret_path, network_override
+        jwtsecret_path, network_override, enable_ws=enable_ws,
     )
     
     service_file_path = '/etc/systemd/system/execution.service'

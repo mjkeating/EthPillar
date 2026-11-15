@@ -175,3 +175,18 @@ EOF
     [[ "$output" == *"Validator client: Not installed."* ]]
     ! grep -q curl "$COMMAND_LOG"
 }
+
+@test "--version: prints SSV Operator and SSV DKG when both units exist" {
+    export SSV_NODE_SERVICE_FILE="$TEST_SYSTEMD_DIR/ssv-node.service"
+    export SSV_DKG_SERVICE_FILE="$TEST_SYSTEMD_DIR/ssv-dkg.service"
+    write_bin "$MOCK_BIN_DIR/ssvnode" "Version: v2.5.1"
+    write_bin "$MOCK_BIN_DIR/ssv-dkg" "ssv-dkg version v3.1.1"
+    write_service "$SSV_NODE_SERVICE_FILE" "SSV Operator Node for MAINNET" "$MOCK_BIN_DIR/ssvnode start-node"
+    write_service "$SSV_DKG_SERVICE_FILE" "SSV DKG Operator for MAINNET" "$MOCK_BIN_DIR/ssv-dkg start-operator"
+
+    run ./ethpillar.sh --version
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"SSV Operator: v2.5.1"* ]]
+    [[ "$output" == *"SSV DKG: v3.1.1"* ]]
+    ! grep -q curl "$COMMAND_LOG"
+}

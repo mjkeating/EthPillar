@@ -89,6 +89,7 @@ Already running a validator? EthPillar works with [Coincashew’s Staking Guide]
 - **Flexible Deployment Configurations**: Solo staking node, Full Node, CSM, Validator-only, Failover, or Obol Charon DV setups
 - **ePBS / Gloas migration**: Two-step MEV-Boost cutover under **MEV-Boost → ePBS migration** (Prysm, Lodestar, Teku v26.9.0+, Erigon-Caplin, and Lighthouse v8.3.0+ TUI; Charon DVT hidden until Obol ships support; [guide](docs/ePBS-migration.md))
 - **Obol Charon DV**: DVT middleware + CDVN migrate ([guide](docs/charon.md))
+- **SSV Operator**: duty client + systemd migrate (`ethpillar --migrate_ssv`, [guide](docs/ssv.md))
 - **Web3Signer**: Remote signer for validator keys ([guide](docs/web3signer.md))
 
 ---

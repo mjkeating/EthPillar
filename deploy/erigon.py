@@ -53,7 +53,8 @@ def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str
                             network_override: Optional[str] = None, sync_parameters: str = '',
                             mev_parameters: str = '',
                             cl_quic_port: str = '9001',
-                            erigon_version: str = '') -> str:
+                            erigon_version: str = '',
+                            enable_ws: bool = False) -> str:
     """Generate Erigon+Caplin integrated execution-consensus systemd service file content.
 
     QUIC uses ``--caplin.discovery.quicport`` on v3.7.1+. Caplin's native QUIC
@@ -79,6 +80,7 @@ def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str
         cl_quic_port: Caplin QUIC UDP port (``CL_P2P_PORT_2``, default 9001)
         erigon_version: Installed Erigon version. Empty includes the QUIC pin.
             Below v3.7.1 the pin is omitted.
+        enable_ws: When True, expose WebSocket on :8546 (SSV eth1)
 
     Returns:
         Service file content as a string
@@ -97,13 +99,17 @@ def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str
         f"--http.port={el_rpc_port}",
         f"--maxpeers={el_max_peer_count}",
         "--http.api=web3,eth,net,engine",
+    ]
+    if enable_ws:
+        _args.extend(["--ws", "--ws.addr=127.0.0.1", "--ws.port=8546"])
+    _args.extend([
         "--metrics",
         _METRICS_PORT_ARG,
         "--pprof",
         "--prune.mode=minimal",
         "--private.api.addr=127.0.0.1:9091",
         f"--authrpc.jwtsecret={jwtsecret_path}"
-    ]
+    ])
     
     if sync_parameters:
         _args.append(sync_parameters.strip())
@@ -146,7 +152,8 @@ def generate_erigon_service(eth_network: str, el_p2p_port: str, el_rpc_port: str
 
 def generate_erigon_standalone_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
                                        el_max_peer_count: str, jwtsecret_path: str,
-                                       network_override: Optional[str] = None, sync_parameters: str = '') -> str:
+                                       network_override: Optional[str] = None, sync_parameters: str = '',
+                                       enable_ws: bool = False) -> str:
     """Generate Erigon execution client standalone systemd service file content (without Caplin).
 
     Args:
@@ -157,6 +164,7 @@ def generate_erigon_standalone_service(eth_network: str, el_p2p_port: str, el_rp
         jwtsecret_path: Path to JWT secret file
         network_override: Optional network flag override (for ephemery)
         sync_parameters: Optional sync/prune parameters
+        enable_ws: When True, expose WebSocket on :8546 (SSV eth1)
 
     Returns:
         Service file content as a string
@@ -175,13 +183,17 @@ def generate_erigon_standalone_service(eth_network: str, el_p2p_port: str, el_rp
         f"--http.port={el_rpc_port}",
         f"--maxpeers={el_max_peer_count}",
         "--http.api=web3,eth,net,engine",
+    ]
+    if enable_ws:
+        _args.extend(["--ws", "--ws.addr=127.0.0.1", "--ws.port=8546"])
+    _args.extend([
         "--metrics",
         _METRICS_PORT_ARG,
         "--pprof",
         "--prune.mode=minimal",
         "--private.api.addr=127.0.0.1:9091",
         f"--authrpc.jwtsecret={jwtsecret_path}"
-    ]
+    ])
     if sync_parameters:
         _args.append(sync_parameters.strip())
     _args.append("--externalcl")
@@ -226,8 +238,12 @@ def download_and_install_erigon(eth_network: str, el_p2p_port: str, el_rpc_port:
                                  jwtsecret_path: str, cl_p2p_port: str, cl_rest_port: str, cl_max_peer_count_cl: str,
                                  checkpoint_sync_url: str, mev_parameters: str = '',
                                  cl_quic_port: str = '9001',
-                                 network_override: Optional[str] = None) -> Tuple[str, str]:
+                                 network_override: Optional[str] = None,
+                                 enable_ws: bool = False) -> Tuple[str, str]:
     """Download and install Erigon binary and service.
+
+    Args:
+        enable_ws: Forwarded to :func:`generate_erigon_service` (SSV needs localhost WS).
 
     Returns:
         erigon_version: The version string of the installed Erigon
@@ -260,6 +276,7 @@ def download_and_install_erigon(eth_network: str, el_p2p_port: str, el_rpc_port:
         cl_quic_port=cl_quic_port or '9001',
         erigon_version=erigon_version,
         network_override=network_override,
+        enable_ws=enable_ws,
     )
     
     service_file_path = '/etc/systemd/system/execution.service'
@@ -270,8 +287,12 @@ def download_and_install_erigon(eth_network: str, el_p2p_port: str, el_rpc_port:
 
 def download_and_install_erigon_standalone(eth_network: str, el_p2p_port: str, el_rpc_port: str, el_max_peer_count: str, 
                                            jwtsecret_path: str,
-                                           network_override: Optional[str] = None) -> Tuple[str, str]:
+                                           network_override: Optional[str] = None,
+                                           enable_ws: bool = False) -> Tuple[str, str]:
     """Download and install Erigon binary and service as a standalone execution client.
+
+    Args:
+        enable_ws: Forwarded to :func:`generate_erigon_standalone_service` (SSV needs localhost WS).
 
     Returns:
         erigon_version: The version string of the installed Erigon
@@ -300,6 +321,7 @@ def download_and_install_erigon_standalone(eth_network: str, el_p2p_port: str, e
     service_content = generate_erigon_standalone_service(
         eth_network, el_p2p_port, el_rpc_port, el_max_peer_count, jwtsecret_path,
         network_override=network_override,
+        enable_ws=enable_ws,
     )
     
     service_file_path = '/etc/systemd/system/execution.service'

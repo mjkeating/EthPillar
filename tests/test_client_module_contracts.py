@@ -13,6 +13,7 @@ from deploy.protocols import (
     ALL_CLIENT_MODULES,
     CharonClientModule,
     ReleaseInfoProvider,
+    SsvClientModule,
     Web3SignerClientModule,
 )
 
@@ -46,3 +47,8 @@ def test_charon_module_satisfies_charon_protocol() -> None:
 def test_web3signer_module_satisfies_web3signer_protocol() -> None:
     module = importlib.import_module("deploy.web3signer")
     assert isinstance(module, Web3SignerClientModule)
+
+
+def test_ssv_module_satisfies_ssv_protocol() -> None:
+    module = importlib.import_module("deploy.ssv")
+    assert isinstance(module, SsvClientModule)

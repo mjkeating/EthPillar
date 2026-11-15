@@ -10,7 +10,7 @@ import json
 import tarfile
 import tempfile
 from consolemenu import PromptUtils, Screen
-from typing import Callable, Optional, List
+from typing import Callable, List, Optional, Tuple
 
 from deploy import http_retry
 import glob
@@ -606,6 +606,129 @@ def ensure_java_available(min_version: int = 25) -> bool:
     return False
 
 
+def get_go_version() -> Optional[Tuple[int, int]]:
+    """Return ``(major, minor)`` from ``go version``, or None if Go is missing."""
+    try:
+        result = subprocess.run(
+            ["go", "version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return None
+    if result.returncode != 0:
+        return None
+    # e.g. "go version go1.26.10 linux/amd64"
+    match = re.search(r"go(\d+)\.(\d+)", result.stdout or "")
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def ensure_go_available(
+    min_minor_series: Tuple[int, int] = (1, 22),
+    *,
+    install_version: Optional[str] = None,
+) -> bool:
+    """Ensure a Go toolchain of at least *min_minor_series* is on PATH.
+
+    Distro packages often lag, so this installs the official tarball under
+    ``/usr/local/go`` when needed.
+
+    Args:
+        min_minor_series: Minimum ``(major, minor)`` accepted (patch ignored).
+        install_version: Exact ``X.Y.Z`` (or ``goX.Y.Z``) tarball to install
+            when the host is below *min_minor_series*. Defaults to
+            ``{major}.{minor}.0`` from *min_minor_series*.
+
+    Returns:
+        True when a suitable Go is available (already or after install).
+    """
+    current = get_go_version()
+    if current is not None and current >= min_minor_series:
+        print(f">> Go {current[0]}.{current[1]} already available (>= {min_minor_series[0]}.{min_minor_series[1]})")
+        return True
+
+    maj, minor = min_minor_series
+    go_full = (install_version or f"{maj}.{minor}.0").removeprefix("go")
+    arch = get_machine_architecture()  # amd64 | arm64
+    tarball = f"go{go_full}.linux-{arch}.tar.gz"
+    url = f"https://go.dev/dl/{tarball}"
+    print(f">> Installing Go {go_full} from {url}")
+    env = os.environ.copy()
+    env["DEBIAN_FRONTEND"] = "noninteractive"
+    # Build deps often needed alongside Go for CGO clients.
+    subprocess.run(
+        ["sudo", "apt-get", "-y", "-qq", "update"],
+        check=False,
+        env=env,
+    )
+    subprocess.run(
+        ["sudo", "apt-get", "-y", "-qq", "install", "curl", "ca-certificates"],
+        check=False,
+        env=env,
+    )
+    tmp = f"/tmp/{tarball}"
+    dl = subprocess.run(["curl", "-fsSL", "-o", tmp, url], check=False)
+    if dl.returncode != 0:
+        print(f">> ❌ ERROR: failed to download {url}")
+        return False
+    subprocess.run(["sudo", "rm", "-rf", "/usr/local/go"], check=False)
+    extract = subprocess.run(
+        ["sudo", "tar", "-C", "/usr/local", "-xzf", tmp],
+        check=False,
+    )
+    if extract.returncode != 0:
+        print(">> ❌ ERROR: failed to extract Go toolchain under /usr/local/go")
+        return False
+    # Ensure /usr/local/go/bin is ahead of any older distro go.
+    go_bin = "/usr/local/go/bin"
+    profile = "/etc/profile.d/ethpillar-go.sh"
+    subprocess.run(
+        ["sudo", "tee", profile],
+        input=f'export PATH="{go_bin}:$PATH"\n',
+        text=True,
+        check=False,
+        stdout=subprocess.DEVNULL,
+    )
+    os.environ["PATH"] = f"{go_bin}:{os.environ.get('PATH', '')}"
+    new = get_go_version()
+    if new is not None and new >= min_minor_series:
+        print(f">> Go {new[0]}.{new[1]} is now active ({go_bin}/go)")
+        return True
+    print(
+        f">> Warning: Go is {new}, expected >= {min_minor_series[0]}.{min_minor_series[1]}. "
+        f"Ensure {go_bin} is on PATH."
+    )
+    return False
+
+
+def ensure_c_build_tools() -> bool:
+    """Install packages needed for CGO builds (``make``, ``gcc``, ``git``)."""
+    print(">> Ensuring CGO build tools (build-essential, git, make)")
+    env = os.environ.copy()
+    env["DEBIAN_FRONTEND"] = "noninteractive"
+    res = subprocess.run(
+        [
+            "sudo",
+            "apt-get",
+            "-y",
+            "-qq",
+            "install",
+            "build-essential",
+            "git",
+            "make",
+        ],
+        check=False,
+        env=env,
+    )
+    if res.returncode == 0:
+        return True
+    print(">> ❌ ERROR: could not install build-essential/git/make")
+    return False
+
+
 def ensure_jemalloc() -> bool:
     """Install libjemalloc-dev so JVM clients (Besu, Teku) can preload it.
 
@@ -994,6 +1117,9 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
                    charon_service_path: Optional[str] = None,
                    web3signer_enabled: bool = False, web3signer_version: Optional[str] = None,
                    web3signer_service_path: Optional[str] = None,
+                   ssv_enabled: bool = False, ssv_version: Optional[str] = None,
+                   ssv_node_service_path: Optional[str] = None,
+                   ssv_dkg_service_path: Optional[str] = None,
                    builder_mode: str = '',
                    relays: Optional[list] = None) -> None:
     """Display installation summary and optionally start/enable services.
@@ -1025,6 +1151,10 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
         web3signer_enabled: Whether Web3Signer was installed.
         web3signer_version: Web3Signer version string.
         web3signer_service_path: Path to web3signer.service.
+        ssv_enabled: Whether SSV operator node was installed.
+        ssv_version: SSV node version string.
+        ssv_node_service_path: Path to ssv-node.service.
+        ssv_dkg_service_path: Path to ssv-dkg.service (may be empty).
         builder_mode: ``mevboost``, ``epbs``, or ``none``. Empty omits the line.
         relays: Selected relay dicts (``name`` and ``url``) for the summary.
     """
@@ -1074,6 +1204,9 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
     if web3signer_enabled and web3signer_version:
         print(f'Web3Signer Version: \n{web3signer_version}\n')
 
+    if ssv_enabled and ssv_version:
+        print(f'SSV Operator Version: \n{ssv_version}\n')
+
     print(f'Network: {eth_network.upper()}\n')
 
     if not validator_only:
@@ -1105,6 +1238,10 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
         print(f'{charon_service_path}')
     if web3signer_enabled and web3signer_service_path:
         print(f'{web3signer_service_path}')
+    if ssv_enabled and ssv_node_service_path:
+        print(f'{ssv_node_service_path}')
+    if ssv_enabled and ssv_dkg_service_path:
+        print(f'{ssv_dkg_service_path}')
 
     if charon_enabled:
         from deploy.charon import CHARON_CLUSTER_DIR
@@ -1170,6 +1307,36 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
         print('  Keys stay in Web3Signer. The validator client does not load them.')
         print('  See docs/web3signer.md for a Hoodi check with Teku and Lighthouse.\n')
 
+    if ssv_enabled:
+        from deploy.ssv import (
+            SSV_DATA_DIR,
+            SSV_DKG_CONFIG_FILE,
+            SSV_PRIVATE_KEY_FILE,
+            SSV_PASSWORD_FILE,
+        )
+        print('\nSSV Operator next steps:')
+        print(f'  1. Back up {SSV_PRIVATE_KEY_FILE} and {SSV_PASSWORD_FILE}')
+        print(f'     (required for both ssv-node and ssv-dkg; no recovery if lost)')
+        print(f'  2. Back up {SSV_DATA_DIR}/db (slashing protection)')
+        print('  3. Register your operator at https://app.ssv.network/')
+        print(f'  4. Set operator ID in {SSV_DKG_CONFIG_FILE} (EthPillar → SSV Operator)')
+        print('  5. Open firewall: TCP 13001, UDP 12001 (P2P), TCP 3030 (DKG)')
+        print('  6. sudo systemctl start ssv-node')
+        print('  7. Optional: sudo systemctl start ssv-dkg')
+        print('  See docs/ssv.md for details.\n')
+        try:
+            from manage.ssv_monitoring import provision_ssv_monitoring
+            mon = provision_ssv_monitoring(restart=True)
+            if mon.get('scrape') or mon.get('dashboard'):
+                print('SSV monitoring: Prometheus scrape and/or SSV Operational dashboard updated.')
+                print('  Grafana: http://127.0.0.1:3000 (SSV Operational)')
+            elif not os.path.isfile('/etc/prometheus/prometheus.yml'):
+                print('Tip: Install Monitoring (Logging & Monitoring) to auto-provision SSV dashboards.')
+        except PermissionError as exc:
+            print(f'ERROR: SSV Grafana/Prometheus provisioning failed (permission denied): {exc}')
+        except Exception as exc:  # noqa: BLE001
+            print(f'Note: SSV Grafana/Prometheus provisioning skipped ({exc}).')
+
     if skip_prompts:
         print(f'\nNon-interactive install successful! Skipped prompts.')
         exit(0)
@@ -1194,6 +1361,10 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
                     services.append('charon')
             if web3signer_enabled:
                 services.append('web3signer')
+            if ssv_enabled:
+                from deploy.ssv import operator_keystore_present
+                if operator_keystore_present():
+                    services.append('ssv-node')
             # --no-block: Nimbus trustedNodeSync ExecStartPre can block for minutes.
             start_units_no_block(services)
             if services:
@@ -1221,6 +1392,10 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
                 subprocess.run(['sudo', 'systemctl', 'enable', 'charon'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
             if web3signer_enabled:
                 subprocess.run(['sudo', 'systemctl', 'enable', 'web3signer'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+            if ssv_enabled:
+                subprocess.run(['sudo', 'systemctl', 'enable', 'ssv-node'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                if ssv_dkg_service_path:
+                    subprocess.run(['sudo', 'systemctl', 'enable', 'ssv-dkg'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
     if skip_prompts:
         exit(0)
@@ -1717,6 +1892,10 @@ def get_client_release_info(
         module_name = "charon"
     elif client in ["web3signer", "web3-signer"]:
         module_name = "web3signer"
+    elif client in ["ssv", "ssv-node", "ssvnode"]:
+        module_name = "ssv"
+    elif client in ["ssv-dkg", "ssvdkg"]:
+        module_name = "ssv"
     else:
         module_name = client
 
@@ -1730,11 +1909,14 @@ def get_client_release_info(
     raw_arch = platform.machine().lower()
     arch_amd64 = raw_arch in ['x86_64', 'amd64']
 
-    if not hasattr(module, "get_release_info"):
-        raise ValueError(f"Client module deploy.{module_name} does not implement get_release_info")
+    # ssv-dkg ships from a separate GitHub repo; deploy.ssv exposes
+    # get_dkg_release_info rather than reusing get_release_info (ssv-node).
+    release_fn = "get_dkg_release_info" if client in ["ssv-dkg", "ssvdkg"] else "get_release_info"
+    if not hasattr(module, release_fn):
+        raise ValueError(f"Client module deploy.{module_name} does not implement {release_fn}")
 
     resolved_tag = version_tag
-    info = module.get_release_info(resolved_tag, arch_amd64)
+    info = getattr(module, release_fn)(resolved_tag, arch_amd64)
 
     if str(version_tag).upper() == "LATEST":
         net = (network or _detect_runtime_network() or "").strip().lower()

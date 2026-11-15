@@ -31,6 +31,7 @@ _SNAPSHOT_CLIENTS = (
     "mevboost",
     "charon",
     "web3signer",
+    "ssv",
 )
 
 

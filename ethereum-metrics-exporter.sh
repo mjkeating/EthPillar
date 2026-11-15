@@ -212,8 +212,13 @@ function allowLocalAccessToGrafana(){
 # Sets the default Prometheus datasource to http://localhost:9090
 function configureDataSource(){
 	# uid: prometheus matches Obol CDVN Charon Overview dashboard datasources
+	# deleteDatasources first: Grafana 12+/13 fatal-errors if a provisioned
+	# uid cannot be applied onto an existing Prometheus datasource row.
 	sudo bash -c "cat << 'EOF' > $GRAFANA_DIR/provisioning/datasources/datasources.yml
 apiVersion: 1
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
 datasources:
   - name: Prometheus
     type: prometheus
@@ -221,6 +226,7 @@ datasources:
     url: http://localhost:9090
     access: proxy
     isDefault: true
+    editable: true
 EOF"
 }
 

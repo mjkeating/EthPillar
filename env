@@ -56,3 +56,16 @@ CHARON_VALIDATOR_API_PORT=3600
 CHARON_MONITORING_PORT=3620
 # Optional public IP advertised to cluster peers. Leave empty to rely on Obol relays.
 CHARON_P2P_EXTERNAL_IP=
+
+# SSV Network operator node (+ DKG sidecar)
+SSV_P2P_TCP_PORT=13001
+SSV_P2P_UDP_PORT=12001
+SSV_METRICS_PORT=15000
+SSV_API_PORT=16000
+SSV_DKG_PORT=3030
+# Optional public IP advertised to SSV peers. Leave empty for auto-discovery.
+SSV_P2P_EXTERNAL_IP=
+# Set after registering at https://app.ssv.network/ (required for DKG ceremonies).
+SSV_OPERATOR_ID=
+# Execution WebSocket port used by ssv-node (ETH1Addr). Most EL clients use 8546.
+EL_WS_PORT=8546

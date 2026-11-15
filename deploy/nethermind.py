@@ -6,7 +6,8 @@ from deploy.service_generators import form_exec_start, generate_systemd_template
 
 def generate_nethermind_service(eth_network: str, el_p2p_port: str, el_rpc_port: str,
                                 el_max_peer_count: str, jwtsecret_path: str,
-                                network_override: Optional[str] = None, sync_parameters: str = '') -> str:
+                                network_override: Optional[str] = None, sync_parameters: str = '',
+                                enable_ws: bool = False) -> str:
     """Generate Nethermind execution client systemd service file content.
 
     Args:
@@ -17,6 +18,7 @@ def generate_nethermind_service(eth_network: str, el_p2p_port: str, el_rpc_port:
         jwtsecret_path: Path to JWT secret file
         network_override: Optional network config override (for ephemery)
         sync_parameters: Optional sync barrier parameters
+        enable_ws: When True, expose localhost WebSocket on :8546 (SSV eth1)
 
     Returns:
         Service file content as a string
@@ -34,13 +36,20 @@ def generate_nethermind_service(eth_network: str, el_p2p_port: str, el_rpc_port:
         f"--Network.P2PPort {el_p2p_port}",
         f"--Network.MaxActivePeers {el_max_peer_count}",
         f"--JsonRpc.Port {el_rpc_port}",
+    ]
+    if enable_ws:
+        _args.extend([
+            "--JsonRpc.Host 127.0.0.1",
+            "--JsonRpc.WebSocketsPort 8546",
+        ])
+    _args.extend([
         "--Metrics.Enabled true",
         "--Metrics.ExposePort 6060",
         f"--JsonRpc.JwtSecretFile {jwtsecret_path}",
         "--Pruning.Mode=Hybrid",
         "--Pruning.FullPruningTrigger=VolumeFreeSpace",
         "--Pruning.FullPruningThresholdMb=300000"
-    ]
+    ])
     if sync_parameters:
         _args.append(sync_parameters.strip())
     
@@ -83,8 +92,12 @@ def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
 
 def download_and_install_nethermind(eth_network: str, el_p2p_port: str, el_rpc_port: str, 
                                      el_max_peer_count: str, jwtsecret_path: str,
-                                     network_override: Optional[str] = None, sync_parameters: str = '') -> Tuple[str, str]:
+                                     network_override: Optional[str] = None, sync_parameters: str = '',
+                                     enable_ws: bool = False) -> Tuple[str, str]:
     """Download and install Nethermind binary and service.
+
+    Args:
+        enable_ws: Forwarded to :func:`generate_nethermind_service` (SSV needs localhost WS).
 
     Returns:
         nm_version: The version string of the installed Nethermind
@@ -115,7 +128,7 @@ def download_and_install_nethermind(eth_network: str, el_p2p_port: str, el_rpc_p
     # Generate Service File Content
     service_content = generate_nethermind_service(
         eth_network, el_p2p_port, el_rpc_port, el_max_peer_count, 
-        jwtsecret_path, network_override, sync_parameters
+        jwtsecret_path, network_override, sync_parameters, enable_ws=enable_ws,
     )
     
     service_file_path = '/etc/systemd/system/execution.service'

@@ -15,11 +15,13 @@ import deploy.grandine as grandine
 import deploy.mevboost as mevboost
 import deploy.charon as charon
 import deploy.web3signer as web3signer
+import deploy.ssv as ssv
 import deploy.prysm as prysm
 from deploy.common import ephemery_network_override
 
 CHARON_VC_LABEL = "Obol Charon DV"
 WEB3SIGNER_VC_LABEL = "Web3Signer"
+SSV_VC_LABEL = "SSV Operator"
 OBOL_CHARON = "Obol Charon"
 OBOL_IMPORT_KEY_SHARES = "Import Obol Charon key shares"
 OBOL_GREEN = "\033[32m"
@@ -143,19 +145,27 @@ def apply_csm_overrides(role: str, network: str, env_vars: Dict[str, str], curre
 def get_combo_menu() -> List[str]:
     return list(PREDEFINED_COMBOS.keys())
 
-def get_vc_menu(*, include_charon: bool = True, include_web3signer: bool = False) -> List[str]:
+def get_vc_menu(
+    *,
+    include_charon: bool = True,
+    include_web3signer: bool = False,
+    include_ssv: bool = False,
+) -> List[str]:
     """Standalone VC menu (VC-only install, or a coupled-signer list).
 
     Grandine is excluded: it has no standalone VC. Charon and Web3Signer are
     listed as VC choices for UX; selecting either requires a second prompt
-    for the real validator client. Pass ``include_web3signer`` on every menu
-    that already lists Charon.
+    for the real validator client. SSV is a duty-client alternative (no second
+    VC). Pass ``include_web3signer`` / ``include_ssv`` on menus that already
+    list Charon. Never pass ``include_ssv`` on Charon/Web3Signer second prompts.
     """
     choices = [c for c in CONSENSUS_CLIENTS if c != "Grandine"]
     if include_charon:
         choices.append(CHARON_VC_LABEL)
     if include_web3signer:
         choices.append(WEB3SIGNER_VC_LABEL)
+    if include_ssv:
+        choices.append(SSV_VC_LABEL)
     return choices
 
 def get_ec_menu() -> List[str]:
@@ -172,38 +182,50 @@ def get_vc_options_for_cc(
     *,
     include_charon: bool = True,
     include_web3signer: bool = False,
+    include_ssv: bool = False,
     for_charon_signer: bool = False,
     for_web3signer_vc: bool = False,
 ) -> List[str]:
     """VC menu after a consensus client has been chosen.
 
     ``for_charon_signer`` is the second prompt after ``Obol Charon DV``:
-    Charon, Web3Signer, and Grandine (integrated) are omitted.
+    Charon, Web3Signer, SSV, and Grandine (integrated) are omitted.
 
     ``for_web3signer_vc`` is the second prompt after ``Web3Signer``:
-    Charon and Web3Signer are omitted. Grandine (integrated) stays available.
+    Charon, Web3Signer, and SSV are omitted. Grandine (integrated) stays available.
     """
     if for_charon_signer or for_web3signer_vc:
         include_charon = False
         include_web3signer = False
+        include_ssv = False
     if for_charon_signer:
         if cc_name in ("Caplin", "Caplin (integrated)", "Grandine"):
-            return get_vc_menu(include_charon=False, include_web3signer=False)
-        return ["Same as CC"] + get_vc_menu(include_charon=False, include_web3signer=False)
+            return get_vc_menu(
+                include_charon=False, include_web3signer=False, include_ssv=False
+            )
+        return ["Same as CC"] + get_vc_menu(
+            include_charon=False, include_web3signer=False, include_ssv=False
+        )
 
     if cc_name == "Caplin" or cc_name == "Caplin (integrated)":
-        return get_vc_menu(include_charon=include_charon, include_web3signer=include_web3signer)
+        return get_vc_menu(
+            include_charon=include_charon,
+            include_web3signer=include_web3signer,
+            include_ssv=include_ssv,
+        )
 
     if cc_name == "Grandine":
         # Integrated Grandine cannot sit behind Charon middleware.
         return ["Grandine (integrated)"] + get_vc_menu(
             include_charon=include_charon,
             include_web3signer=include_web3signer,
+            include_ssv=include_ssv,
         )
 
     return ["Same as CC"] + get_vc_menu(
         include_charon=include_charon,
         include_web3signer=include_web3signer,
+        include_ssv=include_ssv,
     )
 
 def is_charon_vc_choice(vc_choice: Optional[str]) -> bool:
@@ -214,13 +236,17 @@ def is_web3signer_vc_choice(vc_choice: Optional[str]) -> bool:
     """Return True when the menu/CLI choice is the Web3Signer option."""
     return (vc_choice or "") == WEB3SIGNER_VC_LABEL
 
+def is_ssv_vc_choice(vc_choice: Optional[str]) -> bool:
+    """Return True when the menu/CLI choice is the SSV operator option."""
+    return (vc_choice or "") == SSV_VC_LABEL
+
 def get_predefined_vc_mode_options() -> List[str]:
     """Validator mode on Solo, CSM, and Failover installs.
 
     Same order as the other VC menus: the consensus client, then Charon,
-    then Web3Signer.
+    Web3Signer, then SSV Operator.
     """
-    return ["Same as CC", CHARON_VC_LABEL, WEB3SIGNER_VC_LABEL]
+    return ["Same as CC", CHARON_VC_LABEL, WEB3SIGNER_VC_LABEL, SSV_VC_LABEL]
 
 def resolve_vc_name(cc_name: str, vc_choice: str) -> str:
     if vc_choice == "Same as CC":
@@ -348,6 +374,19 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
             "Web3Signer and Obol Charon cannot be combined. "
             "Install one signing mode."
         )
+    if flags.get("ssv") and flags.get("charon"):
+        raise ValueError(
+            "SSV Operator and Obol Charon cannot be combined. "
+            "Install one DVT mode."
+        )
+    if flags.get("ssv") and flags.get("web3signer"):
+        raise ValueError(
+            "SSV Operator and Web3Signer cannot be combined in this install path."
+        )
+    if flags.get("ssv") and flags.get("validator"):
+        # SSV replaces the traditional VC; keep the flag false so finish_install
+        # does not create/start validator.service.
+        flags["validator"] = False
 
     fee_recipient = params.get('fee_recipient', '')
     graffiti = params.get('graffiti', '')
@@ -403,15 +442,28 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
         mev_ver, mev_path = mevboost.install_mevboost(network, mev_min_bid, list(relay_options))
 
     el_ver, el_path = "", ""
+    # SSV needs ETH1 over WebSocket. Geth/ethrex already expose localhost WS;
+    # Besu/Nethermind/Reth/Erigon only enable it when installing with SSV.
+    enable_el_ws = bool(flags.get("ssv"))
     if not flags['validator_only'] and ec_name:
         if ec_name == 'Besu':
-            el_ver, el_path = besu.download_and_install_besu(network, el_p2p_port, el_rpc_port, el_max_peers, jwtsecret_path, network_override=el_override)
+            el_ver, el_path = besu.download_and_install_besu(
+                network, el_p2p_port, el_rpc_port, el_max_peers, jwtsecret_path,
+                network_override=el_override, enable_ws=enable_el_ws,
+            )
         elif ec_name == 'Nethermind':
             import config
             sync_params = getattr(config, f"{network}_nethermind_sync_parameters", '')
-            el_ver, el_path = nethermind.download_and_install_nethermind(network, el_p2p_port, el_rpc_port, el_max_peers, jwtsecret_path, network_override=el_override, sync_parameters=sync_params)
+            el_ver, el_path = nethermind.download_and_install_nethermind(
+                network, el_p2p_port, el_rpc_port, el_max_peers, jwtsecret_path,
+                network_override=el_override, sync_parameters=sync_params,
+                enable_ws=enable_el_ws,
+            )
         elif ec_name == 'Reth':
-            el_ver, el_path = reth.download_and_install_reth(network, el_p2p_port, el_p2p_port_2, el_rpc_port, el_max_peers, jwtsecret_path, network_override=el_override)
+            el_ver, el_path = reth.download_and_install_reth(
+                network, el_p2p_port, el_p2p_port_2, el_rpc_port, el_max_peers,
+                jwtsecret_path, network_override=el_override, enable_ws=enable_el_ws,
+            )
         elif ec_name == 'Erigon':
             if cc_name == 'Caplin' or cc_name == 'Caplin (integrated)':
                 mev_params = f'--caplin.mev-relay-url=http://127.0.0.1:18550' if flags['mevboost'] else ''
@@ -421,12 +473,12 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
                     network, el_p2p_port, el_rpc_port, el_max_peers, jwtsecret_path,
                     cl_p2p_port, cl_rest_port, cl_max_peers, sync_url,
                     mev_parameters=mev_params, cl_quic_port=cl_quic_port,
-                    network_override=el_override,
+                    network_override=el_override, enable_ws=enable_el_ws,
                 )
             else:
                 el_ver, el_path = erigon.download_and_install_erigon_standalone(
                     network, el_p2p_port, el_rpc_port, el_max_peers, jwtsecret_path,
-                    network_override=el_override,
+                    network_override=el_override, enable_ws=enable_el_ws,
                 )
         elif ec_name == 'Geth':
             el_ver, el_path = geth.download_and_install_geth(network, str(el_p2p_port), str(el_rpc_port), str(el_max_peers), jwtsecret_path, network_override=el_override)
@@ -477,10 +529,15 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
 
     charon_enabled = bool(flags.get('charon'))
     web3signer_enabled = bool(flags.get('web3signer'))
+    ssv_enabled = bool(flags.get('ssv'))
     if charon_enabled and vc_name == "Grandine (integrated)":
         raise ValueError("Obol Charon is incompatible with Grandine (integrated). Select a standalone VC.")
     if charon_enabled and vc_name == CHARON_VC_LABEL:
         raise ValueError("Obol Charon DV requires a signer validator client (e.g. Lodestar).")
+    if ssv_enabled and is_ssv_vc_choice(vc_name):
+        # Menu label is not a traditional VC name; clear so BN/EL install continues.
+        vc_name = None
+        flags["validator"] = False
 
     # Existing Charon on a consensus switch: set/clear json_requests for the new BN.
     if charon_enabled and flags.get('switch_client') == 'consensus':
@@ -523,10 +580,37 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
     if web3signer_enabled and not flags.get("switch_client"):
         web3signer_ver, web3signer_path = web3signer.install_web3signer(network)
 
+    ssv_ver, ssv_node_path, ssv_dkg_path = "", "", ""
+    if ssv_enabled and not flags.get("switch_client"):
+        ssv_tcp = int(env_vars.get("SSV_P2P_TCP_PORT") or ssv.DEFAULT_P2P_TCP_PORT)
+        ssv_udp = int(env_vars.get("SSV_P2P_UDP_PORT") or ssv.DEFAULT_P2P_UDP_PORT)
+        ssv_metrics = int(env_vars.get("SSV_METRICS_PORT") or ssv.DEFAULT_METRICS_PORT)
+        ssv_api = int(env_vars.get("SSV_API_PORT") or ssv.DEFAULT_API_PORT)
+        ssv_dkg_port = int(env_vars.get("SSV_DKG_PORT") or ssv.DEFAULT_DKG_PORT)
+        el_ip = env_vars.get("EL_IP_ADDRESS", "127.0.0.1")
+        el_rpc = env_vars.get("EL_RPC_PORT", "8545")
+        el_ws = env_vars.get("EL_WS_PORT", "8546")
+        eth1_ws = f"ws://{el_ip}:{el_ws}"
+        eth1_http = f"http://{el_ip}:{el_rpc}"
+        ssv_ver, ssv_node_path, ssv_dkg_path = ssv.install_ssv(
+            network,
+            upstream_bn,
+            eth1_ws_addr=eth1_ws,
+            eth1_http_addr=eth1_http,
+            p2p_tcp_port=ssv_tcp,
+            p2p_udp_port=ssv_udp,
+            metrics_port=ssv_metrics,
+            api_port=ssv_api,
+            dkg_port=ssv_dkg_port,
+            p2p_external_ip=env_vars.get("SSV_P2P_EXTERNAL_IP", ""),
+            operator_id=env_vars.get("SSV_OPERATOR_ID", ""),
+            install_dkg=True,
+        )
+
     val_path = ""
     val_ver = ""
     use_builder = bool(flags.get('builder_api') or flags.get('mevboost'))
-    if flags['validator'] and vc_name:
+    if flags['validator'] and vc_name and not ssv_enabled:
         addr = (
             charon.charon_validator_api_url(
                 port=env_vars.get('CHARON_VALIDATOR_API_PORT', '3600')
@@ -689,6 +773,10 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
         web3signer_enabled=web3signer_enabled,
         web3signer_version=web3signer_ver,
         web3signer_service_path=web3signer_path,
+        ssv_enabled=ssv_enabled,
+        ssv_version=ssv_ver,
+        ssv_node_service_path=ssv_node_path,
+        ssv_dkg_service_path=ssv_dkg_path,
         builder_mode=str(flags.get("builder_mode") or ""),
         relays=list(params.get("relays") or []),
     )

@@ -7,7 +7,8 @@ from deploy.service_generators import form_exec_start, generate_systemd_template
 
 def generate_reth_service(eth_network: str, el_p2p_port: str, el_p2p_port_2: str,
                           el_rpc_port: str, el_max_peer_count: str, jwtsecret_path: str,
-                          network_override: Optional[str] = None, sync_parameters: str = '') -> str:
+                          network_override: Optional[str] = None, sync_parameters: str = '',
+                          enable_ws: bool = False) -> str:
     """Generate Reth execution client systemd service file content.
 
     Args:
@@ -19,6 +20,7 @@ def generate_reth_service(eth_network: str, el_p2p_port: str, el_p2p_port_2: str
         jwtsecret_path: Path to JWT secret file
         network_override: Optional network flag override (for ephemery)
         sync_parameters: Optional sync/prune parameters
+        enable_ws: When True, expose localhost WebSocket on :8546 (SSV eth1)
 
     Returns:
         Service file content as a string
@@ -43,8 +45,14 @@ def generate_reth_service(eth_network: str, el_p2p_port: str, el_p2p_port_2: str
         "--http",
         f"--http.port {el_rpc_port}",
         "--http.api=\"rpc,eth,web3,net,debug\"",
-        f"--authrpc.jwtsecret {jwtsecret_path}"
     ]
+    if enable_ws:
+        _args.extend([
+            "--ws",
+            "--ws.addr 127.0.0.1",
+            "--ws.port 8546",
+        ])
+    _args.append(f"--authrpc.jwtsecret {jwtsecret_path}")
     if sync_parameters:
         _args.append(sync_parameters.strip())
 
@@ -87,8 +95,12 @@ def get_release_info(version_tag: str, arch_amd64: bool) -> dict:
 
 def download_and_install_reth(eth_network: str, el_p2p_port: str, el_p2p_port_2: str,
                                 el_rpc_port: str, el_max_peer_count: str, jwtsecret_path: str,
-                                network_override: Optional[str] = None, sync_parameters: str = '') -> Tuple[str, str]:
+                                network_override: Optional[str] = None, sync_parameters: str = '',
+                                enable_ws: bool = False) -> Tuple[str, str]:
     """Download and install Reth binary and service.
+
+    Args:
+        enable_ws: Forwarded to :func:`generate_reth_service` (SSV needs localhost WS).
 
     Returns:
         reth_version: The version string of the installed Reth
@@ -116,7 +128,8 @@ def download_and_install_reth(eth_network: str, el_p2p_port: str, el_p2p_port_2:
     # Generate Service File Content
     service_content = generate_reth_service(
         eth_network, el_p2p_port, el_p2p_port_2, el_rpc_port, 
-        el_max_peer_count, jwtsecret_path, network_override, sync_parameters
+        el_max_peer_count, jwtsecret_path, network_override, sync_parameters,
+        enable_ws=enable_ws,
     )
     
     service_file_path = '/etc/systemd/system/execution.service'

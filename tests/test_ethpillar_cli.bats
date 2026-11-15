@@ -32,6 +32,8 @@ setup() {
     export MOCK_CL_COMMIT=
     export MOCK_MEV_LATEST=v1.8.0
     export MOCK_CHARON_LATEST=v1.11.0
+    export MOCK_SSV_LATEST=v2.5.1
+    export MOCK_SSV_DKG_LATEST=v3.1.1
     export MOCK_EP_REMOTE_VERSION
     MOCK_EP_REMOTE_VERSION=$(grep '^EP_VERSION=' ethpillar.sh | cut -d'"' -f2)
 
@@ -40,6 +42,8 @@ setup() {
     export VALIDATOR_SERVICE_FILE="$TEST_SYSTEMD_DIR/validator.service"
     export MEVBOOST_SERVICE_FILE="$TEST_SYSTEMD_DIR/mevboost.service"
     export CHARON_SERVICE_FILE="$TEST_SYSTEMD_DIR/charon.service"
+    export SSV_NODE_SERVICE_FILE="$TEST_SYSTEMD_DIR/ssv-node.service"
+    export SSV_DKG_SERVICE_FILE="$TEST_SYSTEMD_DIR/ssv-dkg.service"
     export CSM_VALIDATOR_SERVICE_FILE="$TEST_SYSTEMD_DIR/csm_nimbusvalidator.service"
 
     create_mock() {
@@ -92,6 +96,12 @@ if [[ "\$*" == *release_info* ]]; then
     charon)
       echo "{\"version\":\"\${MOCK_CHARON_LATEST:-v1.11.0}\",\"commit\":\"\"}"
       ;;
+    ssv|ssv-node|ssvnode)
+      echo "{\"version\":\"\${MOCK_SSV_LATEST:-v2.5.1}\",\"commit\":\"\"}"
+      ;;
+    ssv-dkg|ssvdkg)
+      echo "{\"version\":\"\${MOCK_SSV_DKG_LATEST:-v3.1.1}\",\"commit\":\"\"}"
+      ;;
     *)
       echo "{\"version\":\"\${MOCK_LATEST_TAG:-v0.0.1}\",\"commit\":\"\"}"
       ;;
@@ -125,6 +135,13 @@ exit 0
 EOF
         chmod +x "$ETHPILLAR_UPDATE_SCRIPT_DIR/update_${_upd}.sh"
     done
+    # ssv-node / ssv-dkg / ssv all route to update_ssv.sh
+    cat > "$ETHPILLAR_UPDATE_SCRIPT_DIR/update_ssv.sh" <<EOF
+#!/bin/bash
+echo "update_ssv.sh \$*" >> "$UPDATE_LOG"
+exit 0
+EOF
+    chmod +x "$ETHPILLAR_UPDATE_SCRIPT_DIR/update_ssv.sh"
 
     cat <<EOF > "$MOCK_BIN_DIR/sudo"
 #!/bin/bash
@@ -252,6 +269,18 @@ EOF
     chmod +x "$path"
 }
 
+write_ssv_bin() {
+    local path="$1"
+    local ver="${2:-v2.5.1}"
+    cat <<EOF > "$path"
+#!/bin/bash
+echo "$(basename "$path") \$*" >> "$COMMAND_LOG"
+echo "$ver"
+exit 0
+EOF
+    chmod +x "$path"
+}
+
 # Install stub clients whose versions match the default MOCK_*_LATEST tags.
 install_mock_clients() {
     write_bin "$MOCK_BIN_DIR/nethermind" "Nethermind 1.30.0"
@@ -264,6 +293,14 @@ install_mock_clients() {
     write_service "$VALIDATOR_SERVICE_FILE" "Lighthouse Validator Client" "$MOCK_BIN_DIR/lighthouse vc"
     write_service "$MEVBOOST_SERVICE_FILE" "MEV-Boost" "$MOCK_BIN_DIR/mev-boost"
     write_service "$CHARON_SERVICE_FILE" "Charon" "$MOCK_BIN_DIR/charon run"
+}
+
+# SSV operator stubs (node + DKG use different repos/versions).
+install_mock_ssv() {
+    write_ssv_bin "$MOCK_BIN_DIR/ssvnode" "v2.5.1"
+    write_ssv_bin "$MOCK_BIN_DIR/ssv-dkg" "v3.1.1"
+    write_service "$SSV_NODE_SERVICE_FILE" "SSV Operator Node for MAINNET" "$MOCK_BIN_DIR/ssvnode start-node"
+    write_service "$SSV_DKG_SERVICE_FILE" "SSV DKG Operator for MAINNET" "$MOCK_BIN_DIR/ssv-dkg start-operator"
 }
 
 set_unit_state() {
@@ -659,6 +696,67 @@ cli_help_command_names() {
     [ ! -s "$UPDATE_LOG" ]
     ! grep -q "systemctl stop" "$COMMAND_LOG"
     ! grep -q "update_charon.sh" "$COMMAND_LOG"
+}
+
+@test "upgrade: skips ssv-node and ssv-dkg when already on LATEST" {
+    install_mock_ssv
+
+    run ./ethpillar.sh upgrade ssv-node
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ssv-node: already up to date (2.5.1) — skipping"* ]]
+    [ ! -s "$UPDATE_LOG" ]
+
+    run ./ethpillar.sh upgrade ssv-dkg
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ssv-dkg: already up to date (3.1.1) — skipping"* ]]
+    [ ! -s "$UPDATE_LOG" ]
+}
+
+@test "upgrade: ssv alias expands to node and dkg; skips when current" {
+    install_mock_ssv
+
+    run ./ethpillar.sh upgrade ssv
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ssv-node: already up to date"* ]]
+    [[ "$output" == *"ssv-dkg: already up to date"* ]]
+    [ ! -s "$UPDATE_LOG" ]
+}
+
+@test "upgrade: calls update_ssv when ssv-node is behind" {
+    install_mock_ssv
+    export MOCK_SSV_LATEST=v2.6.0
+
+    run ./ethpillar.sh upgrade ssv-node
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q "update_ssv.sh --auto" "$UPDATE_LOG"
+    ! grep -q "ssv-node: already up to date" <<< "$output"
+}
+
+@test "upgrade: calls update_ssv when only ssv-dkg is behind" {
+    install_mock_ssv
+    export MOCK_SSV_DKG_LATEST=v3.2.0
+
+    run ./ethpillar.sh upgrade ssv-dkg
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q "update_ssv.sh --auto" "$UPDATE_LOG"
+    ! grep -q "ssv-dkg: already up to date" <<< "$output"
+}
+
+@test "check-updates: reports ssv-dkg against DKG latest (not node tag)" {
+    install_mock_ssv
+    export MOCK_SSV_DKG_LATEST=v3.2.0
+
+    run ./ethpillar.sh check-updates ssv-dkg
+    echo "$output"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"ssv-dkg: update available"* ]]
+    [[ "$output" == *"3.1.1"* ]]
+    [[ "$output" == *"3.2.0"* ]]
 }
 
 @test "upgrade: calls update script when charon is behind" {

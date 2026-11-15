@@ -136,6 +136,25 @@ cli_resolve_targets() {
         return 0
     fi
 
+    # Alias: expand to whichever of ssv-node / ssv-dkg is installed.
+    if [[ "$arg" == "ssv" ]]; then
+        local any=0
+        if cli_is_client_installed "ssv-node"; then
+            echo "ssv-node"
+            any=1
+        fi
+        if cli_is_client_installed "ssv-dkg"; then
+            echo "ssv-dkg"
+            any=1
+        fi
+        if [[ "$any" -eq 0 ]]; then
+            echo "Target not installed: ssv" >&2
+            echo "Installed: ${installed:-none}" >&2
+            return 1
+        fi
+        return 0
+    fi
+
     if ! cli_is_client_installed "$arg"; then
         echo "Target not installed: $arg" >&2
         echo "Installed: ${installed:-none}" >&2
@@ -408,10 +427,10 @@ cli_auto_update_script() {
 }
 
 # Upgrade one target. Clients already on LATEST are skipped so --auto does not
-# stop/replace a running binary with the same version. update_*.sh --auto is
-# unchanged (forced reinstall when invoked directly).
+# stop/replace a running binary with the same version. update_ssv.sh --auto is
+# also idempotent per binary (node build / DKG download skipped when current).
 # Same gate as TUI update menus: load versions, then version_matches_latest
-# (promptYesNo).
+# (promptYesNo / promptUpdateSsv).
 cli_upgrade_one() {
     local target="$1"
 

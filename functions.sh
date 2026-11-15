@@ -952,8 +952,10 @@ format_version_label() {
 }
 
 # Load installed + LATEST fields for one stack target (execution/consensus/
-# validator/mevboost/charon). Sets VERSION, INSTALLED_COMMIT, TAG, TAG_COMMIT
-# via the same TUI helpers promptYesNo uses (get*CurrentVersion + release_info).
+# validator/mevboost/charon/web3signer/ssv-node/ssv-dkg). Sets VERSION,
+# INSTALLED_COMMIT, TAG, TAG_COMMIT via the same TUI helpers promptYesNo uses
+# (get*CurrentVersion + release_info). ssv-dkg uses getSsvDkgCurrentVersion and
+# the ssv-dkg GitHub release (not the ssv-node tag).
 # Returns 0 when fields are resolved, 1 on error.
 load_client_versions() {
     local target="$1"
@@ -1031,11 +1033,19 @@ load_client_versions() {
                 return 1
             }
             ;;
-        ssv-node|ssv-dkg|ssv)
+        ssv-node|ssv)
             getSsvCurrentVersion || true
             [[ -z "$VERSION" ]] && VERSION="unknown"
             fetch_latest_release "ssv" --strip-v || {
                 echo "ssv: could not resolve LATEST"
+                return 1
+            }
+            ;;
+        ssv-dkg)
+            getSsvDkgCurrentVersion || true
+            [[ -z "$VERSION" ]] && VERSION="unknown"
+            fetch_latest_release "ssv-dkg" --strip-v || {
+                echo "ssv-dkg: could not resolve LATEST"
                 return 1
             }
             ;;

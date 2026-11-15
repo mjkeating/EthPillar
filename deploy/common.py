@@ -1894,6 +1894,8 @@ def get_client_release_info(
         module_name = "web3signer"
     elif client in ["ssv", "ssv-node", "ssvnode"]:
         module_name = "ssv"
+    elif client in ["ssv-dkg", "ssvdkg"]:
+        module_name = "ssv"
     else:
         module_name = client
 
@@ -1907,11 +1909,14 @@ def get_client_release_info(
     raw_arch = platform.machine().lower()
     arch_amd64 = raw_arch in ['x86_64', 'amd64']
 
-    if not hasattr(module, "get_release_info"):
-        raise ValueError(f"Client module deploy.{module_name} does not implement get_release_info")
+    # ssv-dkg ships from a separate GitHub repo; deploy.ssv exposes
+    # get_dkg_release_info rather than reusing get_release_info (ssv-node).
+    release_fn = "get_dkg_release_info" if client in ["ssv-dkg", "ssvdkg"] else "get_release_info"
+    if not hasattr(module, release_fn):
+        raise ValueError(f"Client module deploy.{module_name} does not implement {release_fn}")
 
     resolved_tag = version_tag
-    info = module.get_release_info(resolved_tag, arch_amd64)
+    info = getattr(module, release_fn)(resolved_tag, arch_amd64)
 
     if str(version_tag).upper() == "LATEST":
         net = (network or _detect_runtime_network() or "").strip().lower()

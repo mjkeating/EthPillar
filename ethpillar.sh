@@ -315,12 +315,16 @@ done
 submenuLogsMonitoring(){
 while true; do
     getBackTitle
-    # Define the options for the submenu
+    # Plot needs local execution.service journals — hide on SSV-only / VC-only.
     SUBOPTIONS=(
       📊 "View Log Dashboard: Maximize window, see all. To exit, press CTRL+B D"
       🔍 "View Rolling Consolidated Logs: All logs in one screen"
       📜 "Export logs: Save logs to disk for further analysis or sharing"
-      ⏱️ "Plot Execution Block Processing Times"
+    )
+    if hasExecutionService; then
+      SUBOPTIONS+=(⏱️ "Plot Execution Block Processing Times")
+    fi
+    SUBOPTIONS+=(
       🚨 "Monitoring: Observe Ethereum Metrics. Explore Dashboards. Grafana. Alerts."
       - ""
       👋 "Back to main menu"
@@ -368,11 +372,15 @@ done
 submenuSecurityNodeChecks(){
 while true; do
     getBackTitle
-    # Define the options for the submenu
+    # Peer Count needs a local EL/CL (or Caplin); hide on SSV-only / remote-RPC hosts.
     SUBOPTIONS=(
       🛡️ "Node Checker: Automated security and health checks for your node"
       🧱 "UFW Firewall: Control network traffic against unauthorized access"
-      🤗 "Peer Count: Show # peers connected to EL & CL"
+    )
+    if hasLocalBeaconStack; then
+      SUBOPTIONS+=(🤗 "Peer Count: Show # peers connected to EL & CL")
+    fi
+    SUBOPTIONS+=(
       🔄 "Port Checker: Test for Incoming Connections"
       🥷 "Privacy: Clear bash shell history"
       🛠️ "Unattended-upgrades: Automatically install security updates"
@@ -1815,12 +1823,19 @@ done
 submenuTools(){
 while true; do
     getBackTitle
-    # Define the options for the submenu
-    SUBOPTIONS=(
-      ⚙️ "eth-duties: Show upcoming block proposals, attestations, sync duties"
+    # eth-duties / pubkey dashboard need a local VC (or CSM / Grandine), not SSV-only.
+    SUBOPTIONS=()
+    if hasLocalValidatorTooling; then
+      SUBOPTIONS+=(⚙️ "eth-duties: Show upcoming block proposals, attestations, sync duties")
+    fi
+    SUBOPTIONS+=(
       💎 "ethdo: Conduct common validator tasks"
       💾 "NCDU: Find large files. Analyze disk usage."
-      🔗 "Beaconcha.in Validator Dashboard: Create a link for my validators"
+    )
+    if hasLocalValidatorTooling; then
+      SUBOPTIONS+=(🔗 "Beaconcha.in Validator Dashboard: Create a link for my validators")
+    fi
+    SUBOPTIONS+=(
       🚪 "Beaconcha.in: Check validator entry/exit queue time"
       ⌚ "Timezone: Update machine's timezone"
       🌐 "Locales: Fix terminal formatting issues"
@@ -1848,9 +1863,6 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       ⚙️)
-        # Skip if no validators installed
-        if [[ ! -f /etc/systemd/system/validator.service ]]; then echo "No validator(s) installed. Press ENTER to continue."; read; break; fi
-
         # Install eth-duties if not yet installed
         if [[ ! -f /usr/local/bin/eth-duties ]]; then
           if whiptail --title "Install eth-duties" --yesno "Do you want to install eth-duties?\n\neth-duties shows upcoming validator duties." 8 78; then

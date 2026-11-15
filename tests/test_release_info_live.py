@@ -11,7 +11,8 @@ parses canned HTML/JSON correctly. They cannot catch real-world breakage such as
 * Constructed download URLs that parse fine but 404/401 at download time
 
 These tests exercise the same code path used by ``update_execution.sh``,
-``update_consensus.sh``, and ``update_mevboost.sh`` when resolving binaries.
+``update_consensus.sh``, ``update_mevboost.sh``, and ``update_ssv.sh`` when
+resolving binaries (ssv-node source tarball and ssv-dkg zip assets).
 
 What each test does
 -------------------
@@ -81,6 +82,9 @@ CLIENT_REPOS: list[tuple[str, str | None]] = [
     ("charon", "ObolNetwork/charon"),
     ("web3signer", "Consensys-Incorporated/web3signer"),
     ("ethrex", "lambdaclass/ethrex"),
+    # ssv-node is source-built (tag tarball); ssv-dkg ships Linux zip assets.
+    ("ssv", "ssvlabs/ssv"),
+    ("ssv-dkg", "ssvlabs/ssv-dkg"),
 ]
 
 _GETH_DOWNLOADS_URL = "https://geth.ethereum.org/downloads"
@@ -194,6 +198,10 @@ def _assert_release_info_shape(info: dict, client: str) -> None:
         checksums = info.get("md5") or []
         checksum_width = 32
         assert len(checksums) == len(info["download_urls"]), f"{client}: missing md5 checksums"
+    elif info.get("source_build"):
+        # Source-built clients (ssv-node) resolve a tag tarball with no asset digest.
+        checksums = []
+        checksum_width = 64
     else:
         checksums = info.get("sha256") or []
         checksum_width = 64

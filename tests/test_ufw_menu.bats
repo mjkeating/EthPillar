@@ -18,6 +18,7 @@ setup() {
 	export CONSENSUS_SERVICE_FILE="$TEST_DIR/consensus.service"
 	export EXEC_SERVICE_FILE="$TEST_DIR/execution.service"
 	export CHARON_SERVICE_FILE="$TEST_DIR/charon.service"
+	export SSV_NODE_SERVICE_FILE="$TEST_DIR/ssv-node.service"
 	export COMMAND_LOG="$TEST_DIR/sudo.log"
 	CL_P2P_PORT="${CL_P2P_PORT:-9000}"
 	CL_P2P_PORT_2="${CL_P2P_PORT_2:-9001}"
@@ -63,6 +64,15 @@ write_charon() {
 	cat > "$CHARON_SERVICE_FILE" <<EOF
 [Service]
 ExecStart=/usr/local/bin/charon run --p2p-tcp-address=0.0.0.0:3610
+EOF
+}
+
+write_ssv() {
+	cat > "$SSV_NODE_SERVICE_FILE" <<EOF
+[Unit]
+Description=SSV Operator Node
+[Service]
+ExecStart=/usr/local/bin/ssvnode start-node --config /var/lib/ssv/config.yaml
 EOF
 }
 
@@ -194,14 +204,33 @@ EOF
 }
 
 @test "UFW menu includes EL/CL P2P and hides Charon when charon.service is missing" {
-	rm -f "$CHARON_SERVICE_FILE"
+	write_execution Geth
+	write_consensus Lighthouse
+	rm -f "$CHARON_SERVICE_FILE" "$SSV_NODE_SERVICE_FILE"
 	labels="$(menu_labels)"
+	[[ "$labels" == *"EC RPC Node: Allow local network access to RPC port 8545"* ]]
+	[[ "$labels" == *"CC RPC Node: Allow local network access to CL REST port"* ]]
 	[[ "$labels" == *"EL/CL P2P: Allow TCP/UDP (from execution & consensus, incl. QUIC)"* ]]
 	[[ "$labels" != *"CL QUIC: Allow UDP"* ]]
 	[[ "$labels" != *"Allow P2P port (from charon.service)"* ]]
 	ufwBuildFirewallMenu
 	[[ "$(ufwFirewallMenuAction 9)" == "elcl_p2p" ]]
 	[[ "$(ufwFirewallMenuAction 10)" == "disable" ]]
+}
+
+@test "UFW menu omits EC/CC/ELCL rows on SSV-only host but keeps SSV" {
+	rm -f "$EXEC_SERVICE_FILE" "$CONSENSUS_SERVICE_FILE" "$CHARON_SERVICE_FILE"
+	write_ssv
+	labels="$(menu_labels)"
+	[[ "$labels" != *"EC RPC Node"* ]]
+	[[ "$labels" != *"CC RPC Node"* ]]
+	[[ "$labels" != *"EL/CL P2P"* ]]
+	[[ "$labels" == *"SSV: Allow P2P TCP/UDP and DKG"* ]]
+	ufwBuildFirewallMenu
+	# 1-5 generic, 6 grafana, 7 ssv, 8 disable
+	[[ "$(ufwFirewallMenuAction 6)" == "grafana" ]]
+	[[ "$(ufwFirewallMenuAction 7)" == "ssv" ]]
+	[[ "$(ufwFirewallMenuAction 8)" == "disable" ]]
 }
 
 @test "ufwAllowConsensusRest allows the scraped CL port not the 5052 default" {
@@ -298,7 +327,10 @@ EOF
 }
 
 @test "UFW menu shows Charon P2P only when charon.service exists" {
+	write_execution Geth
+	write_consensus Lighthouse
 	write_charon
+	rm -f "$SSV_NODE_SERVICE_FILE"
 	labels="$(menu_labels)"
 	[[ "$labels" == *"EL/CL P2P: Allow TCP/UDP (from execution & consensus, incl. QUIC)"* ]]
 	[[ "$labels" == *"Allow P2P port (from charon.service)"* ]]

@@ -1425,7 +1425,7 @@ _ufw_menu_add_pair(){
 }
 
 # Build UFW Firewall menu pairs (numbered tags) and action map.
-# Charon P2P is omitted when charon.service is not installed.
+# Charon/SSV P2P and EL/CL-specific rows are omitted when those units are absent.
 # Sets UFW_MENU_PAIRS and UFW_MENU_ACTIONS.
 ufwBuildFirewallMenu(){
     UFW_MENU_NEXT=1
@@ -1439,10 +1439,16 @@ ufwBuildFirewallMenu(){
     _ufw_menu_add_pair delete_rule "Delete a rule"
     UFW_MENU_PAIRS+=("-" "")
     _ufw_menu_add_pair enable_defaults "Enable firewall with default settings"
-    _ufw_menu_add_pair ec_rpc "EC RPC Node: Allow local network access to RPC port 8545"
-    _ufw_menu_add_pair cc_rpc "CC RPC Node: Allow local network access to CL REST port"
+    if hasExecutionService; then
+        _ufw_menu_add_pair ec_rpc "EC RPC Node: Allow local network access to RPC port 8545"
+    fi
+    if hasLocalConsensusRpc; then
+        _ufw_menu_add_pair cc_rpc "CC RPC Node: Allow local network access to CL REST port"
+    fi
     _ufw_menu_add_pair grafana "Monitoring: Allow local network access to Grafana port 3000"
-    _ufw_menu_add_pair elcl_p2p "EL/CL P2P: Allow TCP/UDP (from execution & consensus, incl. QUIC)"
+    if hasLocalBeaconStack; then
+        _ufw_menu_add_pair elcl_p2p "EL/CL P2P: Allow TCP/UDP (from execution & consensus, incl. QUIC)"
+    fi
     if isCharonEnabled; then
         _ufw_menu_add_pair charon "${OBOL_CHARON}: Allow P2P port (from charon.service)"
     fi
@@ -3460,6 +3466,29 @@ checkRelayLatency(){
 # True when a local consensus systemd unit is installed.
 hasConsensusService(){
     [[ -f "${CONSENSUS_SERVICE_FILE:-/etc/systemd/system/consensus.service}" ]]
+}
+
+# True when a local execution systemd unit is installed.
+hasExecutionService(){
+    [[ -f "${EXEC_SERVICE_FILE:-/etc/systemd/system/execution.service}" ]]
+}
+
+# True when this host has a local EL and/or CL (including Caplin on execution.service).
+# Used to hide Peer Count and UFW EL/CL P2P on SSV-only / remote-RPC hosts.
+hasLocalBeaconStack(){
+    hasExecutionService || hasConsensusService || isCaplinNode
+}
+
+# True when eth-duties / Beaconcha.in pubkey dashboard make sense locally.
+# Separate VC, integrated Grandine, or CSM plugin — not SSV-only or full-node-only.
+hasLocalValidatorTooling(){
+    local csm_svc="${CSM_VALIDATOR_SERVICE_FILE:-/etc/systemd/system/csm_nimbusvalidator.service}"
+    [[ "$(getValidatorMode)" != "none" ]] || [[ -f "$csm_svc" ]]
+}
+
+# True when UFW "CC RPC" applies (local consensus.service or Caplin REST on EL).
+hasLocalConsensusRpc(){
+    hasConsensusService || isCaplinNode
 }
 
 # Low-disk guidance when consensus.service is absent. Do not recommend CL resync

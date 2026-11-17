@@ -12,7 +12,7 @@ import common as common
 from orchestrator import (
     VALID_ROLES, resolve_role_flags, get_combo_menu, get_vc_menu,
     get_ec_menu, get_cc_menu, get_vc_options_for_cc, get_predefined_vc_mode_options,
-    resolve_vc_name, run_install,
+    get_ssv_client_menu, resolve_ssv_client, resolve_vc_name, run_install,
     CHARON_VC_LABEL, WEB3SIGNER_VC_LABEL, SSV_VC_LABEL, OBOL_CHARON,
     is_charon_vc_choice, is_web3signer_vc_choice, is_ssv_vc_choice,
     lodestar_bn_vc_incompatibility_message,
@@ -83,6 +83,15 @@ parser.add_argument(
     default=False,
     help="Install SSV Operator node (+ DKG) instead of a traditional validator client. "
     "Not compatible with --with_charon or --with_web3signer.",
+)
+parser.add_argument(
+    "--ssv-client",
+    type=str,
+    choices=["ssv", "anchor"],
+    default="",
+    help="SSV operator client when using --with_ssv or the SSV Operator menu: "
+    "'ssv' (Go ssvnode, default) or 'anchor' (Sigma Prime). "
+    "Persisted as SSV_CLIENT in .env.overrides.",
 )
 parser.add_argument("--jwtsecret", type=str, default=JWTSECRET_PATH)
 parser.add_argument("--graffiti", type=str, default=GRAFFITI)
@@ -156,6 +165,13 @@ else:
 flags["charon"] = bool(args.with_charon)
 flags["web3signer"] = bool(args.with_web3signer)
 flags["ssv"] = bool(args.with_ssv)
+if args.ssv_client:
+    try:
+        flags["ssv_client"] = resolve_ssv_client(args.ssv_client)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        exit(1)
+    flags["ssv"] = True
 if flags["charon"] and flags["web3signer"]:
     print(
         "ERROR: Web3Signer and Obol Charon cannot be combined. Install one signing mode.",
@@ -442,6 +458,22 @@ else:
                 vc_name = None
             else:
                 vc_name = cc_name
+
+# SSV operator client (Go ssvnode vs Anchor) — install-time only.
+if flags.get("ssv") and not flags.get("ssv_client"):
+    if skip_prompts:
+        flags["ssv_client"] = resolve_ssv_client(
+            os.environ.get("SSV_CLIENT") or "ssv"
+        )
+    else:
+        ssv_menu = get_ssv_client_menu()
+        ssv_idx = SelectionMenu.get_selection(
+            ssv_menu,
+            title="SSV Operator Client",
+            subtitle="Go SSV (ssvnode) or Anchor (Sigma Prime)? DKG is shared.",
+            show_exit_option=False,
+        )
+        flags["ssv_client"] = resolve_ssv_client(ssv_menu[ssv_idx])
 
 selected_relays = []
 if not args.switch_client:

@@ -242,6 +242,21 @@ class TestGetClientReleaseInfo:
         assert "ssv-dkg" in info["filenames"][0]
         mock_gh.assert_called_once_with("ssvlabs/ssv-dkg", "LATEST")
 
+    @patch("deploy.common.get_github_release")
+    def test_anchor_uses_sigp_linux_gnu_tarball(self, mock_gh):
+        mock_gh.return_value = _make_github_release("v1.4.1", [
+            "anchor-v1.4.1-aarch64-apple-darwin.tar.gz",
+            "anchor-v1.4.1-x86_64-unknown-linux-gnu.tar.gz",
+            "anchor-v1.4.1-aarch64-unknown-linux-gnu.tar.gz",
+            "anchor-v1.4.1-x86_64-unknown-linux-gnu.tar.gz.asc",
+        ])
+        info = get_client_release_info("anchor", "LATEST")
+        assert info["version"] == "v1.4.1"
+        assert "linux-gnu" in info["filenames"][0]
+        assert info["filenames"][0].startswith("anchor-")
+        assert not info["filenames"][0].endswith(".asc")
+        mock_gh.assert_called_once_with("sigp/anchor", "LATEST")
+
     @patch("deploy.common.requests.get")
     @patch("deploy.common.get_github_release")
     def test_web3signer_prefers_tarball_over_checksum(self, mock_gh, mock_get):

@@ -5,19 +5,26 @@ talks to local EL (WebSocket) and CL (beacon REST) directly. Operator secrets
 (``encrypted_private_key.json`` + ``password``) live under ``/var/lib/ssv/`` and
 are shared with the optional ``ssv-dkg`` systemd unit.
 
-Upstream does not publish ``ssvnode`` GitHub binaries. EthPillar builds the
-operator from source (``CGO_ENABLED=1 make build``) for amd64 and arm64, then
-installs under systemd. DKG ships Linux zip assets on GitHub (``ssvlabs/ssv-dkg``).
+Install-time ``SSV_CLIENT`` selects the operator binary:
+
+* ``ssv`` (default): Go ``ssvnode`` built from source (``ssvlabs/ssv``; no
+  published Linux binaries).
+* ``anchor``: Sigma Prime Rust client downloaded from ``sigp/anchor`` releases.
+
+Both share the same systemd unit name (``ssv-node.service``), datadir, keystore,
+and Go ``ssv-dkg`` sidecar. Node config differs: Go uses ``config.yaml``; Anchor
+uses CLI flags in ``ExecStart``.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import tempfile
-from typing import List, Optional, Tuple
+from typing import List, Literal, Optional, Tuple
 
 from deploy.common import (
     BASE_DATA_DIR,
@@ -47,20 +54,142 @@ SSV_DKG_TLS_KEY = f"{SSV_DKG_SSL_DIR}/tls.key"
 SSV_NODE_SERVICE_PATH = "/etc/systemd/system/ssv-node.service"
 SSV_DKG_SERVICE_PATH = "/etc/systemd/system/ssv-dkg.service"
 SSV_NODE_BIN = f"{INSTALL_DIR}/ssvnode"
+ANCHOR_NODE_BIN = f"{INSTALL_DIR}/anchor"
 SSV_DKG_BIN = f"{INSTALL_DIR}/ssv-dkg"
 
 DEFAULT_P2P_TCP_PORT = 13001
 DEFAULT_P2P_UDP_PORT = 12001
 DEFAULT_METRICS_PORT = 15000
 DEFAULT_API_PORT = 16000
+DEFAULT_ANCHOR_METRICS_PORT = 5164
+DEFAULT_ANCHOR_API_PORT = 5062
+DEFAULT_QUIC_PORT = 13002
 DEFAULT_DKG_PORT = 3030
 DEFAULT_EL_WS = "ws://127.0.0.1:8546"
+DEFAULT_EL_HTTP = "http://127.0.0.1:8545"
+
+SSV_CLIENT_SSV = "ssv"
+SSV_CLIENT_ANCHOR = "anchor"
+SsvClient = Literal["ssv", "anchor"]
 
 SSV_GITHUB_REPO = "ssvlabs/ssv"
+ANCHOR_GITHUB_REPO = "sigp/anchor"
 SSV_DKG_GITHUB_REPO = "ssvlabs/ssv-dkg"
 # Matches upstream go.mod ``go 1.26`` / toolchain go1.26.x.
 SSV_MIN_GO = (1, 26)
 SSV_GO_INSTALL_VERSION = "1.26.10"
+
+
+def normalize_ssv_client(value: Optional[str]) -> SsvClient:
+    """Normalize a client slug to ``ssv`` or ``anchor``.
+
+    Args:
+        value: Raw client name (``ssv``, ``ssvnode``, ``go``, ``anchor``, …).
+
+    Returns:
+        Canonical ``SSV_CLIENT`` value.
+
+    Raises:
+        ValueError: When *value* is not a known SSV operator client.
+    """
+    raw = (value or SSV_CLIENT_SSV).strip().lower()
+    if raw in ("ssv", "ssvnode", "ssv-node", "go", "go-ssv"):
+        return SSV_CLIENT_SSV
+    if raw in ("anchor", "sigp", "sigp-anchor"):
+        return SSV_CLIENT_ANCHOR
+    raise ValueError(f"Unknown SSV client: {value!r} (expected ssv or anchor)")
+
+
+def _repo_root() -> str:
+    """Return EthPillar repo root (parent of ``deploy/``)."""
+    return os.environ.get("BASE_DIR") or os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))
+    )
+
+
+def persist_ssv_client(client: str, *, overrides_path: Optional[str] = None) -> str:
+    """Upsert ``SSV_CLIENT`` into ``.env.overrides`` and return the canonical value.
+
+    Args:
+        client: Requested client (``ssv`` or ``anchor``).
+        overrides_path: Optional path to ``.env.overrides``.
+
+    Returns:
+        Normalized client slug written to the overrides file.
+    """
+    normalized = normalize_ssv_client(client)
+    path = overrides_path or os.path.join(_repo_root(), ".env.overrides")
+    example = os.path.join(_repo_root(), ".env.overrides.example")
+    if not os.path.isfile(path) and os.path.isfile(example):
+        subprocess.run(["cp", example, path], check=True)
+    lines: List[str] = []
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    key_re = re.compile(r"^\s*#?\s*SSV_CLIENT\s*=")
+    replaced = False
+    out: List[str] = []
+    for line in lines:
+        if key_re.match(line):
+            if not replaced:
+                out.append(f"SSV_CLIENT={normalized}")
+                replaced = True
+            continue
+        out.append(line)
+    if not replaced:
+        if out and out[-1].strip():
+            out.append("")
+        out.append(f"SSV_CLIENT={normalized}")
+    text = "\n".join(out)
+    if text and not text.endswith("\n"):
+        text += "\n"
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    return normalized
+
+
+def get_ssv_client(
+    *,
+    env: Optional[dict] = None,
+    unit_path: str = SSV_NODE_SERVICE_PATH,
+) -> SsvClient:
+    """Resolve installed/requested SSV client from env or ``ssv-node.service``.
+
+    Prefers ``SSV_CLIENT`` in *env*, then ``ExecStart`` binary basename, then
+    ``ssv`` when neither is conclusive.
+    """
+    environ = env if env is not None else os.environ
+    raw = (environ.get("SSV_CLIENT") or "").strip()
+    if raw:
+        try:
+            return normalize_ssv_client(raw)
+        except ValueError:
+            pass
+    body = _read_config_text(unit_path)
+    if body:
+        if re.search(r"(?m)^\s*ExecStart=.*\banchor\b", body):
+            return SSV_CLIENT_ANCHOR
+        if re.search(r"(?m)^\s*ExecStart=.*\bssvnode\b", body):
+            return SSV_CLIENT_SSV
+    return SSV_CLIENT_SSV
+
+
+def default_metrics_port(client: str) -> int:
+    """Return the EthPillar default metrics port for *client*."""
+    return (
+        DEFAULT_ANCHOR_METRICS_PORT
+        if normalize_ssv_client(client) == SSV_CLIENT_ANCHOR
+        else DEFAULT_METRICS_PORT
+    )
+
+
+def default_api_port(client: str) -> int:
+    """Return the EthPillar default health/API port for *client*."""
+    return (
+        DEFAULT_ANCHOR_API_PORT
+        if normalize_ssv_client(client) == SSV_CLIENT_ANCHOR
+        else DEFAULT_API_PORT
+    )
 
 
 def ssv_network_name(eth_network: str) -> str:
@@ -276,6 +405,86 @@ def generate_ssv_node_service(
     )
 
 
+def generate_anchor_node_service(
+    eth_network: str,
+    beacon_node_addr: str,
+    eth1_ws_addr: str = DEFAULT_EL_WS,
+    eth1_http_addr: str = DEFAULT_EL_HTTP,
+    *,
+    binary: str = ANCHOR_NODE_BIN,
+    p2p_tcp_port: int = DEFAULT_P2P_TCP_PORT,
+    p2p_udp_port: int = DEFAULT_P2P_UDP_PORT,
+    quic_port: int = DEFAULT_QUIC_PORT,
+    metrics_port: int = DEFAULT_ANCHOR_METRICS_PORT,
+    api_port: int = DEFAULT_ANCHOR_API_PORT,
+    private_key_file: str = SSV_PRIVATE_KEY_FILE,
+    password_file: str = SSV_PASSWORD_FILE,
+    data_dir: str = SSV_DATA_DIR,
+    unit_after: Optional[List[str]] = None,
+) -> str:
+    """Generate ``ssv-node.service`` content for the Anchor (Sigma Prime) client.
+
+    Anchor is CLI-configured (no ``config.yaml``). Flags embed endpoints, ports,
+    and the shared EthPillar keystore paths under ``/var/lib/ssv``.
+
+    Args:
+        eth_network: Network name for ``--network`` and the unit description.
+        beacon_node_addr: Beacon REST HTTP URL(s).
+        eth1_ws_addr: Execution WebSocket URL.
+        eth1_http_addr: Execution HTTP JSON-RPC URL.
+        binary: Path to the ``anchor`` binary.
+        p2p_tcp_port: Libp2p TCP listen port (``--port``).
+        p2p_udp_port: Discovery UDP port (``--discovery-port``).
+        quic_port: QUIC UDP port (``--quic-port``).
+        metrics_port: Prometheus metrics port.
+        api_port: HTTP API port.
+        private_key_file: Encrypted operator keystore path.
+        password_file: Keystore password file path.
+        data_dir: Anchor ``--data-dir`` (shared EthPillar SSV datadir).
+        unit_after: Extra ``After=``/``Wants=`` units. Defaults to local
+            ``consensus.service`` + ``execution.service``. Pass an empty list
+            to omit them (remote BN/EL / SSV-only hosts).
+
+    Returns:
+        Systemd unit file body.
+    """
+    network = ssv_network_name(eth_network)
+    exec_start = form_exec_start(
+        [
+            f"{binary} node",
+            f"--network {network}",
+            f"--data-dir {data_dir}",
+            f"--key-file {private_key_file}",
+            f"--password-file {password_file}",
+            f"--beacon-nodes {beacon_node_addr}",
+            f"--execution-rpc {eth1_http_addr}",
+            f"--execution-ws {eth1_ws_addr}",
+            f"--port {int(p2p_tcp_port)}",
+            f"--discovery-port {int(p2p_udp_port)}",
+            f"--quic-port {int(quic_port)}",
+            "--metrics",
+            f"--metrics-address 127.0.0.1",
+            f"--metrics-port {int(metrics_port)}",
+            "--http",
+            f"--http-address 127.0.0.1",
+            f"--http-port {int(api_port)}",
+        ]
+    )
+    if unit_after is None:
+        after = ["consensus.service", "execution.service"]
+    else:
+        after = unit_after or None
+    return generate_systemd_template(
+        description=f"Anchor SSV Operator Node for {eth_network.upper()}",
+        user=SSV_USER,
+        exec_start=exec_start,
+        working_dir=SSV_DATA_DIR,
+        timeout_stop_sec=120,
+        limit_nofile=65536,
+        unit_after=after,
+    )
+
+
 def generate_ssv_dkg_service(
     eth_network: str,
     config_path: str = SSV_DKG_CONFIG_FILE,
@@ -374,6 +583,55 @@ def get_dkg_release_info(version_tag: str, arch_amd64: bool) -> dict:
         client_label="ssv-dkg",
     )
     return release_info_from_github(data, [download_url], [filename])
+
+
+def get_anchor_release_info(version_tag: str, arch_amd64: bool) -> dict:
+    """Get Anchor release version, download URL, and filename.
+
+    Args:
+        version_tag: ``LATEST`` or a specific version tag.
+        arch_amd64: True if amd64/x86_64, False for arm64.
+
+    Returns:
+        Dict with ``version``, ``download_urls``, and ``filenames``.
+    """
+    from deploy.common import get_github_release, pick_github_release_asset, release_info_from_github
+
+    data = get_github_release(ANCHOR_GITHUB_REPO, version_tag)
+    filename, download_url = pick_github_release_asset(
+        data.get("assets", []),
+        arch_amd64,
+        name_contains=("anchor", "linux-gnu"),
+        name_excludes=(".asc", "apple-darwin", "checksum"),
+        prefer_extensions=(".tar.gz",),
+        client_label="Anchor",
+    )
+    return release_info_from_github(data, [download_url], [filename])
+
+
+def download_and_install_anchor(version_tag: str = "LATEST", dest: str = ANCHOR_NODE_BIN) -> str:
+    """Download Anchor from GitHub releases and install to *dest*.
+
+    Args:
+        version_tag: ``LATEST`` or a concrete tag.
+        dest: Absolute install path for the ``anchor`` binary.
+
+    Returns:
+        Installed version tag string.
+    """
+    arch_amd64 = get_machine_architecture() == "amd64"
+    info = get_anchor_release_info(version_tag, arch_amd64)
+    version = info["version"]
+    download_path = download_release_file(info, DOWNLOAD_DIR, "Anchor")
+    extract_and_install(
+        download_path,
+        "anchor",
+        dest,
+        "binary",
+        0,
+        binary_name="anchor",
+    )
+    return version
 
 
 def build_ssvnode_from_source(version_tag: str, dest: str = SSV_NODE_BIN) -> None:
@@ -598,16 +856,19 @@ def install_ssv(
     eth_network: str,
     beacon_node_addr: str,
     eth1_ws_addr: str = DEFAULT_EL_WS,
-    eth1_http_addr: str = "http://127.0.0.1:8545",
+    eth1_http_addr: str = DEFAULT_EL_HTTP,
     *,
+    client: str = SSV_CLIENT_SSV,
     p2p_tcp_port: int = DEFAULT_P2P_TCP_PORT,
     p2p_udp_port: int = DEFAULT_P2P_UDP_PORT,
-    metrics_port: int = DEFAULT_METRICS_PORT,
-    api_port: int = DEFAULT_API_PORT,
+    quic_port: int = DEFAULT_QUIC_PORT,
+    metrics_port: Optional[int] = None,
+    api_port: Optional[int] = None,
     dkg_port: int = DEFAULT_DKG_PORT,
     p2p_external_ip: str = "",
     operator_id: str = "",
     install_dkg: bool = True,
+    persist_client: bool = True,
 ) -> Tuple[str, str, str]:
     """Install SSV node (and optionally DKG), datadir, config, and units.
 
@@ -615,40 +876,38 @@ def install_ssv(
         eth_network: Network slug.
         beacon_node_addr: Beacon REST URL.
         eth1_ws_addr: Execution WebSocket URL for the node.
-        eth1_http_addr: Execution HTTP URL for DKG.
+        eth1_http_addr: Execution HTTP URL for DKG and Anchor ``--execution-rpc``.
+        client: Operator client (``ssv`` / Go or ``anchor`` / Sigma Prime).
         p2p_tcp_port: Node P2P TCP port.
         p2p_udp_port: Node P2P UDP port.
-        metrics_port: Metrics port.
-        api_port: Health/API port.
+        quic_port: Anchor QUIC UDP port (ignored for Go SSV).
+        metrics_port: Metrics port (client default when omitted).
+        api_port: Health/API port (client default when omitted).
         dkg_port: DKG listen port.
-        p2p_external_ip: Optional advertised IP.
+        p2p_external_ip: Optional advertised IP (Go ``config.yaml`` only).
         operator_id: Optional known operator ID for DKG config.
         install_dkg: When True, also install ``ssv-dkg`` binary and unit.
+        persist_client: When True, write ``SSV_CLIENT`` to ``.env.overrides``.
 
     Returns:
         ``(ssv_version, ssv_node_service_path, ssv_dkg_service_path_or_empty)``
     """
+    ssv_client = normalize_ssv_client(client)
+    if persist_client:
+        persist_ssv_client(ssv_client)
+    metrics = (
+        int(metrics_port)
+        if metrics_port is not None
+        else default_metrics_port(ssv_client)
+    )
+    api = int(api_port) if api_port is not None else default_api_port(ssv_client)
+
     ensure_ssv_datadir()
 
     arch_amd64 = get_machine_architecture() == "amd64"
-    node_info = get_release_info("LATEST", arch_amd64)
-    ssv_version = node_info["version"]
-    build_ssvnode_from_source(ssv_version, SSV_NODE_BIN)
-
-    config = generate_ssv_config(
-        eth_network,
-        beacon_node_addr,
-        eth1_ws_addr,
-        p2p_tcp_port=p2p_tcp_port,
-        p2p_udp_port=p2p_udp_port,
-        metrics_port=metrics_port,
-        api_port=api_port,
-        p2p_external_ip=p2p_external_ip,
-    )
-    _sudo_write_text(SSV_CONFIG_FILE, config, "600")
 
     # Omit local consensus/execution Wants when BN/EL endpoints are remote.
-    local_stack = _endpoints_look_local(beacon_node_addr, eth1_ws_addr)
+    local_stack = _endpoints_look_local(beacon_node_addr, eth1_ws_addr, eth1_http_addr)
     node_after: Optional[List[str]] = (
         ["consensus.service", "execution.service"] if local_stack else []
     )
@@ -656,7 +915,37 @@ def install_ssv(
         ["execution.service"] if _endpoints_look_local(eth1_http_addr) else []
     )
 
-    node_unit = generate_ssv_node_service(eth_network, unit_after=node_after)
+    if ssv_client == SSV_CLIENT_ANCHOR:
+        ssv_version = download_and_install_anchor("LATEST", ANCHOR_NODE_BIN)
+        node_unit = generate_anchor_node_service(
+            eth_network,
+            beacon_node_addr,
+            eth1_ws_addr=eth1_ws_addr,
+            eth1_http_addr=eth1_http_addr,
+            p2p_tcp_port=p2p_tcp_port,
+            p2p_udp_port=p2p_udp_port,
+            quic_port=quic_port,
+            metrics_port=metrics,
+            api_port=api,
+            unit_after=node_after,
+        )
+    else:
+        node_info = get_release_info("LATEST", arch_amd64)
+        ssv_version = node_info["version"]
+        build_ssvnode_from_source(ssv_version, SSV_NODE_BIN)
+        config = generate_ssv_config(
+            eth_network,
+            beacon_node_addr,
+            eth1_ws_addr,
+            p2p_tcp_port=p2p_tcp_port,
+            p2p_udp_port=p2p_udp_port,
+            metrics_port=metrics,
+            api_port=api,
+            p2p_external_ip=p2p_external_ip,
+        )
+        _sudo_write_text(SSV_CONFIG_FILE, config, "600")
+        node_unit = generate_ssv_node_service(eth_network, unit_after=node_after)
+
     write_service_file(node_unit, SSV_NODE_SERVICE_PATH, "ssv_node_temp.service")
 
     dkg_path = ""
@@ -713,23 +1002,56 @@ def _yaml_port(content: str, key: str, default: int) -> int:
     return default
 
 
+def _cli_flag_port(exec_start: str, flag: str, default: int) -> int:
+    """Parse ``--flag <port>`` or ``--flag=<port>`` from an ExecStart line."""
+    pattern = re.compile(
+        rf"(?:^|\s){re.escape(flag)}(?:=|\s+)(\d{{1,5}})(?:\s|$)",
+        re.IGNORECASE,
+    )
+    match = pattern.search(exec_start or "")
+    if not match:
+        return default
+    try:
+        port = int(match.group(1))
+    except ValueError:
+        return default
+    return port if 1 <= port <= 65535 else default
+
+
+def _read_unit_exec_start(unit_path: str = SSV_NODE_SERVICE_PATH) -> str:
+    """Return the ``ExecStart=`` value from a systemd unit body."""
+    body = _read_config_text(unit_path)
+    for line in body.splitlines():
+        if line.startswith("ExecStart="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
 def read_ssv_ports(
     *,
     config_path: str = SSV_CONFIG_FILE,
     dkg_config_path: str = SSV_DKG_CONFIG_FILE,
+    unit_path: str = SSV_NODE_SERVICE_PATH,
     env: Optional[dict] = None,
+    client: Optional[str] = None,
 ) -> dict:
-    """Return P2P/metrics/API/DKG ports from config files with env fallbacks.
+    """Return P2P/metrics/API/DKG/QUIC ports from config/unit with env fallbacks.
+
+    Go SSV reads ``config.yaml``; Anchor reads ``ssv-node.service`` ExecStart
+    flags. QUIC is Anchor-only (``0`` when not applicable).
 
     Args:
-        config_path: Node ``config.yaml``.
+        config_path: Node ``config.yaml`` (Go).
         dkg_config_path: DKG ``operator.yaml``.
+        unit_path: ``ssv-node.service`` path (Anchor flags).
         env: Optional env mapping (defaults to ``os.environ``).
+        client: Optional forced client; otherwise resolved via :func:`get_ssv_client`.
 
     Returns:
-        Dict with keys ``tcp``, ``udp``, ``metrics``, ``api``, ``dkg``.
+        Dict with keys ``tcp``, ``udp``, ``metrics``, ``api``, ``dkg``, ``quic``.
     """
     environ = env if env is not None else os.environ
+    ssv_client = normalize_ssv_client(client) if client else get_ssv_client(env=environ, unit_path=unit_path)
 
     def _env_int(key: str, default: int) -> int:
         raw = (environ.get(key) or "").strip()
@@ -741,8 +1063,39 @@ def read_ssv_ports(
             return default
         return value if 1 <= value <= 65535 else default
 
-    cfg = _read_config_text(config_path)
     dkg = _read_config_text(dkg_config_path)
+    dkg_port = (
+        _yaml_port(dkg, "port", _env_int("SSV_DKG_PORT", DEFAULT_DKG_PORT))
+        if dkg
+        else _env_int("SSV_DKG_PORT", DEFAULT_DKG_PORT)
+    )
+
+    if ssv_client == SSV_CLIENT_ANCHOR:
+        exec_start = _read_unit_exec_start(unit_path)
+        metrics_default = default_metrics_port(SSV_CLIENT_ANCHOR)
+        api_default = default_api_port(SSV_CLIENT_ANCHOR)
+        return {
+            "tcp": _cli_flag_port(
+                exec_start, "--port", _env_int("SSV_P2P_TCP_PORT", DEFAULT_P2P_TCP_PORT)
+            ),
+            "udp": _cli_flag_port(
+                exec_start,
+                "--discovery-port",
+                _env_int("SSV_P2P_UDP_PORT", DEFAULT_P2P_UDP_PORT),
+            ),
+            "quic": _cli_flag_port(
+                exec_start, "--quic-port", _env_int("SSV_QUIC_PORT", DEFAULT_QUIC_PORT)
+            ),
+            "metrics": _cli_flag_port(
+                exec_start, "--metrics-port", _env_int("SSV_METRICS_PORT", metrics_default)
+            ),
+            "api": _cli_flag_port(
+                exec_start, "--http-port", _env_int("SSV_API_PORT", api_default)
+            ),
+            "dkg": dkg_port,
+        }
+
+    cfg = _read_config_text(config_path)
     return {
         "tcp": _yaml_port(cfg, "TcpPort", _env_int("SSV_P2P_TCP_PORT", DEFAULT_P2P_TCP_PORT))
         if cfg
@@ -750,15 +1103,14 @@ def read_ssv_ports(
         "udp": _yaml_port(cfg, "UdpPort", _env_int("SSV_P2P_UDP_PORT", DEFAULT_P2P_UDP_PORT))
         if cfg
         else _env_int("SSV_P2P_UDP_PORT", DEFAULT_P2P_UDP_PORT),
+        "quic": 0,
         "metrics": parse_metrics_port(cfg)
         if cfg
         else _env_int("SSV_METRICS_PORT", DEFAULT_METRICS_PORT),
         "api": _yaml_port(cfg, "SSVAPIPort", _env_int("SSV_API_PORT", DEFAULT_API_PORT))
         if cfg
         else _env_int("SSV_API_PORT", DEFAULT_API_PORT),
-        "dkg": _yaml_port(dkg, "port", _env_int("SSV_DKG_PORT", DEFAULT_DKG_PORT))
-        if dkg
-        else _env_int("SSV_DKG_PORT", DEFAULT_DKG_PORT),
+        "dkg": dkg_port,
     }
 
 

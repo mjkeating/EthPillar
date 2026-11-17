@@ -18,14 +18,17 @@ from deploy.orchestrator import (
     run_install,
 )
 from deploy.ssv import (
+    ANCHOR_NODE_BIN,
     SSV_DATA_DIR,
     SSV_DKG_CONFIG_FILE,
     SSV_PASSWORD_FILE,
     SSV_PRIVATE_KEY_FILE,
+    generate_anchor_node_service,
     generate_ssv_config,
     generate_ssv_dkg_config,
     generate_ssv_dkg_service,
     generate_ssv_node_service,
+    normalize_ssv_client,
     ssv_network_name,
 )
 
@@ -82,6 +85,15 @@ def test_generate_ssv_dkg_config_shares_keystore():
     assert "outputPath: ./output" in cfg
 
 
+def test_normalize_ssv_client():
+    assert normalize_ssv_client("ssv") == "ssv"
+    assert normalize_ssv_client("ssvnode") == "ssv"
+    assert normalize_ssv_client("anchor") == "anchor"
+    assert normalize_ssv_client("sigp-anchor") == "anchor"
+    with pytest.raises(ValueError):
+        normalize_ssv_client("nethermind")
+
+
 def test_generate_ssv_services():
     node = generate_ssv_node_service("mainnet")
     assert "Description=SSV Operator Node for MAINNET" in node
@@ -101,6 +113,32 @@ def test_generate_ssv_services():
     assert "After=network-online.target\n" in remote or "After=network-online.target\r" in remote
 
 
+def test_generate_anchor_node_service():
+    unit = generate_anchor_node_service(
+        "hoodi",
+        "http://127.0.0.1:5052",
+        eth1_ws_addr="ws://127.0.0.1:8546",
+        eth1_http_addr="http://127.0.0.1:8545",
+        metrics_port=5164,
+        api_port=5062,
+        quic_port=13002,
+    )
+    assert "Description=Anchor SSV Operator Node for HOODI" in unit
+    assert "User=ssv" in unit
+    assert f"{ANCHOR_NODE_BIN} node" in unit
+    assert "--network hoodi" in unit
+    assert f"--data-dir {SSV_DATA_DIR}" in unit
+    assert f"--key-file {SSV_PRIVATE_KEY_FILE}" in unit
+    assert f"--password-file {SSV_PASSWORD_FILE}" in unit
+    assert "--beacon-nodes http://127.0.0.1:5052" in unit
+    assert "--execution-rpc http://127.0.0.1:8545" in unit
+    assert "--execution-ws ws://127.0.0.1:8546" in unit
+    assert "--metrics-port 5164" in unit
+    assert "--http-port 5062" in unit
+    assert "--quic-port 13002" in unit
+    assert "After=network-online.target consensus.service execution.service" in unit
+
+
 def test_read_ssv_ports_from_config(tmp_path):
     from deploy.ssv import read_ssv_ports
 
@@ -112,12 +150,44 @@ def test_read_ssv_ports_from_config(tmp_path):
     )
     dkg = tmp_path / "operator.yaml"
     dkg.write_text("port: 3033\n", encoding="utf-8")
-    ports = read_ssv_ports(config_path=str(cfg), dkg_config_path=str(dkg), env={})
+    ports = read_ssv_ports(
+        config_path=str(cfg), dkg_config_path=str(dkg), env={}, client="ssv"
+    )
     assert ports == {
         "tcp": 13011,
         "udp": 12011,
+        "quic": 0,
         "metrics": 15011,
         "api": 16011,
+        "dkg": 3033,
+    }
+
+
+def test_read_ssv_ports_from_anchor_unit(tmp_path):
+    from deploy.ssv import read_ssv_ports
+
+    unit = tmp_path / "ssv-node.service"
+    unit.write_text(
+        "[Service]\n"
+        "ExecStart=/usr/local/bin/anchor node --port 13021 --discovery-port 12021 "
+        "--quic-port 13022 --metrics-port 5164 --http-port 5062\n",
+        encoding="utf-8",
+    )
+    dkg = tmp_path / "operator.yaml"
+    dkg.write_text("port: 3033\n", encoding="utf-8")
+    ports = read_ssv_ports(
+        config_path=str(tmp_path / "missing.yaml"),
+        dkg_config_path=str(dkg),
+        unit_path=str(unit),
+        env={},
+        client="anchor",
+    )
+    assert ports == {
+        "tcp": 13021,
+        "udp": 12021,
+        "quic": 13022,
+        "metrics": 5164,
+        "api": 5062,
         "dkg": 3033,
     }
 
@@ -222,6 +292,67 @@ def test_run_install_ssv_skips_validator_and_calls_install(monkeypatch):
     assert calls["finish"].get("ssv_enabled") is True
     # validator_enabled is a positional arg to finish_install (index 12).
     assert calls["finish_args"][12] is False
+    assert calls["install"][1].get("client") == "ssv"
+
+
+def test_run_install_ssv_passes_anchor_client(monkeypatch):
+    calls = {}
+
+    def _fake_install(*args, **kwargs):
+        calls["kwargs"] = kwargs
+        return ("v1.4.1", "/etc/systemd/system/ssv-node.service", "/etc/systemd/system/ssv-dkg.service")
+
+    monkeypatch.setattr("deploy.ssv.install_ssv", _fake_install)
+    monkeypatch.setattr("deploy.common.setup_node", lambda *a, **k: None)
+    monkeypatch.setattr("deploy.common.finish_install", lambda *a, **k: None)
+    monkeypatch.setattr("deploy.lighthouse.download_lighthouse", lambda *a, **k: "v0")
+    monkeypatch.setattr(
+        "deploy.lighthouse.install_lighthouse_bn",
+        lambda *a, **k: "/tmp/consensus.service",
+    )
+    monkeypatch.setattr(
+        "deploy.geth.download_and_install_geth",
+        lambda *a, **k: ("v0", "/tmp/execution.service"),
+    )
+
+    flags = {
+        "ssv": True,
+        "ssv_client": "anchor",
+        "charon": False,
+        "web3signer": False,
+        "validator": False,
+        "validator_only": False,
+        "node_only": False,
+        "mevboost": False,
+        "builder_api": False,
+        "epbs": False,
+        "switch_client": False,
+    }
+    run_install(
+        role="Custom Setup",
+        network="sepolia",
+        ec_name="Geth",
+        cc_name="Lighthouse",
+        vc_name=None,
+        flags=flags,
+        params={
+            "fee_recipient": "0xabc",
+            "graffiti": "x",
+            "bn_address": "",
+            "jwtsecret_path": "/tmp/jwt",
+            "sync_url": "http://checkpoint",
+            "el_p2p_port": "30303",
+            "el_rpc_port": "8545",
+            "el_max_peers": "50",
+            "cl_p2p_port": "9000",
+            "cl_rest_port": "5052",
+            "cl_max_peers": "100",
+            "mev_min_bid": "0",
+            "skip_prompts": "true",
+        },
+        env_vars={"CL_IP_ADDRESS": "127.0.0.1", "EL_IP_ADDRESS": "127.0.0.1"},
+    )
+    assert calls["kwargs"].get("client") == "anchor"
 
 
 def test_run_install_ssv_passes_enable_ws_to_besu(monkeypatch):

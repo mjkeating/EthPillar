@@ -263,7 +263,7 @@ check_web3signer_version() {
 
 check_ssv_version() {
   [[ -f /etc/systemd/system/ssv-node.service ]] || return 0
-  local version
+  local version release_client label
   INSTALLED_COMMIT=""
   if ! getSsvCurrentVersion; then
     echo "❌ SSV version parse failed: ${VERSION:-empty}"
@@ -271,8 +271,15 @@ check_ssv_version() {
     return 0
   fi
   version=$VERSION
-  echo "✅ SSV Operator version: ${version}"
-  assert_matches_latest "SSV" "ssv" "$version"
+  if [[ "$(getSsvClient)" == "anchor" ]]; then
+    release_client="anchor"
+    label="SSV Operator (Anchor)"
+  else
+    release_client="ssv"
+    label="SSV Operator"
+  fi
+  echo "✅ ${label} version: ${version}"
+  assert_matches_latest "${label}" "${release_client}" "$version"
 }
 
 # Optional role filter so Upgrade two-phase can assert only the client that

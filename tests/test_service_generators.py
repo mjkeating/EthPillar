@@ -18,6 +18,7 @@ from deploy.common import BASE_DATA_DIR, INSTALL_DIR
 from deploy.mevboost import generate_mevboost_service
 from deploy.charon import generate_charon_service, CHARON_LOCK_FILE, CHARON_PRIVATE_KEY_FILE, CHARON_DATA_DIR
 from deploy.ssv import (
+    generate_anchor_node_service,
     generate_ssv_config,
     generate_ssv_dkg_service,
     generate_ssv_node_service,
@@ -159,6 +160,21 @@ class TestSsvService:
         assert "Description=SSV DKG Operator for MAINNET" in unit
         assert "ssv-dkg start-operator" in unit
         assert "--configPath=./operator.yaml" in unit
+        check_constant_substitutions(unit)
+
+    def test_anchor_node_unit(self):
+        unit = generate_anchor_node_service(
+            "sepolia",
+            "http://127.0.0.1:5052",
+            eth1_http_addr="http://127.0.0.1:8545",
+        )
+        assert "Description=Anchor SSV Operator Node for SEPOLIA" in unit
+        assert "anchor node" in unit
+        assert "--network sepolia" in unit
+        assert f"--data-dir={SSV_DATA_DIR}" not in unit  # space-separated flags
+        assert f"--data-dir {SSV_DATA_DIR}" in unit
+        assert "--metrics" in unit
+        assert "--http" in unit
         check_constant_substitutions(unit)
 
 

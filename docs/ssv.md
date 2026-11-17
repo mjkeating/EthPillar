@@ -5,36 +5,58 @@ Selecting **SSV Operator** in the install VC menu installs `ssv-node.service`
 (and `ssv-dkg.service`) instead of `validator.service`. The node talks to your
 local execution WebSocket and beacon REST API directly.
 
+## Operator clients
+
+At install time you choose the node binary (persisted as `SSV_CLIENT` in
+`.env.overrides`):
+
+| `SSV_CLIENT` | Binary | Config | Install |
+|--------------|--------|--------|---------|
+| `ssv` (default) | `/usr/local/bin/ssvnode` | `/var/lib/ssv/config.yaml` | Built from source (`ssvlabs/ssv`; needs Go 1.26+) |
+| `anchor` | `/usr/local/bin/anchor` | CLI flags in `ssv-node.service` `ExecStart` | GitHub release tarball (`sigp/anchor`) |
+
+Both share the same unit name (`ssv-node.service`), datadir, operator keystore,
+and Go **`ssv-dkg`** sidecar. There is **no post-install switch** between Go and
+Anchor (same as traditional VC installs; EC/CC still have switch flows).
+
+CLI: `--with_ssv --ssv-client {ssv,anchor}`
+
 ## Layout
 
 | Path | Role |
 |------|------|
 | `/var/lib/ssv/` | Shared datadir (`ssv` user, mode `700`) |
-| `/var/lib/ssv/encrypted_private_key.json` | Operator RSA keystore |
+| `/var/lib/ssv/encrypted_private_key.json` | Operator RSA keystore (shared with DKG; Anchor-compatible) |
 | `/var/lib/ssv/password` | Keystore password |
-| `/var/lib/ssv/config.yaml` | Node config |
-| `/var/lib/ssv/db/` | Persistent DB (**slashing-critical** — back up) |
+| `/var/lib/ssv/config.yaml` | Go node config only |
+| `/var/lib/ssv/db/` | Go persistent DB (**slashing-critical** — back up) |
 | `/var/lib/ssv/operator.yaml` | DKG config (same key + password; **relative** paths — `ssv-dkg` rejects absolute) |
 | `/var/lib/ssv/output/` | DKG ceremony artifacts |
-| `/usr/local/bin/ssvnode` | Node binary (built from source) |
+| `/usr/local/bin/ssvnode` | Go node binary (built from source) |
+| `/usr/local/bin/anchor` | Anchor node binary (release download) |
 | `/usr/local/bin/ssv-dkg` | DKG binary (GitHub release zip) |
 
 Upstream does not publish `ssvnode` Linux binaries on GitHub. EthPillar clones
 the release tag and runs `CGO_ENABLED=1 make build` (needs Go 1.26+ and
-`build-essential`). That path works on amd64 and arm64 systemd hosts without
-Docker. DKG still uses the published zip assets.
+`build-essential`). Anchor publishes linux-gnu tarballs. DKG uses published zip
+assets for both clients.
 
 ## Install
 
-1. Install EL + CL as usual. SSV needs ETH1 over WebSocket on localhost `:8546`.
-   Geth and ethrex already expose WS; Besu/Nethermind/Reth/Erigon enable localhost
-   WS only when the install includes **SSV Operator** (`enable_ws`).
+1. Install EL + CL as usual. SSV needs ETH1 over WebSocket on localhost `:8546`
+   (Anchor also needs HTTP JSON-RPC). Geth and ethrex already expose WS;
+   Besu/Nethermind/Reth/Erigon enable localhost WS only when the install
+   includes **SSV Operator** (`enable_ws`).
 2. On the validator-mode prompt, choose **SSV Operator** (or pass `--with_ssv`).
-3. Not available as the Charon/Web3Signer *second* signer prompt.
-4. Mutually exclusive with Charon and Web3Signer.
-5. **SSV-only host** (remote BN/EL): use **Validator Client Only** → **SSV Operator**, or migrate an existing systemd operator (below). Remote endpoints omit local `Wants=consensus/execution`.
+3. Choose **Go SSV (ssvnode)** or **Anchor (Sigma Prime)** (or `--ssv-client`).
+4. Not available as the Charon/Web3Signer *second* signer prompt.
+5. Mutually exclusive with Charon and Web3Signer.
+6. **SSV-only host** (remote BN/EL): use **Validator Client Only** → **SSV Operator**, or migrate an existing systemd Go operator (below). Remote endpoints omit local `Wants=consensus/execution`.
 
 ## Migrate from existing systemd SSV
+
+Migrate supports **Go ssvnode** legacy units only. If `SSV_CLIENT=anchor` is
+already set, migrate refuses.
 
 For a VM that already runs `ssvnode.service` / `ssvdkg.service` (or name variants
 like `ssv_node`, `ssv.service`, or a *legacy* unit that happens to be named
@@ -100,7 +122,7 @@ the operator with no recovery path. The same files are required by `ssv-dkg`.
 
 Full-node uninstall (`uninstall.sh`) always **retires** `ssv-node` / `ssv-dkg`
 (stop → disable → `*.service.bak` → daemon-reload → verify absent) and removes
-binaries/`ssv` user.
+binaries (`ssvnode`, `anchor`, `ssv-dkg`) / `ssv` user.
 
 Wiping `/var/lib/ssv` is a **separate opt-in** (strong confirm, **default No**).
 If you choose to wipe:
@@ -116,38 +138,41 @@ If you choose to wipe:
 
 | Port | Proto | Purpose | UFW |
 |------|-------|---------|-----|
-| 13001 | TCP | P2P | Open (from config.yaml when present) |
+| 13001 | TCP | P2P | Open (from config.yaml or Anchor ExecStart) |
 | 12001 | UDP | Discovery | Open |
+| 13002 | UDP | Anchor QUIC | Open when Anchor is installed |
 | 3030 | TCP | DKG | Open when DKG enabled |
-| 15000 | TCP | Prometheus metrics | **Denied** (scrape via localhost) |
-| 16000 | TCP | Health/API | **Denied** (localhost only) |
+| 15000 / 5164 | TCP | Prometheus metrics (Go / Anchor defaults) | **Denied** (scrape via localhost) |
+| 16000 / 5062 | TCP | Health/API (Go / Anchor defaults) | **Denied** (localhost only) |
 
-EthPillar → Security → UFW → **SSV: Allow P2P…** reads ports from
-`/var/lib/ssv/config.yaml` (and DKG yaml) with `SSV_*` env as fallback, opens
-P2P + DKG, and **denies** metrics/API. Override ports with `SSV_*` in `env` /
+EthPillar → Security → UFW → **SSV: Allow P2P…** reads ports from live
+config/unit with `SSV_*` env as fallback, opens P2P (+ QUIC for Anchor) + DKG,
+and **denies** metrics/API. Override ports with `SSV_*` in `env` /
 `.env.overrides` before install.
 
 ## Monitoring
 
 When Prometheus/Grafana are installed, EthPillar provisions:
 
-- Scrape job `ssv` → `127.0.0.1:15000/metrics` with a static `pod` label
-- **SSV Operational** Grafana dashboard (from `ssvlabs/ssv-stack`)
+- Scrape job `ssv` → `127.0.0.1:<metrics>/metrics` with a static `pod` label
+- **Go SSV:** SSV Operational Grafana dashboard (from `ssvlabs/ssv-stack`)
+- **Anchor:** `anchor-dash.json` (from `sigp/anchor` stable)
 
 ## DKG
 
 After registering the operator at [app.ssv.network](https://app.ssv.network/),
 set `operatorID` in `/var/lib/ssv/operator.yaml` (or `SSV_OPERATOR_ID` before
-install) and start `ssv-dkg`.
+install) and start `ssv-dkg`. The same DKG binary is used with Go SSV and Anchor.
 
 ## Next steps after install
 
-1. Back up keystore + password + `db/`
+1. Back up keystore + password (+ Go `db/` when applicable)
 2. Register operator (web app)
 3. Open firewall ports
 4. `sudo systemctl start ssv-node`
 5. Optional: `sudo systemctl start ssv-dkg`
 
 See also: [SSV node setup](https://docs.ssv.network/operators/operator-node/node-setup/),
+[Anchor](https://anchor.sigmaprime.io/),
 [DKG](https://docs.ssv.network/operators/operator-node/setup-sidecars/enabling-dkg/start-dkg-node/),
 [Monitoring](https://docs.ssv.network/operators/operator-node/monitoring/).

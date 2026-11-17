@@ -32,6 +32,7 @@ _SNAPSHOT_CLIENTS = (
     "charon",
     "web3signer",
     "ssv",
+    "anchor",
 )
 
 

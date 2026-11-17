@@ -38,6 +38,9 @@ if [[ "\$*" == *release_info* ]]; then
     ssv|ssv-node|ssvnode)
       echo "{\"version\":\"\${MOCK_SSV_LATEST:-v2.5.1}\",\"commit\":\"\",\"filenames\":[\"ssv.tgz\"],\"download_urls\":[\"http://example/ssv.tgz\"]}"
       ;;
+    anchor)
+      echo "{\"version\":\"\${MOCK_ANCHOR_LATEST:-v1.4.1}\",\"commit\":\"\",\"filenames\":[\"anchor.tar.gz\"],\"download_urls\":[\"http://example/anchor.tar.gz\"]}"
+      ;;
     ssv-dkg|ssvdkg)
       echo "{\"version\":\"\${MOCK_SSV_DKG_LATEST:-v3.1.1}\",\"commit\":\"\",\"filenames\":[\"ssv-dkg.zip\"],\"download_urls\":[\"http://example/ssv-dkg.zip\"]}"
       ;;

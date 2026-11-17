@@ -21,7 +21,7 @@ setup() {
   echo 'dbdata' > "${SSV_DATA_DIR}/db/state"
 
   touch "${SYSTEMD_UNIT_DIR}/ssv-node.service" "${SYSTEMD_UNIT_DIR}/ssv-dkg.service"
-  touch "${INSTALL_DIR}/ssvnode" "${INSTALL_DIR}/ssv-dkg"
+  touch "${INSTALL_DIR}/ssvnode" "${INSTALL_DIR}/anchor" "${INSTALL_DIR}/ssv-dkg"
 
   source ./uninstall.sh
 
@@ -116,6 +116,7 @@ teardown() {
   [ -d "$SSV_DATA_DIR" ]
   [ -f "$SSV_DATA_DIR/encrypted_private_key.json" ]
   [ ! -f "${INSTALL_DIR}/ssvnode" ]
+  [ ! -f "${INSTALL_DIR}/anchor" ]
   [ -f "${SYSTEMD_UNIT_DIR}/ssv-node.service.bak" ]
   grep -q 'Wipe SSV datadir' "$WHIPTAIL_LOG"
   ! grep -q 'Back up SSV before wipe' "$WHIPTAIL_LOG"

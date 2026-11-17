@@ -24,8 +24,8 @@ if [[ -z "${GITHUB_TOKEN:-}" ]]; then
 ERROR: GITHUB_TOKEN is not set.
 
 Live release tests call the GitHub API for each client in CLIENT_REPOS
-(including ssv / ssv-dkg). Without a token, GitHub allows ~60 requests/hour
-and tests will skip once rate-limited.
+(including ssv / anchor / ssv-dkg). Without a token, GitHub allows ~60
+requests/hour and tests will skip once rate-limited.
 
 Create a token (read-only public repo access is enough):
   https://github.com/settings/tokens

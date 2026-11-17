@@ -303,7 +303,7 @@ function uninstallSsv(){
 		fi
 	fi
 
-	sudo rm -f "${bin_dir}/ssvnode" "${bin_dir}/ssv-dkg"
+	sudo rm -f "${bin_dir}/ssvnode" "${bin_dir}/anchor" "${bin_dir}/ssv-dkg"
 	sudo userdel ssv 2>/dev/null || true
 }
 

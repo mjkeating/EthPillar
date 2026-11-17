@@ -1896,6 +1896,8 @@ def get_client_release_info(
         module_name = "ssv"
     elif client in ["ssv-dkg", "ssvdkg"]:
         module_name = "ssv"
+    elif client in ["anchor", "sigp-anchor"]:
+        module_name = "ssv"
     else:
         module_name = client
 
@@ -1909,9 +1911,14 @@ def get_client_release_info(
     raw_arch = platform.machine().lower()
     arch_amd64 = raw_arch in ['x86_64', 'amd64']
 
-    # ssv-dkg ships from a separate GitHub repo; deploy.ssv exposes
-    # get_dkg_release_info rather than reusing get_release_info (ssv-node).
-    release_fn = "get_dkg_release_info" if client in ["ssv-dkg", "ssvdkg"] else "get_release_info"
+    # ssv-dkg / Anchor ship from separate GitHub repos; deploy.ssv exposes
+    # dedicated helpers rather than reusing get_release_info (Go ssv-node).
+    if client in ["ssv-dkg", "ssvdkg"]:
+        release_fn = "get_dkg_release_info"
+    elif client in ["anchor", "sigp-anchor"]:
+        release_fn = "get_anchor_release_info"
+    else:
+        release_fn = "get_release_info"
     if not hasattr(module, release_fn):
         raise ValueError(f"Client module deploy.{module_name} does not implement {release_fn}")
 
@@ -1929,7 +1936,7 @@ def get_client_release_info(
                 file=sys.stderr,
                 flush=True,
             )
-            info = module.get_release_info(preferred, arch_amd64)
+            info = getattr(module, release_fn)(preferred, arch_amd64)
 
     return info
 

@@ -22,6 +22,10 @@ from deploy.common import ephemery_network_override
 CHARON_VC_LABEL = "Obol Charon DV"
 WEB3SIGNER_VC_LABEL = "Web3Signer"
 SSV_VC_LABEL = "SSV Operator"
+SSV_CLIENT_LABELS = (
+    ("Go SSV (ssvnode)", ssv.SSV_CLIENT_SSV),
+    ("Anchor (Sigma Prime)", ssv.SSV_CLIENT_ANCHOR),
+)
 OBOL_CHARON = "Obol Charon"
 OBOL_IMPORT_KEY_SHARES = "Import Obol Charon key shares"
 OBOL_GREEN = "\033[32m"
@@ -239,6 +243,21 @@ def is_web3signer_vc_choice(vc_choice: Optional[str]) -> bool:
 def is_ssv_vc_choice(vc_choice: Optional[str]) -> bool:
     """Return True when the menu/CLI choice is the SSV operator option."""
     return (vc_choice or "") == SSV_VC_LABEL
+
+
+def get_ssv_client_menu() -> List[str]:
+    """Return display labels for the Go SSV vs Anchor install prompt."""
+    return [label for label, _ in SSV_CLIENT_LABELS]
+
+
+def resolve_ssv_client(choice: Optional[str], default: str = ssv.SSV_CLIENT_SSV) -> str:
+    """Map a menu label or slug to a canonical ``SSV_CLIENT`` value."""
+    raw = (choice or default or ssv.SSV_CLIENT_SSV).strip()
+    for label, slug in SSV_CLIENT_LABELS:
+        if raw == label or raw.lower() == slug:
+            return slug
+    return ssv.normalize_ssv_client(raw)
+
 
 def get_predefined_vc_mode_options() -> List[str]:
     """Validator mode on Solo, CSM, and Failover installs.
@@ -582,10 +601,30 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
 
     ssv_ver, ssv_node_path, ssv_dkg_path = "", "", ""
     if ssv_enabled and not flags.get("switch_client"):
+        ssv_client = resolve_ssv_client(
+            flags.get("ssv_client") or env_vars.get("SSV_CLIENT") or ssv.SSV_CLIENT_SSV
+        )
         ssv_tcp = int(env_vars.get("SSV_P2P_TCP_PORT") or ssv.DEFAULT_P2P_TCP_PORT)
         ssv_udp = int(env_vars.get("SSV_P2P_UDP_PORT") or ssv.DEFAULT_P2P_UDP_PORT)
-        ssv_metrics = int(env_vars.get("SSV_METRICS_PORT") or ssv.DEFAULT_METRICS_PORT)
-        ssv_api = int(env_vars.get("SSV_API_PORT") or ssv.DEFAULT_API_PORT)
+        ssv_quic = int(env_vars.get("SSV_QUIC_PORT") or ssv.DEFAULT_QUIC_PORT)
+        metrics_default = ssv.default_metrics_port(ssv_client)
+        api_default = ssv.default_api_port(ssv_client)
+        raw_metrics = (env_vars.get("SSV_METRICS_PORT") or "").strip()
+        raw_api = (env_vars.get("SSV_API_PORT") or "").strip()
+        # Base env ships Go defaults (15000/16000). For Anchor, treat those as
+        # unset so we use Anchor-native ports unless the operator overrode them.
+        if ssv_client == ssv.SSV_CLIENT_ANCHOR:
+            if not raw_metrics or int(raw_metrics) == ssv.DEFAULT_METRICS_PORT:
+                ssv_metrics = metrics_default
+            else:
+                ssv_metrics = int(raw_metrics)
+            if not raw_api or int(raw_api) == ssv.DEFAULT_API_PORT:
+                ssv_api = api_default
+            else:
+                ssv_api = int(raw_api)
+        else:
+            ssv_metrics = int(raw_metrics or metrics_default)
+            ssv_api = int(raw_api or api_default)
         ssv_dkg_port = int(env_vars.get("SSV_DKG_PORT") or ssv.DEFAULT_DKG_PORT)
         el_ip = env_vars.get("EL_IP_ADDRESS", "127.0.0.1")
         el_rpc = env_vars.get("EL_RPC_PORT", "8545")
@@ -597,8 +636,10 @@ def run_install(role: str, network: str, ec_name: Optional[str], cc_name: Option
             upstream_bn,
             eth1_ws_addr=eth1_ws,
             eth1_http_addr=eth1_http,
+            client=ssv_client,
             p2p_tcp_port=ssv_tcp,
             p2p_udp_port=ssv_udp,
+            quic_port=ssv_quic,
             metrics_port=ssv_metrics,
             api_port=ssv_api,
             dkg_port=ssv_dkg_port,

@@ -611,6 +611,31 @@ def check_service_start(
         print("  ⚠️  Skipping charon health check: no cluster-lock.json (expected in test environment)")
         return True
 
+    if service_name == "ssv-dkg":
+        # DKG needs a registered operatorID; operator.yaml ships a placeholder.
+        print("  ⚠️  Skipping ssv-dkg health check: operatorID placeholder (expected in test environment)", flush=True)
+        return True
+
+    if service_name == "ssv-node" and systemd_available() and \
+            os.environ.get("ETHPILLAR_SSV_RUNTIME_CHECK", "1") == "1":
+        from deploy.ssv import get_ssv_client, read_ssv_ports
+        from ssv_runtime import SSV_KEY, check_ssv_node_runtime, provision_throwaway_operator_key
+
+        ssv_client = get_ssv_client()
+        have_key = subprocess.run(["sudo", "test", "-f", SSV_KEY], check=False).returncode == 0
+        # Unit Description ends with "... for <NETWORK>" (both clients).
+        with open(service_path, encoding="utf-8") as unit_fh:
+            desc = next((ln for ln in unit_fh if ln.startswith("Description=")), "")
+        network = desc.rsplit(" for ", 1)[-1].strip().lower() if " for " in desc else "sepolia"
+        if not have_key and not provision_throwaway_operator_key(ssv_client, network):
+            return False
+        print(f"  [systemd] ssv-node runtime/port check ({ssv_client})...", flush=True)
+        return check_ssv_node_runtime(
+            ssv_client,
+            read_ssv_ports(client=ssv_client),
+            soft_skip=lambda reason: emit_soft_skip(ssv_client, reason),
+        )
+
     if service_name in ("ssv-node", "ssv-dkg"):
         # Datadir is mode 700 (ssv); probe via sudo like production tooling.
         key_ok = (

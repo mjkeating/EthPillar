@@ -1217,7 +1217,10 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
         target_dir = os.environ.get('BASE_DIR') or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         if os.path.exists(target_dir):
             os.chdir(target_dir)
-            subprocess.run(['cp', '.env.overrides.example', '.env.overrides'], check=True)
+            # Seed only: never clobber existing overrides (e.g. SSV_CLIENT
+            # persisted moments ago by install_ssv, or user port overrides).
+            if not os.path.exists('.env.overrides'):
+                subprocess.run(['cp', '.env.overrides.example', '.env.overrides'], check=True)
 
     if not node_only:
         print(f'Validator Fee Recipient Address: {fee_recipient_address}\n')
@@ -1314,13 +1317,26 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
             SSV_PRIVATE_KEY_FILE,
             SSV_PASSWORD_FILE,
         )
-        print('\nSSV Operator next steps:')
+        from deploy.ssv import SSV_CLIENT_ANCHOR, get_ssv_client, read_ssv_ports
+        try:
+            _ssv_client = get_ssv_client()
+            _p = read_ssv_ports(client=_ssv_client)
+        except Exception:  # noqa: BLE001
+            _ssv_client, _p = 'ssv', {'tcp': 13001, 'udp': 12001, 'quic': 0, 'dkg': 3030}
+        _anchor = _ssv_client == SSV_CLIENT_ANCHOR
+        print('\nSSV Operator next steps:' + (' (Anchor)' if _anchor else ''))
         print(f'  1. Back up {SSV_PRIVATE_KEY_FILE} and {SSV_PASSWORD_FILE}')
         print(f'     (required for both ssv-node and ssv-dkg; no recovery if lost)')
-        print(f'  2. Back up {SSV_DATA_DIR}/db (slashing protection)')
+        if _anchor:
+            print('     No key yet? EthPillar → SSV Operator → Import operator keystore,')
+            print(f'     or: sudo -u ssv anchor keygen --encrypt --data-dir {SSV_DATA_DIR} --password-file {SSV_PASSWORD_FILE}')
+            print(f'  2. Back up {SSV_DATA_DIR}/slashing_protection.sqlite (slashing protection)')
+        else:
+            print(f'  2. Back up {SSV_DATA_DIR}/db (slashing protection)')
         print('  3. Register your operator at https://app.ssv.network/')
         print(f'  4. Set operator ID in {SSV_DKG_CONFIG_FILE} (EthPillar → SSV Operator)')
-        print('  5. Open firewall: TCP 13001, UDP 12001 (P2P), TCP 3030 (DKG)')
+        _quic = f", UDP {_p['quic']} (QUIC)" if _anchor and _p.get('quic') else ''
+        print(f"  5. Open firewall: TCP {_p['tcp']}, UDP {_p['udp']} (P2P){_quic}, TCP {_p['dkg']} (DKG)")
         print('  6. sudo systemctl start ssv-node')
         print('  7. Optional: sudo systemctl start ssv-dkg')
         print('  See docs/ssv.md for details.\n')

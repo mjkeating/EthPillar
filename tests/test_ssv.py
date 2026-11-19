@@ -136,7 +136,19 @@ def test_generate_anchor_node_service():
     assert "--metrics-port 5164" in unit
     assert "--http-port 5062" in unit
     assert "--quic-port 13002" in unit
+    # --http-address without --unencrypted-http-transport is a clap error
+    # (anchor exits 2); the API already defaults to 127.0.0.1.
+    assert "--http-address" not in unit
+    assert "--metrics-address 127.0.0.1" in unit
+    assert "--enr-address" not in unit
     assert "After=network-online.target consensus.service execution.service" in unit
+
+
+def test_generate_anchor_node_service_external_ip():
+    unit = generate_anchor_node_service(
+        "sepolia", "http://127.0.0.1:5052", p2p_external_ip="203.0.113.10"
+    )
+    assert "--enr-address 203.0.113.10" in unit
 
 
 def test_read_ssv_ports_from_config(tmp_path):

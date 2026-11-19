@@ -420,6 +420,7 @@ def generate_anchor_node_service(
     private_key_file: str = SSV_PRIVATE_KEY_FILE,
     password_file: str = SSV_PASSWORD_FILE,
     data_dir: str = SSV_DATA_DIR,
+    p2p_external_ip: str = "",
     unit_after: Optional[List[str]] = None,
 ) -> str:
     """Generate ``ssv-node.service`` content for the Anchor (Sigma Prime) client.
@@ -441,6 +442,8 @@ def generate_anchor_node_service(
         private_key_file: Encrypted operator keystore path.
         password_file: Keystore password file path.
         data_dir: Anchor ``--data-dir`` (shared EthPillar SSV datadir).
+        p2p_external_ip: Optional public IPv4 advertised in the ENR
+            (``--enr-address``; same intent as Go ``p2p.HostAddress``).
         unit_after: Extra ``After=``/``Wants=`` units. Defaults to local
             ``consensus.service`` + ``execution.service``. Pass an empty list
             to omit them (remote BN/EL / SSV-only hosts).
@@ -465,9 +468,12 @@ def generate_anchor_node_service(
             "--metrics",
             f"--metrics-address 127.0.0.1",
             f"--metrics-port {int(metrics_port)}",
+            # Anchor's HTTP API already binds 127.0.0.1 by default. Passing
+            # --http-address requires --unencrypted-http-transport, otherwise
+            # clap rejects the command line and the unit never starts.
             "--http",
-            f"--http-address 127.0.0.1",
             f"--http-port {int(api_port)}",
+            f"--enr-address {p2p_external_ip.strip()}" if (p2p_external_ip or "").strip() else "",
         ]
     )
     if unit_after is None:
@@ -884,7 +890,8 @@ def install_ssv(
         metrics_port: Metrics port (client default when omitted).
         api_port: Health/API port (client default when omitted).
         dkg_port: DKG listen port.
-        p2p_external_ip: Optional advertised IP (Go ``config.yaml`` only).
+        p2p_external_ip: Optional advertised IP (Go ``config.yaml`` /
+            Anchor ``--enr-address``).
         operator_id: Optional known operator ID for DKG config.
         install_dkg: When True, also install ``ssv-dkg`` binary and unit.
         persist_client: When True, write ``SSV_CLIENT`` to ``.env.overrides``.
@@ -927,6 +934,7 @@ def install_ssv(
             quic_port=quic_port,
             metrics_port=metrics,
             api_port=api,
+            p2p_external_ip=p2p_external_ip,
             unit_after=node_after,
         )
     else:

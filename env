@@ -69,7 +69,7 @@ SSV_API_PORT=16000
 # Anchor QUIC UDP (ignored for Go SSV)
 SSV_QUIC_PORT=13002
 SSV_DKG_PORT=3030
-# Optional public IP advertised to SSV peers (Go config.yaml). Leave empty for auto-discovery.
+# Optional public IP advertised to SSV peers (Go config.yaml HostAddress / Anchor --enr-address). Leave empty for auto-discovery.
 SSV_P2P_EXTERNAL_IP=
 # Set after registering at https://app.ssv.network/ (required for DKG ceremonies).
 SSV_OPERATOR_ID=

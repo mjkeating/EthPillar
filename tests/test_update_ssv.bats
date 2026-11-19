@@ -144,3 +144,25 @@ teardown() {
     ! grep -q "build_ssvnode" "$COMMAND_LOG"
     ! grep -q "extract_and_install" "$COMMAND_LOG"
 }
+
+@test "update_ssv --auto on an Anchor host resolves anchor (not Go ssv) despite env SSV_CLIENT=ssv" {
+    cat > "$MOCK_BIN_DIR/anchor" <<EOS
+#!/bin/bash
+echo "anchor v1.4.1-573088f"
+exit 0
+EOS
+    chmod +x "$MOCK_BIN_DIR/anchor"
+    cat > "$SSV_NODE_SERVICE_FILE" <<EOS
+[Service]
+ExecStart=$MOCK_BIN_DIR/anchor node \\
+    --network sepolia
+EOS
+    export MOCK_ANCHOR_LATEST=v1.4.1
+    run bash ./update_ssv.sh --auto
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Resolving anchor release"* ]]
+    [[ "$output" == *"anchor already at 1.4.1 — skipping download"* ]]
+    ! grep -q "build_ssvnode" "$COMMAND_LOG"
+    ! grep -q "release_info ssv LATEST" "$COMMAND_LOG"
+}

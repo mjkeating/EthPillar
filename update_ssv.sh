@@ -165,7 +165,11 @@ function updateClient(){
     # Skip when already on the requested tag (semver match).
     if [[ "$_target_tag" == "LATEST" || "$_target_tag" == "$TAG" || "$_target_tag" == "${TAG#v}" ]] \
         && [[ -n "$node_ver" ]] && version_matches_latest "$node_ver" "$TAG"; then
-        info "ℹ️  ${release_client} already at ${node_ver#v} — skipping install"
+        if [[ "$release_client" == "anchor" ]]; then
+            info "ℹ️  anchor already at ${node_ver#v} — skipping download"
+        else
+            info "ℹ️  ssv-node already at ${node_ver#v} — skipping build"
+        fi
     elif [[ "$release_client" == "anchor" ]]; then
         info "ℹ️  Downloading Anchor ($TAG)…"
         isSsvEnabled && sudo systemctl stop ssv-node

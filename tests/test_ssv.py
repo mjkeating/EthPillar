@@ -474,3 +474,20 @@ def test_run_install_ssv_passes_enable_ws_to_besu(monkeypatch):
         env_vars={"CL_IP_ADDRESS": "127.0.0.1"},
     )
     assert el_calls[-1].get("enable_ws") is False
+
+
+def test_get_ssv_client_installed_unit_wins_over_env(tmp_path):
+    from deploy.ssv import get_ssv_client
+
+    unit = tmp_path / "ssv-node.service"
+    unit.write_text(
+        generate_anchor_node_service("sepolia", "http://127.0.0.1:5052"),
+        encoding="utf-8",
+    )
+    # Base env ships SSV_CLIENT=ssv; the installed Anchor unit must win.
+    assert get_ssv_client(env={"SSV_CLIENT": "ssv"}, unit_path=str(unit)) == "anchor"
+    unit.write_text(generate_ssv_node_service("sepolia"), encoding="utf-8")
+    assert get_ssv_client(env={"SSV_CLIENT": "anchor"}, unit_path=str(unit)) == "ssv"
+    missing = str(tmp_path / "missing.service")
+    assert get_ssv_client(env={"SSV_CLIENT": "anchor"}, unit_path=missing) == "anchor"
+    assert get_ssv_client(env={}, unit_path=missing) == "ssv"

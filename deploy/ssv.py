@@ -155,9 +155,17 @@ def get_ssv_client(
 ) -> SsvClient:
     """Resolve installed/requested SSV client from env or ``ssv-node.service``.
 
-    Prefers ``SSV_CLIENT`` in *env*, then ``ExecStart`` binary basename, then
-    ``ssv`` when neither is conclusive.
+    The installed ``ssv-node.service`` ``ExecStart`` binary wins (what is
+    actually running), then ``SSV_CLIENT`` in *env* (requested client before
+    install), then ``ssv``. The base ``env`` file ships ``SSV_CLIENT=ssv``, so
+    trusting it first would misreport an Anchor host.
     """
+    body = _read_config_text(unit_path)
+    if body:
+        if re.search(r"(?m)^\s*ExecStart=(\S*/)?anchor(\s|\\|$)", body):
+            return SSV_CLIENT_ANCHOR
+        if re.search(r"(?m)^\s*ExecStart=(\S*/)?ssvnode(\s|\\|$)", body):
+            return SSV_CLIENT_SSV
     environ = env if env is not None else os.environ
     raw = (environ.get("SSV_CLIENT") or "").strip()
     if raw:
@@ -165,12 +173,6 @@ def get_ssv_client(
             return normalize_ssv_client(raw)
         except ValueError:
             pass
-    body = _read_config_text(unit_path)
-    if body:
-        if re.search(r"(?m)^\s*ExecStart=.*\banchor\b", body):
-            return SSV_CLIENT_ANCHOR
-        if re.search(r"(?m)^\s*ExecStart=.*\bssvnode\b", body):
-            return SSV_CLIENT_SSV
     return SSV_CLIENT_SSV
 
 

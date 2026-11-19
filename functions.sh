@@ -238,13 +238,25 @@ getCharonCurrentVersion() {
 
 # Sets VERSION from installed ``ssvnode version`` (best-effort).
 # Return installed SSV operator client slug: ssv | anchor
+# The installed ssv-node.service ExecStart wins: the base ``env`` ships
+# SSV_CLIENT=ssv and scripts that only source functions.sh (update_ssv.sh,
+# ufw helpers) never load .env.overrides, so SSV_CLIENT alone would report
+# "ssv" on an Anchor host. SSV_CLIENT / .env.overrides apply before install.
 getSsvClient() {
-  local client
-  client="${SSV_CLIENT:-}"
-  if [[ -z "$client" ]]; then
-    client=$(PYTHONPATH="${BASE_DIR}" python3 -c \
-      'from deploy.ssv import get_ssv_client; print(get_ssv_client())' 2>/dev/null || true)
+  local ssv_svc="${SSV_NODE_SERVICE_FILE:-/etc/systemd/system/ssv-node.service}"
+  local exec_line="" client="" overrides="${BASE_DIR:-.}/.env.overrides"
+  if [[ -f "$ssv_svc" ]]; then
+    exec_line=$(grep -m1 -E '^[[:space:]]*ExecStart=' "$ssv_svc" 2>/dev/null || true)
+    if [[ "$exec_line" =~ ExecStart=([^[:space:]]*/)?anchor([[:space:]\\]|$) ]]; then
+      echo "anchor"; return 0
+    elif [[ "$exec_line" =~ ExecStart=([^[:space:]]*/)?ssvnode([[:space:]\\]|$) ]]; then
+      echo "ssv"; return 0
+    fi
   fi
+  if [[ -f "$overrides" ]]; then
+    client=$(grep -E '^[[:space:]]*SSV_CLIENT=' "$overrides" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"' " || true)
+  fi
+  [[ -z "$client" ]] && client="${SSV_CLIENT:-}"
   case "${client,,}" in
     anchor|sigp|sigp-anchor) echo "anchor" ;;
     *) echo "ssv" ;;
@@ -1052,7 +1064,7 @@ load_client_versions() {
                 return 1
             }
             ;;
-        ssv-node|        ssv)
+        ssv-node|ssv)
             getSsvCurrentVersion || true
             [[ -z "$VERSION" ]] && VERSION="unknown"
             if [[ "$(getSsvClient)" == "anchor" ]]; then

@@ -30,6 +30,8 @@ CLI: `--with_ssv --ssv-client {ssv,anchor}`
 | `/var/lib/ssv/password` | Keystore password |
 | `/var/lib/ssv/config.yaml` | Go node config only |
 | `/var/lib/ssv/db/` | Go persistent DB (**slashing-critical** — back up) |
+| `/var/lib/ssv/slashing_protection.sqlite` | Anchor slashing-protection DB (**slashing-critical** — back up) |
+| `/var/lib/ssv/anchor_db.sqlite` | Anchor network/state DB (re-syncable) |
 | `/var/lib/ssv/operator.yaml` | DKG config (same key + password; **relative** paths — `ssv-dkg` rejects absolute) |
 | `/var/lib/ssv/output/` | DKG ceremony artifacts |
 | `/usr/local/bin/ssvnode` | Go node binary (built from source) |
@@ -128,7 +130,8 @@ Wiping `/var/lib/ssv` is a **separate opt-in** (strong confirm, **default No**).
 If you choose to wipe:
 
 1. You are prompted to **back up first** (**default Yes**): keystore, password,
-   `config.yaml`, `operator.yaml`, and optionally `db/`
+   `config.yaml`, `operator.yaml`, Anchor `slashing_protection.sqlite`, and
+   optionally `db/` / Anchor `anchor_db.sqlite`
 2. Backup goes to a timestamped root-only directory outside the datadir
    (e.g. `~/ssv-backup-<timestamp>/` or `/root/ssv-backup-<timestamp>/`,
    mode `700` / files `600`); the path is printed
@@ -166,7 +169,7 @@ install) and start `ssv-dkg`. The same DKG binary is used with Go SSV and Anchor
 
 ## Next steps after install
 
-1. Back up keystore + password (+ Go `db/` when applicable)
+1. Back up keystore + password (+ Go `db/` or Anchor `slashing_protection.sqlite`)
 2. Register operator (web app)
 3. Open firewall ports
 4. `sudo systemctl start ssv-node`

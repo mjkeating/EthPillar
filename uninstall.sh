@@ -211,7 +211,9 @@ backupSsvDatadir(){
 	fi
 	sudo chown root:root "$dest" 2>/dev/null || true
 
-	for f in encrypted_private_key.json password config.yaml operator.yaml; do
+	# slashing_protection.sqlite is Anchor's slashing DB (slashing-critical,
+	# small): always kept. Go SSV keeps its equivalent under db/.
+	for f in encrypted_private_key.json password config.yaml operator.yaml slashing_protection.sqlite; do
 		if sudo test -e "${src}/${f}"; then
 			if ! sudo cp -a "${src}/${f}" "${dest}/${f}"; then
 				echo "ERROR: Failed to back up ${src}/${f}" >&2
@@ -233,6 +235,16 @@ backupSsvDatadir(){
 		sudo chmod -R u+rwX,go-rwx "${dest}/db" 2>/dev/null || true
 		sudo chown -R root:root "${dest}/db" 2>/dev/null || true
 		copied=1
+	fi
+	# Anchor network/state DB (re-syncable; optional like Go db/).
+	if [[ "$include_db" == "1" ]] && sudo test -f "${src}/anchor_db.sqlite"; then
+		if ! sudo cp -a "${src}/anchor_db.sqlite" "${dest}/anchor_db.sqlite"; then
+			echo "ERROR: Failed to back up ${src}/anchor_db.sqlite" >&2
+			sudo rm -rf "$dest" 2>/dev/null || true
+			return 1
+		fi
+		sudo chmod 600 "${dest}/anchor_db.sqlite" 2>/dev/null || true
+		sudo chown root:root "${dest}/anchor_db.sqlite" 2>/dev/null || true
 	fi
 
 	# Fail closed: never report success without the operator keystore.
@@ -269,10 +281,10 @@ function uninstallSsv(){
 			"Permanently DELETE ${ssv_data}?\n\nThis destroys the operator keystore, password, configs, DKG data, and DB (slashing protection).\n\nUnits are already being retired. Default: No (keep datadir)." 14 78; then
 			# Backup prompt first (default Yes) before any destructive wipe.
 			if whiptail --title "Back up SSV before wipe?" --yesno \
-				"Back up operator key material and config before wiping ${ssv_data}?\n\nAlways included when present:\n  • encrypted_private_key.json\n  • password\n  • config.yaml\n  • operator.yaml (DKG)\n\nYou will next choose whether to include db/.\n\nDefault: Yes" 18 78; then
-				if sudo test -d "${ssv_data}/db"; then
+				"Back up operator key material and config before wiping ${ssv_data}?\n\nAlways included when present:\n  • encrypted_private_key.json\n  • password\n  • config.yaml\n  • operator.yaml (DKG)\n  • slashing_protection.sqlite (Anchor)\n\nYou will next choose whether to include db/.\n\nDefault: Yes" 19 78; then
+				if sudo test -d "${ssv_data}/db" || sudo test -f "${ssv_data}/anchor_db.sqlite"; then
 					if whiptail --title "Include SSV DB in backup?" --yesno \
-						"Include ${ssv_data}/db in the backup?\n(Slashing-critical. Default: Yes)" 10 78; then
+						"Include ${ssv_data}/db (Go) / anchor_db.sqlite (Anchor) in the backup?\n(Go db/ is slashing-critical. Default: Yes)" 10 78; then
 						include_db=1
 					fi
 				fi

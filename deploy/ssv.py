@@ -1027,11 +1027,23 @@ def _cli_flag_port(exec_start: str, flag: str, default: int) -> int:
 
 
 def _read_unit_exec_start(unit_path: str = SSV_NODE_SERVICE_PATH) -> str:
-    """Return the ``ExecStart=`` value from a systemd unit body."""
+    """Return the ``ExecStart=`` value from a systemd unit body.
+
+    Joins backslash-continued lines: EthPillar writes ``ExecStart`` via
+    :func:`form_exec_start` (one flag per line), so reading only the first
+    physical line would drop every flag after the binary.
+    """
     body = _read_config_text(unit_path)
-    for line in body.splitlines():
-        if line.startswith("ExecStart="):
-            return line.split("=", 1)[1].strip()
+    lines = body.splitlines()
+    for idx, line in enumerate(lines):
+        if not line.lstrip().startswith("ExecStart="):
+            continue
+        parts = [line.split("=", 1)[1].strip()]
+        while parts[-1].endswith("\\") and idx + 1 < len(lines):
+            parts[-1] = parts[-1][:-1].rstrip()
+            idx += 1
+            parts.append(lines[idx].strip())
+        return " ".join(p for p in parts if p)
     return ""
 
 

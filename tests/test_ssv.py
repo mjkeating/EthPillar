@@ -151,6 +151,40 @@ def test_generate_anchor_node_service_external_ip():
     assert "--enr-address 203.0.113.10" in unit
 
 
+def test_read_ssv_ports_from_generated_anchor_unit(tmp_path):
+    """Round-trip: ports parsed from the real multi-line generated unit."""
+    from deploy.ssv import read_ssv_ports
+
+    unit = tmp_path / "ssv-node.service"
+    unit.write_text(
+        generate_anchor_node_service(
+            "sepolia",
+            "http://127.0.0.1:5052",
+            p2p_tcp_port=14001,
+            p2p_udp_port=14002,
+            quic_port=14003,
+            metrics_port=14004,
+            api_port=14005,
+        ),
+        encoding="utf-8",
+    )
+    ports = read_ssv_ports(
+        config_path=str(tmp_path / "missing.yaml"),
+        dkg_config_path=str(tmp_path / "missing-operator.yaml"),
+        unit_path=str(unit),
+        env={},
+        client="anchor",
+    )
+    assert ports == {
+        "tcp": 14001,
+        "udp": 14002,
+        "quic": 14003,
+        "metrics": 14004,
+        "api": 14005,
+        "dkg": 3030,
+    }
+
+
 def test_read_ssv_ports_from_config(tmp_path):
     from deploy.ssv import read_ssv_ports
 

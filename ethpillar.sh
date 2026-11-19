@@ -144,10 +144,15 @@ function printInstalledVersions() {
 
   local ssv_svc="${SSV_NODE_SERVICE_FILE:-/etc/systemd/system/ssv-node.service}"
   local dkg_svc="${SSV_DKG_SERVICE_FILE:-/etc/systemd/system/ssv-dkg.service}"
-  local _SSV="" _SSV_DKG=""
+  local _SSV="" _SSV_DKG="" _ssv_client=""
   if [[ -f "$ssv_svc" ]]; then
     getSsvCurrentVersion || true
-    _SSV="SSV Operator: ${VERSION:-unknown}"
+    _ssv_client="$(getSsvClient 2>/dev/null || echo ssv)"
+    if [[ "$_ssv_client" == "anchor" ]]; then
+      _SSV="SSV Operator (Anchor): ${VERSION:-unknown}"
+    else
+      _SSV="SSV Operator: ${VERSION:-unknown}"
+    fi
   fi
   if [[ -f "$dkg_svc" ]]; then
     getSsvDkgCurrentVersion || true
@@ -792,6 +797,15 @@ done
 }
 
 submenuSsv(){
+local _ssv_client _edit_label _menu_blurb
+_ssv_client="$(getSsvClient)"
+if [[ "$_ssv_client" == "anchor" ]]; then
+  _edit_label="Edit ssv-node.service (Anchor CLI flags)"
+  _menu_blurb="Anchor + DKG share /var/lib/ssv/ secrets. Metrics/API: localhost (UFW-deny)."
+else
+  _edit_label="Edit ssv-node config.yaml"
+  _menu_blurb="Go SSV + DKG share /var/lib/ssv/ secrets. Metrics/API: UFW-deny (scrape via localhost)."
+fi
 while true; do
     getBackTitle
     SUBOPTIONS=(
@@ -799,7 +813,7 @@ while true; do
       2 "Start ssv-node"
       3 "Stop ssv-node"
       4 "Restart ssv-node"
-      5 "Edit ssv-node config.yaml"
+      5 "$_edit_label"
       6 "Update SSV binaries"
       7 "Import operator keystore"
       8 "View ssv-dkg logs only"
@@ -812,8 +826,8 @@ while true; do
 
     SUBCHOICE=$(whiptail --clear --cancel-button "Back" \
       --backtitle "$BACKTITLE" \
-      --title "SSV Operator" \
-      --menu "Node + DKG share /var/lib/ssv/ secrets. Metrics/API: UFW-deny (scrape via localhost)." \
+      --title "SSV Operator (${_ssv_client})" \
+      --menu "$_menu_blurb" \
       0 0 0 \
       "${SUBOPTIONS[@]}" \
       3>&1 1>&2 2>&3)
@@ -841,7 +855,12 @@ while true; do
         sudo service ssv-node restart
         ;;
       5)
-        sudo "${EDITOR:-nano}" /var/lib/ssv/config.yaml
+        if [[ "$(getSsvClient)" == "anchor" ]]; then
+          sudo "${EDITOR:-nano}" /etc/systemd/system/ssv-node.service
+          sudo systemctl daemon-reload
+        else
+          sudo "${EDITOR:-nano}" /var/lib/ssv/config.yaml
+        fi
         if whiptail --title "SSV config" --yesno "Restart ssv-node to apply changes?" 8 60; then
           sudo service ssv-node restart
         fi

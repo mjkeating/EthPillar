@@ -12,7 +12,8 @@ parses canned HTML/JSON correctly. They cannot catch real-world breakage such as
 
 These tests exercise the same code path used by ``update_execution.sh``,
 ``update_consensus.sh``, ``update_mevboost.sh``, and ``update_ssv.sh`` when
-resolving binaries (ssv-node source tarball and ssv-dkg zip assets).
+resolving binaries (ssv-node source tarball, Anchor linux-gnu tarball, and
+ssv-dkg zip assets).
 
 What each test does
 -------------------
@@ -82,8 +83,10 @@ CLIENT_REPOS: list[tuple[str, str | None]] = [
     ("charon", "ObolNetwork/charon"),
     ("web3signer", "Consensys-Incorporated/web3signer"),
     ("ethrex", "lambdaclass/ethrex"),
-    # ssv-node is source-built (tag tarball); ssv-dkg ships Linux zip assets.
+    # ssv-node is source-built (tag tarball); Anchor ships linux-gnu binaries;
+    # ssv-dkg ships Linux zip assets.
     ("ssv", "ssvlabs/ssv"),
+    ("anchor", "sigp/anchor"),
     ("ssv-dkg", "ssvlabs/ssv-dkg"),
 ]
 

@@ -58,12 +58,18 @@ CHARON_MONITORING_PORT=3620
 CHARON_P2P_EXTERNAL_IP=
 
 # SSV Network operator node (+ DKG sidecar)
+# Operator client: ssv (Go ssvnode, default) or anchor (Sigma Prime).
+# Set at install via --ssv-client / menu; also persisted to .env.overrides.
+SSV_CLIENT=ssv
 SSV_P2P_TCP_PORT=13001
 SSV_P2P_UDP_PORT=12001
+# Go SSV defaults; Anchor install uses 5164/5062 unless overridden.
 SSV_METRICS_PORT=15000
 SSV_API_PORT=16000
+# Anchor QUIC UDP (ignored for Go SSV)
+SSV_QUIC_PORT=13002
 SSV_DKG_PORT=3030
-# Optional public IP advertised to SSV peers. Leave empty for auto-discovery.
+# Optional public IP advertised to SSV peers (Go config.yaml HostAddress / Anchor --enr-address). Leave empty for auto-discovery.
 SSV_P2P_EXTERNAL_IP=
 # Set after registering at https://app.ssv.network/ (required for DKG ceremonies).
 SSV_OPERATOR_ID=

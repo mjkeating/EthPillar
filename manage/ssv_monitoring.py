@@ -1,8 +1,10 @@
-"""Provision SSV Prometheus scrape and SSV Operational Grafana dashboard.
+"""Provision SSV Prometheus scrape and Grafana dashboards.
 
 Used when SSV is installed and EthPillar monitoring (Prometheus/Grafana) is
-present — or when monitoring is installed while SSV already exists. Downloads
-the official SSV Operational dashboard from ``ssvlabs/ssv-stack``.
+present — or when monitoring is installed while SSV already exists.
+
+* Go SSV: official Operational dashboard from ``ssvlabs/ssv-stack``.
+* Anchor: ``anchor-dash.json`` from ``sigp/anchor`` (stable branch).
 """
 
 from __future__ import annotations
@@ -29,7 +31,12 @@ SSV_OPERATIONAL_URL = (
     "https://raw.githubusercontent.com/ssvlabs/ssv-stack/"
     "main/ssv-grafana-dashboard/ssv-operational.json"
 )
+ANCHOR_DASHBOARD_URL = (
+    "https://raw.githubusercontent.com/sigp/anchor/stable/"
+    "metrics/dashboards/anchor-dash.json"
+)
 SSV_DASHBOARD_FILENAME = "ssv_operational.json"
+ANCHOR_DASHBOARD_FILENAME = "anchor_dash.json"
 DEFAULT_PROMETHEUS_YML = Path("/etc/prometheus/prometheus.yml")
 _JOB_RE = re.compile(r"job_name:\s*['\"]ssv['\"]")
 
@@ -67,13 +74,32 @@ def has_ssv_scrape(text: str) -> bool:
 
 
 def _ssv_metrics_port() -> int:
-    """Read SSV MetricsAPIPort from config.yaml, or default 15000."""
+    """Read SSV/Anchor metrics port from live config/unit, with client defaults."""
     try:
-        from deploy.ssv import parse_metrics_port
+        from deploy.ssv import default_metrics_port, get_ssv_client, read_ssv_ports
 
-        return parse_metrics_port()
+        client = get_ssv_client()
+        return int(read_ssv_ports(client=client)["metrics"])
     except Exception:
-        return 15000
+        try:
+            from deploy.ssv import default_metrics_port, get_ssv_client
+
+            return default_metrics_port(get_ssv_client())
+        except Exception:
+            return 15000
+
+
+def _ssv_dashboard_for_client(client: Optional[str] = None) -> tuple[str, str]:
+    """Return ``(dashboard_url, filename)`` for the installed SSV client."""
+    try:
+        from deploy.ssv import SSV_CLIENT_ANCHOR, get_ssv_client, normalize_ssv_client
+
+        slug = normalize_ssv_client(client) if client else get_ssv_client()
+        if slug == SSV_CLIENT_ANCHOR:
+            return ANCHOR_DASHBOARD_URL, ANCHOR_DASHBOARD_FILENAME
+    except Exception:
+        pass
+    return SSV_OPERATIONAL_URL, SSV_DASHBOARD_FILENAME
 
 
 def ensure_ssv_scrape(prometheus_yml: Path, metrics_port: Optional[int] = None) -> bool:
@@ -141,32 +167,41 @@ def rewrite_ssv_dashboard_pod_variable(dashboard: dict) -> dict:
 
 def provision_ssv_dashboard(
     dashboards_dir: Path,
-    url: str = SSV_OPERATIONAL_URL,
+    url: Optional[str] = None,
+    *,
+    filename: Optional[str] = None,
+    rewrite_pod: bool = True,
 ) -> bool:
-    """Download SSV Operational dashboard JSON into Grafana provisioning.
+    """Download an SSV/Anchor dashboard JSON into Grafana provisioning.
 
     Args:
         dashboards_dir: Grafana file-provisioning directory.
-        url: Dashboard JSON URL.
+        url: Dashboard JSON URL (defaults to Go SSV Operational).
+        filename: Destination basename under *dashboards_dir*.
+        rewrite_pod: When True, rewrite the ``pod`` template for bare Prometheus.
 
     Returns:
         True if the dashboard file was written.
     """
-    dest = dashboards_dir / SSV_DASHBOARD_FILENAME
-    download_grafana_dashboard(dest, url)
-    try:
-        raw = read_privileged_text(dest)
-        if raw is None:
-            raise FileNotFoundError(dest)
-        data = json.loads(raw)
-        rewrite_ssv_dashboard_pod_variable(data)
-        write_privileged_file(dest, json.dumps(data, indent=2) + "\n")
+    dest_name = filename or SSV_DASHBOARD_FILENAME
+    dest = dashboards_dir / dest_name
+    download_grafana_dashboard(dest, url or SSV_OPERATIONAL_URL)
+    if rewrite_pod:
+        try:
+            raw = read_privileged_text(dest)
+            if raw is None:
+                raise FileNotFoundError(dest)
+            data = json.loads(raw)
+            rewrite_ssv_dashboard_pod_variable(data)
+            write_privileged_file(dest, json.dumps(data, indent=2) + "\n")
+            finalize_grafana_provisioned_file(dest)
+        except (OSError, json.JSONDecodeError, TypeError, PermissionError) as exc:
+            print(
+                f"Warning: could not rewrite SSV dashboard pod variable: {exc}",
+                file=sys.stderr,
+            )
+    else:
         finalize_grafana_provisioned_file(dest)
-    except (OSError, json.JSONDecodeError, TypeError, PermissionError) as exc:
-        print(
-            f"Warning: could not rewrite SSV dashboard pod variable: {exc}",
-            file=sys.stderr,
-        )
     return True
 
 
@@ -175,9 +210,9 @@ def provision_ssv_monitoring(
     grafana_dashboards: Path = DEFAULT_GRAFANA_DASHBOARDS,
     datasources_yml: Path = DEFAULT_DATASOURCES_YML,
     restart: bool = False,
-    dashboard_url: str = SSV_OPERATIONAL_URL,
+    dashboard_url: Optional[str] = None,
 ) -> Dict[str, bool]:
-    """Ensure SSV scrape job and Operational Grafana dashboard when monitoring exists.
+    """Ensure SSV scrape job and client Grafana dashboard when monitoring exists.
 
     No-ops quietly when Prometheus/Grafana paths are absent. Permission errors
     while writing Grafana files propagate.
@@ -187,7 +222,7 @@ def provision_ssv_monitoring(
         grafana_dashboards: Grafana dashboard provisioning directory.
         datasources_yml: Grafana datasources provisioning file.
         restart: Restart prometheus/grafana after changes.
-        dashboard_url: SSV Operational JSON URL.
+        dashboard_url: Optional override dashboard JSON URL.
 
     Returns:
         Dict with ``scrape``, ``dashboard``, and ``datasource`` booleans.
@@ -204,8 +239,20 @@ def provision_ssv_monitoring(
     if grafana_present:
         results["datasource"] = ensure_prometheus_datasource_uid(datasources_yml)
         try:
+            default_url, default_name = _ssv_dashboard_for_client()
+            url = dashboard_url or default_url
+            filename = default_name
+            if dashboard_url and dashboard_url == ANCHOR_DASHBOARD_URL:
+                filename = ANCHOR_DASHBOARD_FILENAME
+            elif dashboard_url and dashboard_url != SSV_OPERATIONAL_URL:
+                filename = Path(dashboard_url).name or default_name
+            # Go Operational needs pod-variable rewrite; Anchor dash is self-contained.
+            rewrite_pod = filename == SSV_DASHBOARD_FILENAME
             results["dashboard"] = provision_ssv_dashboard(
-                grafana_dashboards, url=dashboard_url
+                grafana_dashboards,
+                url=url,
+                filename=filename,
+                rewrite_pod=rewrite_pod,
             )
         except PermissionError:
             raise

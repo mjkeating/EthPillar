@@ -38,6 +38,9 @@ if [[ "\$*" == *release_info* ]]; then
     ssv|ssv-node|ssvnode)
       echo "{\"version\":\"\${MOCK_SSV_LATEST:-v2.5.1}\",\"commit\":\"\",\"filenames\":[\"ssv.tgz\"],\"download_urls\":[\"http://example/ssv.tgz\"]}"
       ;;
+    anchor)
+      echo "{\"version\":\"\${MOCK_ANCHOR_LATEST:-v1.4.1}\",\"commit\":\"\",\"filenames\":[\"anchor.tar.gz\"],\"download_urls\":[\"http://example/anchor.tar.gz\"]}"
+      ;;
     ssv-dkg|ssvdkg)
       echo "{\"version\":\"\${MOCK_SSV_DKG_LATEST:-v3.1.1}\",\"commit\":\"\",\"filenames\":[\"ssv-dkg.zip\"],\"download_urls\":[\"http://example/ssv-dkg.zip\"]}"
       ;;
@@ -140,4 +143,26 @@ teardown() {
     ! grep -q "UNEXPECTED" "$COMMAND_LOG"
     ! grep -q "build_ssvnode" "$COMMAND_LOG"
     ! grep -q "extract_and_install" "$COMMAND_LOG"
+}
+
+@test "update_ssv --auto on an Anchor host resolves anchor (not Go ssv) despite env SSV_CLIENT=ssv" {
+    cat > "$MOCK_BIN_DIR/anchor" <<EOS
+#!/bin/bash
+echo "anchor v1.4.1-573088f"
+exit 0
+EOS
+    chmod +x "$MOCK_BIN_DIR/anchor"
+    cat > "$SSV_NODE_SERVICE_FILE" <<EOS
+[Service]
+ExecStart=$MOCK_BIN_DIR/anchor node \\
+    --network sepolia
+EOS
+    export MOCK_ANCHOR_LATEST=v1.4.1
+    run bash ./update_ssv.sh --auto
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Resolving anchor release"* ]]
+    [[ "$output" == *"anchor already at 1.4.1 — skipping download"* ]]
+    ! grep -q "build_ssvnode" "$COMMAND_LOG"
+    ! grep -q "release_info ssv LATEST" "$COMMAND_LOG"
 }

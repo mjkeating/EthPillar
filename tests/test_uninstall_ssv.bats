@@ -21,7 +21,7 @@ setup() {
   echo 'dbdata' > "${SSV_DATA_DIR}/db/state"
 
   touch "${SYSTEMD_UNIT_DIR}/ssv-node.service" "${SYSTEMD_UNIT_DIR}/ssv-dkg.service"
-  touch "${INSTALL_DIR}/ssvnode" "${INSTALL_DIR}/ssv-dkg"
+  touch "${INSTALL_DIR}/ssvnode" "${INSTALL_DIR}/anchor" "${INSTALL_DIR}/ssv-dkg"
 
   source ./uninstall.sh
 
@@ -116,6 +116,7 @@ teardown() {
   [ -d "$SSV_DATA_DIR" ]
   [ -f "$SSV_DATA_DIR/encrypted_private_key.json" ]
   [ ! -f "${INSTALL_DIR}/ssvnode" ]
+  [ ! -f "${INSTALL_DIR}/anchor" ]
   [ -f "${SYSTEMD_UNIT_DIR}/ssv-node.service.bak" ]
   grep -q 'Wipe SSV datadir' "$WHIPTAIL_LOG"
   ! grep -q 'Back up SSV before wipe' "$WHIPTAIL_LOG"
@@ -287,4 +288,22 @@ teardown() {
   grep -q 'Include SSV DB in backup' "$WHIPTAIL_LOG"
   grep -q "sudo test -d ${SSV_DATA_DIR}/db" "$COMMAND_LOG" || \
     grep -qF "test -d ${SSV_DATA_DIR}/db" "$COMMAND_LOG"
+}
+
+@test "backupSsvDatadir keeps Anchor slashing DB always and anchor_db.sqlite only with db" {
+  echo 'slash' > "${SSV_DATA_DIR}/slashing_protection.sqlite"
+  echo 'netdb' > "${SSV_DATA_DIR}/anchor_db.sqlite"
+  run backupSsvDatadir 0
+  [ "$status" -eq 0 ]
+  local dest
+  dest=$(printf '%s\n' "$output" | tail -n1)
+  [ -f "$dest/slashing_protection.sqlite" ]
+  [ "$(stat -c '%a' "$dest/slashing_protection.sqlite")" = "600" ]
+  [ ! -e "$dest/anchor_db.sqlite" ]
+  sleep 1
+  run backupSsvDatadir 1
+  [ "$status" -eq 0 ]
+  dest=$(printf '%s\n' "$output" | tail -n1)
+  [ -f "$dest/slashing_protection.sqlite" ]
+  [ -f "$dest/anchor_db.sqlite" ]
 }

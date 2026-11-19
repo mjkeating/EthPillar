@@ -1261,6 +1261,19 @@ def plan_ssv_migration(
 ) -> SsvMigratePlan:
     """Build a migration plan from discovered systemd units and YAML configs."""
     plan = SsvMigratePlan()
+    # EthPillar migrate is Go ssvnode-only in v1 (Anchor uses CLI ExecStart).
+    try:
+        from deploy.ssv import SSV_CLIENT_ANCHOR, get_ssv_client
+
+        if get_ssv_client() == SSV_CLIENT_ANCHOR:
+            plan.errors.append(
+                "SSV_CLIENT=anchor is installed; systemd migrate supports Go "
+                "ssvnode only (no Anchor migrate in this release)"
+            )
+            plan.eth_network = "mainnet"
+            return plan
+    except Exception:
+        pass
     node, dkg = discover_units(unit_dir)
     plan.node_unit = node
     plan.dkg_unit = dkg

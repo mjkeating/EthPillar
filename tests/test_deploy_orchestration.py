@@ -432,3 +432,66 @@ class TestStartUnitsNoBlock:
         assert "boost-relay-sepolia.flashbots.net" in output
         assert "Mevboost Version" not in output
 
+
+
+def _finish_vc_only_ssv(tmp_path, monkeypatch, capsys):
+    """Run finish_install for a VC-only SSV install (skip_prompts) in tmp BASE_DIR."""
+    monkeypatch.setenv("BASE_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env.overrides.example").write_text("#SSV_CLIENT=ssv\n", encoding="utf-8")
+    import subprocess as _sp
+
+    real_run = _sp.run
+
+    def fake_run(cmd, *args, **kwargs):
+        if cmd and cmd[0] == "cp":
+            return real_run(cmd, *args, **kwargs)
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with patch("manage.ssv_monitoring.provision_ssv_monitoring", return_value={}), \
+            patch("deploy.common.subprocess.run", side_effect=fake_run):
+        with pytest.raises(SystemExit):
+            finish_install(
+                install_config="Validator Client Only",
+                eth_network="sepolia",
+                sync_url="",
+                execution_client=None, execution_version=None, execution_service_path=None,
+                consensus_client=None, consensus_version=None, consensus_service_path=None,
+                mevboost_enabled=False, mevboost_version="", mevboost_service_path="",
+                validator_enabled=False, validator_service_path=None,
+                validator_only=True, bn_address="http://192.0.2.10:5052",
+                node_only=False, fee_recipient_address="",
+                skip_prompts=True, cl_rest_port="5052",
+                ssv_enabled=True, ssv_version="v1.4.1",
+                ssv_node_service_path="/etc/systemd/system/ssv-node.service",
+                ssv_dkg_service_path="/etc/systemd/system/ssv-dkg.service",
+            )
+    return capsys.readouterr().out
+
+
+def test_finish_install_vc_only_keeps_existing_env_overrides(tmp_path, monkeypatch, capsys):
+    """VC-only finish must not clobber .env.overrides (e.g. persisted SSV_CLIENT)."""
+    (tmp_path / ".env.overrides").write_text("SSV_CLIENT=anchor\n", encoding="utf-8")
+    monkeypatch.setattr("deploy.ssv.get_ssv_client", lambda **_: "anchor")
+    monkeypatch.setattr(
+        "deploy.ssv.read_ssv_ports",
+        lambda **_: {"tcp": 13001, "udp": 12001, "quic": 13002, "metrics": 5164, "api": 5062, "dkg": 3030},
+    )
+    out = _finish_vc_only_ssv(tmp_path, monkeypatch, capsys)
+    assert (tmp_path / ".env.overrides").read_text(encoding="utf-8") == "SSV_CLIENT=anchor\n"
+    assert "SSV Operator next steps: (Anchor)" in out
+    assert "slashing_protection.sqlite" in out
+    assert "UDP 13002 (QUIC)" in out
+    assert "/var/lib/ssv/db (slashing protection)" not in out
+
+
+def test_finish_install_vc_only_seeds_env_overrides_when_missing(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("deploy.ssv.get_ssv_client", lambda **_: "ssv")
+    monkeypatch.setattr(
+        "deploy.ssv.read_ssv_ports",
+        lambda **_: {"tcp": 13001, "udp": 12001, "quic": 0, "metrics": 15000, "api": 16000, "dkg": 3030},
+    )
+    out = _finish_vc_only_ssv(tmp_path, monkeypatch, capsys)
+    assert (tmp_path / ".env.overrides").read_text(encoding="utf-8") == "#SSV_CLIENT=ssv\n"
+    assert "/var/lib/ssv/db (slashing protection)" in out
+    assert "QUIC" not in out

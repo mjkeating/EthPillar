@@ -80,6 +80,7 @@ custom_tests = [
     ("Teku-VC-Only-HOODI", f"{RUN_TEST} deploy/deploy-node.py --combo Teku-Besu --network HOODI --config 'Validator Client Only' --vc_only_bn_address http://192.168.1.123:5052"),
     ("Geth-Lighthouse-Charon-Lodestar-SEPOLIA", f"{RUN_TEST} deploy/deploy-node.py --ec Geth --cc Lighthouse --vc Lodestar --network SEPOLIA --mev --charon --config 'Custom Setup'"),
     ("Geth-Lighthouse-SSV-SEPOLIA", f"{RUN_TEST} deploy/deploy-node.py --ec Geth --cc Lighthouse --network SEPOLIA --ssv --config 'Custom Setup'"),
+    ("Geth-Lighthouse-SSV-Anchor-SEPOLIA", f"{RUN_TEST} deploy/deploy-node.py --ec Geth --cc Lighthouse --network SEPOLIA --ssv --ssv-client anchor --config 'Custom Setup'"),
     ("Web3Signer-Smoke", f"{RUN_TEST} web3signer-smoke"),
 ]
 

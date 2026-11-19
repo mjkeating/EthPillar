@@ -274,7 +274,11 @@ def parse_expected_artifacts(args: Any) -> Tuple[List[str], List[str], List[str]
         binaries.append("charon"); users.append("charon"); services.append("charon")
 
     if getattr(args, "ssv", False):
-        binaries.extend(["ssvnode", "ssv-dkg"])
+        ssv_client = (getattr(args, "ssv_client", "") or "ssv").strip().lower()
+        if ssv_client == "anchor":
+            binaries.extend(["anchor", "ssv-dkg"])
+        else:
+            binaries.extend(["ssvnode", "ssv-dkg"])
         users.append("ssv")
         services.extend(["ssv-node", "ssv-dkg"])
 
@@ -390,7 +394,11 @@ def run_install(args: Any, fee_address: str):
     elif args.mev:
         cmd.append("--with_mevboost")
     if getattr(args, "charon", False): cmd.append("--with_charon")
-    if getattr(args, "ssv", False): cmd.append("--with_ssv")
+    if getattr(args, "ssv", False):
+        cmd.append("--with_ssv")
+        ssv_client = (getattr(args, "ssv_client", "") or "").strip()
+        if ssv_client:
+            cmd.extend(["--ssv-client", ssv_client])
     if args.vc_only_bn_address: cmd.extend(["--vc_only_bn_address", args.vc_only_bn_address])
     checkpoint_url = checkpoint_sync_url_for_network(args.network)
     if checkpoint_url:
@@ -602,6 +610,31 @@ def check_service_start(
     if service_name == "charon" and not os.path.isfile("/var/lib/charon/.charon/cluster-lock.json"):
         print("  ⚠️  Skipping charon health check: no cluster-lock.json (expected in test environment)")
         return True
+
+    if service_name == "ssv-dkg":
+        # DKG needs a registered operatorID; operator.yaml ships a placeholder.
+        print("  ⚠️  Skipping ssv-dkg health check: operatorID placeholder (expected in test environment)", flush=True)
+        return True
+
+    if service_name == "ssv-node" and systemd_available() and \
+            os.environ.get("ETHPILLAR_SSV_RUNTIME_CHECK", "1") == "1":
+        from deploy.ssv import get_ssv_client, read_ssv_ports
+        from ssv_runtime import SSV_KEY, check_ssv_node_runtime, provision_throwaway_operator_key
+
+        ssv_client = get_ssv_client()
+        have_key = subprocess.run(["sudo", "test", "-f", SSV_KEY], check=False).returncode == 0
+        # Unit Description ends with "... for <NETWORK>" (both clients).
+        with open(service_path, encoding="utf-8") as unit_fh:
+            desc = next((ln for ln in unit_fh if ln.startswith("Description=")), "")
+        network = desc.rsplit(" for ", 1)[-1].strip().lower() if " for " in desc else "sepolia"
+        if not have_key and not provision_throwaway_operator_key(ssv_client, network):
+            return False
+        print(f"  [systemd] ssv-node runtime/port check ({ssv_client})...", flush=True)
+        return check_ssv_node_runtime(
+            ssv_client,
+            read_ssv_ports(client=ssv_client),
+            soft_skip=lambda reason: emit_soft_skip(ssv_client, reason),
+        )
 
     if service_name in ("ssv-node", "ssv-dkg"):
         # Datadir is mode 700 (ssv); probe via sudo like production tooling.
@@ -1048,9 +1081,10 @@ def _sudo_read_text(path: str) -> Optional[str]:
     return result.stdout
 
 
-def _verify_ssv_install() -> bool:
+def _verify_ssv_install(ssv_client: str = "ssv") -> bool:
     """Assert SSV units, shared secrets paths, and no traditional validator.service."""
     ok = True
+    client = (ssv_client or "ssv").strip().lower()
     node_unit = "/etc/systemd/system/ssv-node.service"
     dkg_unit = "/etc/systemd/system/ssv-dkg.service"
     vc_unit = "/etc/systemd/system/validator.service"
@@ -1063,6 +1097,7 @@ def _verify_ssv_install() -> bool:
     else:
         print("✅ validator.service absent (SSV replaces traditional VC)")
 
+    node_body = ""
     for path, label in ((node_unit, "ssv-node.service"), (dkg_unit, "ssv-dkg.service")):
         if not os.path.isfile(path):
             print(f"❌ missing {label}")
@@ -1070,29 +1105,57 @@ def _verify_ssv_install() -> bool:
             continue
         with open(path, encoding="utf-8") as handle:
             body = handle.read()
+        if path == node_unit:
+            node_body = body
         if "User=ssv" not in body:
             print(f"❌ {label} missing User=ssv")
             ok = False
         else:
             print(f"✅ {label} runs as ssv")
 
-    cfg = _sudo_read_text(config_path)
-    if cfg is None:
-        print(f"❌ missing {config_path}")
-        ok = False
-    else:
+    if client == "anchor":
+        if "anchor node" not in node_body and "/usr/local/bin/anchor" not in node_body:
+            print("❌ ssv-node.service missing Anchor ExecStart")
+            ok = False
+        else:
+            print("✅ ssv-node.service uses Anchor")
         for needle in (
-            "BeaconNodeAddr:",
-            "ETH1Addr:",
-            "PrivateKeyFile: /var/lib/ssv/encrypted_private_key.json",
-            "PasswordFile: /var/lib/ssv/password",
-            "Path: /var/lib/ssv/db",
+            "--key-file /var/lib/ssv/encrypted_private_key.json",
+            "--password-file /var/lib/ssv/password",
+            "--beacon-nodes",
+            "--execution-rpc",
+            "--execution-ws",
         ):
-            if needle not in cfg:
-                print(f"❌ config.yaml missing {needle!r}")
+            if needle not in node_body:
+                print(f"❌ Anchor unit missing {needle!r}")
                 ok = False
             else:
-                print(f"✅ config.yaml has {needle}")
+                print(f"✅ Anchor unit has {needle}")
+        if os.path.isfile(config_path) or _sudo_read_text(config_path) is not None:
+            print("ℹ️  config.yaml present (unused by Anchor; ok)")
+    else:
+        if "ssvnode" not in node_body:
+            print("❌ ssv-node.service missing ssvnode ExecStart")
+            ok = False
+        else:
+            print("✅ ssv-node.service uses ssvnode")
+        cfg = _sudo_read_text(config_path)
+        if cfg is None:
+            print(f"❌ missing {config_path}")
+            ok = False
+        else:
+            for needle in (
+                "BeaconNodeAddr:",
+                "ETH1Addr:",
+                "PrivateKeyFile: /var/lib/ssv/encrypted_private_key.json",
+                "PasswordFile: /var/lib/ssv/password",
+                "Path: /var/lib/ssv/db",
+            ):
+                if needle not in cfg:
+                    print(f"❌ config.yaml missing {needle!r}")
+                    ok = False
+                else:
+                    print(f"✅ config.yaml has {needle}")
 
     dkg = _sudo_read_text(dkg_config)
     if dkg is None:
@@ -1171,7 +1234,7 @@ def verify(args: Any):
                 print("✅ charon.service includes --builder-api")
 
     if getattr(args, "ssv", False):
-        if not _verify_ssv_install():
+        if not _verify_ssv_install(getattr(args, "ssv_client", "") or "ssv"):
             success = False
 
     for u in expected_users:
@@ -1398,6 +1461,12 @@ if __name__ == "__main__":
         action='store_true',
         default=False,
         help='Install SSV Operator (ssv-node + ssv-dkg) instead of a traditional VC',
+    )
+    parser.add_argument(
+        '--ssv-client',
+        choices=('ssv', 'anchor'),
+        default='',
+        help='SSV operator client when --ssv is set (ssv=Go ssvnode, anchor=Sigma Prime)',
     )
     parser.add_argument('--config', type=str, default='Solo Staking Node')
     parser.add_argument('--network', type=str, default='SEPOLIA')

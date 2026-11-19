@@ -237,12 +237,43 @@ getCharonCurrentVersion() {
 }
 
 # Sets VERSION from installed ``ssvnode version`` (best-effort).
+# Return installed SSV operator client slug: ssv | anchor
+# The installed ssv-node.service ExecStart wins: the base ``env`` ships
+# SSV_CLIENT=ssv and scripts that only source functions.sh (update_ssv.sh,
+# ufw helpers) never load .env.overrides, so SSV_CLIENT alone would report
+# "ssv" on an Anchor host. SSV_CLIENT / .env.overrides apply before install.
+getSsvClient() {
+  local ssv_svc="${SSV_NODE_SERVICE_FILE:-/etc/systemd/system/ssv-node.service}"
+  local exec_line="" client="" overrides="${BASE_DIR:-.}/.env.overrides"
+  if [[ -f "$ssv_svc" ]]; then
+    exec_line=$(grep -m1 -E '^[[:space:]]*ExecStart=' "$ssv_svc" 2>/dev/null || true)
+    if [[ "$exec_line" =~ ExecStart=([^[:space:]]*/)?anchor([[:space:]\\]|$) ]]; then
+      echo "anchor"; return 0
+    elif [[ "$exec_line" =~ ExecStart=([^[:space:]]*/)?ssvnode([[:space:]\\]|$) ]]; then
+      echo "ssv"; return 0
+    fi
+  fi
+  if [[ -f "$overrides" ]]; then
+    client=$(grep -E '^[[:space:]]*SSV_CLIENT=' "$overrides" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"' " || true)
+  fi
+  [[ -z "$client" ]] && client="${SSV_CLIENT:-}"
+  case "${client,,}" in
+    anchor|sigp|sigp-anchor) echo "anchor" ;;
+    *) echo "ssv" ;;
+  esac
+}
+
 getSsvCurrentVersion() {
   local ssv_svc="${SSV_NODE_SERVICE_FILE:-/etc/systemd/system/ssv-node.service}"
-  local bin output
+  local bin output fallback
   VERSION=""
   INSTALLED_COMMIT=""
-  bin=$(get_systemd_exec_path "$ssv_svc" "/usr/local/bin/ssvnode")
+  if [[ "$(getSsvClient)" == "anchor" ]]; then
+    fallback="/usr/local/bin/anchor"
+  else
+    fallback="/usr/local/bin/ssvnode"
+  fi
+  bin=$(get_systemd_exec_path "$ssv_svc" "$fallback")
   if [[ -z "$bin" || ! -x "$bin" ]]; then
     VERSION="Unable to query SSV version from binary."
     return 1
@@ -1036,10 +1067,17 @@ load_client_versions() {
         ssv-node|ssv)
             getSsvCurrentVersion || true
             [[ -z "$VERSION" ]] && VERSION="unknown"
-            fetch_latest_release "ssv" --strip-v || {
-                echo "ssv: could not resolve LATEST"
-                return 1
-            }
+            if [[ "$(getSsvClient)" == "anchor" ]]; then
+                fetch_latest_release "anchor" --strip-v || {
+                    echo "anchor: could not resolve LATEST"
+                    return 1
+                }
+            else
+                fetch_latest_release "ssv" --strip-v || {
+                    echo "ssv: could not resolve LATEST"
+                    return 1
+                }
+            fi
             ;;
         ssv-dkg)
             getSsvDkgCurrentVersion || true
@@ -1214,13 +1252,13 @@ ufwAllowCharonP2p(){
 # Prints: tcp udp metrics api dkg
 ssvPortsFromConfig(){
     PYTHONPATH="${BASE_DIR}" python3 -c \
-        'from deploy.ssv import read_ssv_ports; p=read_ssv_ports(); print(p["tcp"], p["udp"], p["metrics"], p["api"], p["dkg"])'
+        'from deploy.ssv import read_ssv_ports; p=read_ssv_ports(); print(p["tcp"], p["udp"], p["metrics"], p["api"], p["dkg"], p.get("quic", 0))'
 }
 
-# Allow SSV P2P (TCP+UDP) and DKG TCP in UFW (no-op when SSV not installed).
-# Deny metrics/API from the WAN — SSV binds :port on all interfaces by default.
+# Allow SSV P2P (TCP+UDP[+QUIC]) and DKG TCP in UFW (no-op when SSV not installed).
+# Deny metrics/API from the WAN — Go SSV binds :port on all interfaces by default.
 ufwAllowSsvPorts(){
-    local tcp_port udp_port metrics_port api_port dkg_port ports
+    local tcp_port udp_port metrics_port api_port dkg_port quic_port ports
     isSsvEnabled || return 0
     ports="$(ssvPortsFromConfig 2>/dev/null || true)"
     # shellcheck disable=SC2086
@@ -1230,8 +1268,12 @@ ufwAllowSsvPorts(){
     metrics_port="${3:-${SSV_METRICS_PORT:-15000}}"
     api_port="${4:-${SSV_API_PORT:-16000}}"
     dkg_port="${5:-${SSV_DKG_PORT:-3030}}"
+    quic_port="${6:-${SSV_QUIC_PORT:-0}}"
     sudo ufw allow "${tcp_port}/tcp" comment 'Allow SSV P2P TCP'
     sudo ufw allow "${udp_port}/udp" comment 'Allow SSV P2P UDP'
+    if [[ -n "$quic_port" && "$quic_port" != "0" ]]; then
+        sudo ufw allow "${quic_port}/udp" comment 'Allow SSV/Anchor QUIC'
+    fi
     if isSsvDkgEnabled; then
         sudo ufw allow "${dkg_port}/tcp" comment 'Allow SSV DKG'
     fi

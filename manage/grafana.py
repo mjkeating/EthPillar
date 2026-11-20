@@ -245,6 +245,38 @@ def write_privileged_file(path: Path, data: Union[str, bytes]) -> None:
             pass
 
 
+def remove_privileged_file(path: Path) -> bool:
+    """Remove *path* if it exists, using ``sudo rm`` when it is not writable.
+
+    Args:
+        path: File to delete. Directories are not removed.
+
+    Returns:
+        True when the file was removed. False when it was already absent.
+
+    Raises:
+        PermissionError: When sudo removal fails.
+        IsADirectoryError: When *path* is a directory.
+    """
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return False
+    except PermissionError:
+        result = subprocess.run(
+            ["sudo", "rm", "-f", "--", str(path)],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or "").strip() or f"exit {result.returncode}"
+            raise PermissionError(f"Permission denied removing {path} (sudo rm failed: {detail})") from None
+        return not path.exists()
+    return True
+
+
 def ensure_prometheus_datasource_uid(datasources_yml: Path) -> bool:
     """Ensure Grafana Prometheus datasource uses ``uid: prometheus``.
 

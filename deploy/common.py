@@ -1292,7 +1292,7 @@ def finish_install(install_config: str, eth_network: str, sync_url: str,
     try:
         from manage.client_monitoring import provision_client_monitoring
         mon_clients = provision_client_monitoring(restart=True)
-        if mon_clients.get('scrape') or mon_clients.get('dashboards'):
+        if mon_clients.get('scrape') or mon_clients.get('dashboards') or mon_clients.get('removed'):
             names = ', '.join(mon_clients.get('clients') or []) or 'installed clients'
             print(f'Client monitoring: Prometheus scrape jobs and Grafana dashboards updated ({names}).')
     except PermissionError as exc:

@@ -26,6 +26,7 @@ from manage.grafana import (
     DEFAULT_GRAFANA_DASHBOARDS,
     download_grafana_dashboard,
     read_privileged_text,
+    remove_privileged_file,
     write_privileged_file,
 )
 
@@ -123,18 +124,32 @@ def _lh_vc_dashboard() -> DashboardSpec:
 
 
 def _prysm_dashboards() -> Tuple[DashboardSpec, ...]:
+    # Official beacon-node board from OffchainLabs/prysm-documentation
+    # c0d5c52 (2026-11-09). Grafana 13 v2 resource: the title is spec.title.
+    # System and Replay panels filter job="beacon". Pin the commit: the docs
+    # site's hashed /docs/assets/files/<name>-<md5>.json URLs change on every
+    # rebuild, and the old small-board URL now redirects to HTML.
     return (
         DashboardSpec(
-            filename="prysm_small.json",
-            url="https://www.offchainlabs.com/prysm/docs/assets/files/small_amount_validators-372a4e8caa631260e6c951d4d81c3283.json/",
-            title="Prysm Dashboard",
-        ),
-        DashboardSpec(
-            filename="prysm_big.json",
-            url="https://raw.githubusercontent.com/GuillaumeMiralles/prysm-grafana-dashboard/master/more_10_validators.json",
-            title="Prysm Dashboard Many Validators",
+            filename="prysm_beacon_node.json",
+            url=(
+                "https://raw.githubusercontent.com/OffchainLabs/prysm-documentation/"
+                "c0d5c52d9a917f77d46c12ed8d98c2bee9fda078/"
+                "static/assets/grafana-dashboards/beacon_node.json"
+            ),
+            title="Prysm Beacon Node",
         ),
     )
+
+
+# Boards EthPillar used to download. The file provider loads every JSON in the
+# directory, and with disableDeletion false it drops a dashboard only once that
+# file is gone. prysm_small.json's URL now returns the offchain.io homepage;
+# prysm_big.json is a stale 2020 community board.
+_OBSOLETE_DASHBOARD_FILES = (
+    "prysm_small.json",
+    "prysm_big.json",
+)
 
 
 _EXECUTION_CLIENTS: Tuple[ClientScrape, ...] = (
@@ -265,8 +280,8 @@ _EXECUTION_CLIENTS: Tuple[ClientScrape, ...] = (
 _CONSENSUS_CLIENTS: Tuple[ClientScrape, ...] = (
     ClientScrape(
         key="prysm-bn",
-        # Prysm's own dashboards filter job="beacon node" / job="$node_job".
-        job_name="beacon node",
+        # Official System and Replay panels filter job="beacon".
+        job_name="beacon",
         default_port=8080,
         metrics_path="/metrics",
         instance="consensus",
@@ -360,6 +375,7 @@ _CONSENSUS_CLIENTS: Tuple[ClientScrape, ...] = (
 )
 
 _VALIDATOR_CLIENTS: Tuple[ClientScrape, ...] = (
+    # Official dashboard is beacon-node only; there is no current VC board.
     ClientScrape(
         key="prysm-vc",
         job_name="validator",
@@ -367,7 +383,6 @@ _VALIDATOR_CLIENTS: Tuple[ClientScrape, ...] = (
         metrics_path="/metrics",
         instance="validator",
         needles=("prysm-validator", "prysm"),
-        dashboards=_prysm_dashboards(),
     ),
     ClientScrape(
         key="lighthouse-vc",
@@ -608,7 +623,13 @@ def rewrite_dashboard(payload: Union[dict, list], spec: DashboardSpec) -> Union[
     rewritten = walk(payload)
     if isinstance(rewritten, dict):
         if spec.title:
-            rewritten["title"] = spec.title
+            # Grafana v2 resources store the title under spec.title, not at the root.
+            api = str(rewritten.get("apiVersion") or "")
+            inner = rewritten.get("spec")
+            if api.startswith("dashboard.grafana.app") and isinstance(inner, dict):
+                inner["title"] = spec.title
+            else:
+                rewritten["title"] = spec.title
         if spec.uid:
             rewritten["uid"] = spec.uid
         if spec.lodestar_instances:
@@ -729,24 +750,52 @@ def dashboards_for(clients: Sequence[Tuple[ClientScrape, int]]) -> List[Dashboar
     return specs
 
 
+def remove_obsolete_dashboards(dashboards_dir: Path, keep: Iterable[str] = ()) -> Tuple[str, ...]:
+    """Delete dashboard files EthPillar no longer provisions.
+
+    Args:
+        dashboards_dir: Grafana dashboard provisioning directory.
+        keep: Filenames to leave in place (boards this run still installs).
+
+    Returns:
+        Filenames that were removed, in ``_OBSOLETE_DASHBOARD_FILES`` order.
+
+    Raises:
+        PermissionError: When a leftover file cannot be removed.
+    """
+    kept = set(keep)
+    removed: List[str] = []
+    for name in _OBSOLETE_DASHBOARD_FILES:
+        if name in kept:
+            continue
+        if remove_privileged_file(dashboards_dir / name):
+            removed.append(name)
+    return tuple(removed)
+
+
 def provision_client_dashboards(
     dashboards_dir: Path,
     clients: Sequence[Tuple[ClientScrape, int]],
-) -> int:
+) -> Tuple[int, Tuple[str, ...]]:
     """Download and rewrite client Grafana dashboards into *dashboards_dir*.
+
+    Also deletes leftover Prysm boards (``prysm_small.json``, ``prysm_big.json``)
+    so Grafana stops serving them. File provisioning polls the directory and
+    drops a dashboard only after its JSON file is gone.
 
     Args:
         dashboards_dir: Grafana file-provisioning directory.
         clients: Detected ``(client, port)`` pairs.
 
     Returns:
-        Count of dashboard files written.
+        Count of dashboard files written, and obsolete filenames removed.
 
     Raises:
         PermissionError: When the provisioning directory is not writable.
     """
+    specs = dashboards_for(clients)
     written = 0
-    for spec in dashboards_for(clients):
+    for spec in specs:
         url = spec.url or grafana_download_url(spec.grafana_id or 0)
         dest = dashboards_dir / spec.filename
         try:
@@ -764,7 +813,10 @@ def provision_client_dashboards(
             raise
         except Exception as exc:  # noqa: BLE001 — one bad dashboard must not abort the rest
             print(f"Warning: client dashboard {spec.filename} failed: {exc}", file=sys.stderr)
-    return written
+    removed = remove_obsolete_dashboards(dashboards_dir, keep=(spec.filename for spec in specs))
+    for name in removed:
+        print(f"Removed obsolete Grafana dashboard {name}", file=sys.stderr)
+    return written, removed
 
 
 def _read_unit(path: Path) -> Optional[str]:
@@ -792,25 +844,31 @@ def provision_client_monitoring(
         execution_unit: Path to ``execution.service``.
         consensus_unit: Path to ``consensus.service``.
         validator_unit: Path to ``validator.service``.
-        restart: Restart prometheus when scrapes change and grafana when dashboards change.
+        restart: Restart prometheus when scrapes change, and grafana when a
+            dashboard is written or an obsolete dashboard file is removed.
 
     Returns:
-        Dict with ``scrape`` (bool), ``dashboards`` (int), and ``clients`` (list of job names).
+        Dict with ``scrape`` (bool), ``dashboards`` (int written), ``removed``
+        (obsolete dashboard filenames), and ``clients`` (list of job names).
     """
     clients = detect_clients(
         _read_unit(execution_unit),
         _read_unit(consensus_unit),
         _read_unit(validator_unit),
     )
+    removed: Tuple[str, ...] = ()
     results: Dict[str, object] = {
         "scrape": False,
         "dashboards": 0,
+        "removed": [],
         "clients": [client.job_name for client, _port in clients],
     }
     if prometheus_yml.is_file():
         results["scrape"] = ensure_client_scrapes(prometheus_yml, clients)
     if grafana_dashboards.is_dir() and clients:
-        results["dashboards"] = provision_client_dashboards(grafana_dashboards, clients)
+        written, removed = provision_client_dashboards(grafana_dashboards, clients)
+        results["dashboards"] = written
+        results["removed"] = list(removed)
 
     if restart and results["scrape"]:
         subprocess.run(
@@ -819,7 +877,7 @@ def provision_client_monitoring(
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-    if restart and results["dashboards"]:
+    if restart and (results["dashboards"] or removed):
         subprocess.run(
             ["sudo", "systemctl", "try-restart", "grafana-server"],
             check=False,
@@ -858,11 +916,13 @@ def main(argv: Optional[list] = None) -> int:
             restart=args.restart,
         )
         names = ",".join(results["clients"]) or "none"
+        removed = ",".join(results["removed"]) or "none"
         print(
             "client monitoring: "
             f"clients={names} "
             f"scrape_updated={results['scrape']} "
-            f"dashboards_written={results['dashboards']}"
+            f"dashboards_written={results['dashboards']} "
+            f"dashboards_removed={removed}"
         )
         return 0
     return 1

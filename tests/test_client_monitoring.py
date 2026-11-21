@@ -1,5 +1,6 @@
 """Tests for manage.client_monitoring scrape jobs and dashboard rewrites."""
 
+import json
 from pathlib import Path
 
 from manage.client_monitoring import (
@@ -8,6 +9,8 @@ from manage.client_monitoring import (
     detect_clients,
     ensure_client_scrapes,
     metrics_port_from_unit,
+    provision_client_dashboards,
+    remove_obsolete_dashboards,
     rewrite_dashboard,
     scrape_job_yaml,
     upsert_client_scrapes,
@@ -202,10 +205,32 @@ def test_rewrite_pins_ethrex_job_and_grandine_instance():
 def test_prysm_jobs_match_upstream_dashboards():
     beacon = detect_clients(None, "ExecStart=/usr/local/bin/prysm-beacon-chain --monitoring-port=8080\n", None)
     validator = detect_clients(None, None, "ExecStart=/usr/local/bin/prysm-validator --monitoring-port=8081\n")
-    assert beacon[0][0].job_name == "beacon node"
+    assert beacon[0][0].job_name == "beacon"
     assert beacon[0][1] == 8080
+    board = beacon[0][0].dashboards[0]
+    assert board.filename == "prysm_beacon_node.json"
+    assert board.title == "Prysm Beacon Node"
+    assert "OffchainLabs/prysm-documentation/c0d5c52d9a917f77d46c12ed8d98c2bee9fda078/" in board.url
+    assert board.url.endswith("static/assets/grafana-dashboards/beacon_node.json")
     assert validator[0][0].job_name == "validator"
     assert validator[0][1] == 8081
+    assert validator[0][0].dashboards == ()
+
+    old = _BASE_YML + (
+        "# BEGIN ethpillar client scrape jobs\n"
+        "   - job_name: 'beacon node'\n"
+        "     metrics_path: /metrics\n"
+        "     static_configs:\n"
+        "       - targets: ['localhost:8080']\n"
+        "         labels:\n"
+        "           instance: consensus\n"
+        "# END ethpillar client scrape jobs\n"
+    )
+    updated, changed = upsert_client_scrapes(old, beacon)
+    assert changed is True
+    assert "job_name: 'beacon node'" not in updated
+    assert "job_name: 'beacon'" in updated
+    assert "localhost:8080" in updated
 
 
 def test_nimbus_scrape_adds_container_label():
@@ -237,3 +262,92 @@ def test_rewrite_strips_nethermind_cluster_matchers():
     )
     assert rewritten["expr"] == "nethermind_sync{}"
     assert rewritten["spec"]["variables"][0]["current"]["value"] == "prometheus"
+
+
+def test_rewrite_dashboard_v2_sets_spec_title():
+    rewritten = rewrite_dashboard(
+        {
+            "apiVersion": "dashboard.grafana.app/v2",
+            "kind": "Dashboard",
+            "metadata": {"name": "prysm-beacon-node"},
+            "spec": {"title": "Beacon node"},
+        },
+        DashboardSpec(filename="prysm_beacon_node.json", title="Prysm Beacon Node"),
+    )
+    assert rewritten["spec"]["title"] == "Prysm Beacon Node"
+    assert "title" not in rewritten
+
+
+def test_rewrite_dashboard_classic_title_leaves_spec_alone():
+    rewritten = rewrite_dashboard(
+        {"title": "old", "spec": {"title": "inner"}},
+        DashboardSpec(filename="geth_dashboard.json", title="Geth Dashboard"),
+    )
+    assert rewritten["title"] == "Geth Dashboard"
+    assert rewritten["spec"]["title"] == "inner"
+
+
+def test_remove_obsolete_prysm_dashboards(tmp_path: Path):
+    (tmp_path / "prysm_small.json").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "prysm_big.json").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "geth_dashboard.json").write_text("{}\n", encoding="utf-8")
+    assert remove_obsolete_dashboards(tmp_path, keep=("prysm_small.json",)) == ("prysm_big.json",)
+    assert (tmp_path / "prysm_small.json").is_file()
+    assert not (tmp_path / "prysm_big.json").exists()
+    assert remove_obsolete_dashboards(tmp_path) == ("prysm_small.json",)
+    assert not (tmp_path / "prysm_small.json").exists()
+    assert (tmp_path / "geth_dashboard.json").is_file()
+    assert remove_obsolete_dashboards(tmp_path) == ()
+
+
+def test_provision_prysm_dashboard_replaces_obsolete_files(tmp_path: Path, monkeypatch):
+    dash = tmp_path / "dashboards"
+    dash.mkdir()
+    (dash / "prysm_small.json").write_text("{}\n", encoding="utf-8")
+    (dash / "prysm_big.json").write_text("{}\n", encoding="utf-8")
+    (dash / "geth_dashboard.json").write_text("{}\n", encoding="utf-8")
+    seen = {}
+
+    def fake_download(dest: Path, url: str) -> None:
+        seen["url"] = url
+        dest.write_text(
+            json.dumps(
+                {
+                    "apiVersion": "dashboard.grafana.app/v2",
+                    "kind": "Dashboard",
+                    "metadata": {"name": "prysm-beacon-node"},
+                    "spec": {"title": "Beacon node"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("manage.client_monitoring.download_grafana_dashboard", fake_download)
+    clients = detect_clients(None, "ExecStart=/usr/local/bin/prysm-beacon-chain --monitoring-port=8080\n", None)
+    written, removed = provision_client_dashboards(dash, clients)
+    assert written == 1
+    assert removed == ("prysm_small.json", "prysm_big.json")
+    assert seen["url"].endswith("static/assets/grafana-dashboards/beacon_node.json")
+    payload = json.loads((dash / "prysm_beacon_node.json").read_text(encoding="utf-8"))
+    assert payload["spec"]["title"] == "Prysm Beacon Node"
+    assert "title" not in payload
+    assert not (dash / "prysm_small.json").exists()
+    assert not (dash / "prysm_big.json").exists()
+    assert (dash / "geth_dashboard.json").is_file()
+
+
+def test_provision_prysm_validator_only_removes_obsolete_dashboards(tmp_path: Path, monkeypatch):
+    dash = tmp_path / "dashboards"
+    dash.mkdir()
+    (dash / "prysm_small.json").write_text("{}\n", encoding="utf-8")
+    (dash / "prysm_big.json").write_text("{}\n", encoding="utf-8")
+
+    def fail_download(dest: Path, url: str) -> None:
+        raise AssertionError(f"validator client should not download a dashboard ({url})")
+
+    monkeypatch.setattr("manage.client_monitoring.download_grafana_dashboard", fail_download)
+    clients = detect_clients(None, None, "ExecStart=/usr/local/bin/prysm-validator --monitoring-port=8081\n")
+    written, removed = provision_client_dashboards(dash, clients)
+    assert written == 0
+    assert removed == ("prysm_small.json", "prysm_big.json")
+    assert list(dash.iterdir()) == []

@@ -833,6 +833,18 @@ sys.exit(0 if ensure_jemalloc() else 1)
 PY
 }
 
+# Install libatomic1 so Lodestar's bundled Node.js 26 can load libatomic.so.1.
+# Shared by fresh install (deploy/lodestar.py), consensus/validator updates,
+# and the RC-vs-latest harness. Returns non-zero if apt could not install it.
+# NOTE: keep in sync with ensure_libatomic() in deploy/common.py.
+ensureLibatomic(){
+  PYTHONPATH="${BASE_DIR}" python3 - <<'PY'
+import sys
+from deploy.common import ensure_libatomic
+sys.exit(0 if ensure_libatomic() else 1)
+PY
+}
+
 # Official Lodestar Version suffix is immediately after the semver:
 #   v1.48.0/c7dc2b0  or  v1.8.0/stable/a4b29cf
 # A last-/hex scan treats git branch metadata as a commit

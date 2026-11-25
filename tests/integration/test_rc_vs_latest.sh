@@ -70,6 +70,8 @@ install_rc_binary() {
 
   case "$client" in
     lodestar)
+      # Same helper as deploy/lodestar.py and the update scripts. v2 bundles Node 26.
+      ensureLibatomic || { echo "libatomic1 required to run Lodestar" >&2; return 1; }
       "$PY" -m deploy.common extract_and_install \
         "$work/$file" "lodestar" "$dest_dir/lodestar" "binary" 0 --binary-name "lodestar" >&2
       bin_path="$dest_dir/lodestar"

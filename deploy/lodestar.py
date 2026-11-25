@@ -1,5 +1,5 @@
 from typing import List, Tuple, Optional
-from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_release_file, get_machine_architecture, BASE_DATA_DIR, extract_and_install
+from deploy.common import write_service_file, DOWNLOAD_DIR, INSTALL_DIR, setup_client_user_and_dir, download_release_file, get_machine_architecture, BASE_DATA_DIR, extract_and_install, ensure_libatomic
 from client_requirements import validate_version_for_network
 from deploy.service_generators import form_exec_start, generate_systemd_template
 
@@ -149,6 +149,14 @@ def download_lodestar(eth_network: str) -> str:
     is_valid, error_msg = validate_version_for_network('lodestar', lodestar_version, eth_network)
     if not is_valid:
         print(error_msg)
+        exit(1)
+
+    # Lodestar v2 bundles Node.js 26, which needs libatomic.so.1. Abort before
+    # downloading or replacing a working binary when apt cannot install it.
+    # NOTE: keep in sync with ensureLibatomic in update_consensus.sh,
+    # update_validator.sh, and tests/integration/test_rc_vs_latest.sh.
+    if not ensure_libatomic():
+        print("❌ libatomic1 is required by Lodestar but could not be installed. Aborting Lodestar install.")
         exit(1)
 
     download_path = download_release_file(info, DOWNLOAD_DIR, "Lodestar")

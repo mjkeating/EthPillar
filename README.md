@@ -34,7 +34,7 @@ New users can skip this step — the installer below already points to this fork
 
 Glamsterdam-ready. Adds ePBS migration and native ePBS installs on Sepolia, Obol Charon DV, Web3Signer, and per-client Grafana dashboards.
 
-- **ePBS / Gloas**: migration for Prysm, Lodestar, Teku v26.9.0+, Lighthouse v8.3.0+, Nimbus v26.10.2+, and Caplin. Native ePBS at install time on Sepolia (no MEV-Boost sidecar). Prepare stages relays; complete drops MEV-Boost after the fork. [Guide](docs/ePBS-migration.md)
+- **ePBS / Gloas**: migration for Prysm, Lodestar, Teku v26.11.0+, Lighthouse v8.3.0+, Nimbus v26.10.2+, and Caplin. Native ePBS at install time on Sepolia (no MEV-Boost sidecar). Prepare stages relays; complete drops MEV-Boost after the fork. [Guide](docs/ePBS-migration.md)
 - **Obol Charon DV**: middleware + CDVN migration. [Guide](docs/charon.md)
 - **Web3Signer**: localhost remote signer for validator keys. [Guide](docs/web3signer.md)
 - **Monitoring**: per-client Prometheus scrape jobs and Grafana dashboards
@@ -87,7 +87,7 @@ Already running a validator? EthPillar works with [Coincashew’s Staking Guide]
 - **Grafana Dashboards**: Built-in Ethereum node monitoring, including per-client scrape jobs
 - **Troubleshooting Tools**: Built-in checks for common node issues with Node Checker
 - **Flexible Deployment Configurations**: Solo staking node, Full Node, CSM, Validator-only, Failover, or Obol Charon DV setups
-- **ePBS / Gloas migration**: Two-step MEV-Boost cutover under **MEV-Boost → ePBS migration** (Prysm, Lodestar, Teku v26.9.0+, Erigon-Caplin, and Lighthouse v8.3.0+ TUI; Charon DVT hidden until Obol ships support; [guide](docs/ePBS-migration.md))
+- **ePBS / Gloas migration**: Two-step MEV-Boost cutover under **MEV-Boost → ePBS migration** (Prysm, Lodestar, Teku v26.11.0+, Erigon-Caplin, and Lighthouse v8.3.0+ TUI; Charon DVT hidden until Obol ships support; [guide](docs/ePBS-migration.md))
 - **Obol Charon DV**: DVT middleware + CDVN migrate ([guide](docs/charon.md))
 - **SSV Operator**: duty client + systemd migrate (`ethpillar --migrate_ssv`, [guide](docs/ssv.md))
 - **Web3Signer**: Remote signer for validator keys ([guide](docs/web3signer.md))

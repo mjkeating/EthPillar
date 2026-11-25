@@ -142,6 +142,7 @@ function updateClient(){
         DEST_DIR=$(dirname "$(dirname "$EXEC_PATH")")
         test -f "$VALIDATOR_SVC" && stopValidatorStackForUpdate
         PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "teku" "$DEST_DIR" "directory" 1
+        promoteTekuEpbsFlags
         startValidatorStackAfterUpdate
         ;;
       Nimbus)

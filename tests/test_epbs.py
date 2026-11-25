@@ -31,7 +31,7 @@ from manage.epbs import (
     TEKU_BOOST_FACTOR_UINT64_MAX,
     TEKU_EPBS_BUILD_FACTOR_ENV,
     TEKU_SEPOLIA_GAS_FLAG,
-    TEKU_XBUILDER_MIN_VERSION,
+    TEKU_EPBS_MIN_VERSION,
     _default_write_data,
     default_auth_data_hex,
     map_epbs_build_factor,
@@ -55,7 +55,8 @@ from manage.epbs import (
     strip_charon_builder_api,
     support_level,
     teku_supports_epbs,
-    teku_xbuilder_boost_factor,
+    promote_installed_teku_flags,
+    teku_builder_boost_factor,
 )
 from manage.service_parse import (
     get_flag_value,
@@ -689,7 +690,7 @@ def test_teku_sepolia_sets_explicit_200m_gas(tmp_path: Path, monkeypatch: pytest
     monkeypatch.delenv(TEKU_EPBS_BUILD_FACTOR_ENV, raising=False)
     monkeypatch.delenv(EPBS_BUILD_FACTOR_ENV, raising=False)
     fs = _fs(tmp_path)
-    fs.run_version = lambda _argv: "teku/v26.9.1/linux-x86_64/openjdk-java-25\n"
+    fs.run_version = lambda _argv: "teku/v26.11.0/linux-x86_64/openjdk-java-25\n"
     _write(fs, "mevboost", generate_mevboost_service("sepolia", "0.006", RELAYS))
     _write(
         fs,
@@ -1498,8 +1499,8 @@ def test_nimbus_import_applies_builder_urls(tmp_path: Path) -> None:
 
 
 def _teku_stack(fs: EpbsFilesystem, *, bn_extra: str = "", vc_extra: str = "") -> None:
-    """Write a Teku BN + VC + MEV-Boost stack and mark the binary as v26.9.1."""
-    fs.run_version = lambda _argv: "teku/v26.9.1/linux-x86_64/openjdk-java-25\n"
+    """Write a Teku BN + VC + MEV-Boost stack and mark the binary as v26.11.0."""
+    fs.run_version = lambda _argv: "teku/v26.11.0/linux-x86_64/openjdk-java-25\n"
     mev = (
         "--validators-builder-registration-default-enabled=true "
         "--builder-endpoint=http://127.0.0.1:18550"
@@ -1532,27 +1533,27 @@ def _teku_stack(fs: EpbsFilesystem, *, bn_extra: str = "", vc_extra: str = "") -
     )
 
 
-def test_teku_xbuilder_boost_factor_mapping() -> None:
-    """eth-docker build-factor tokens become Teku ``--Xbuilder-boost-factor``."""
-    assert teku_xbuilder_boost_factor("") == (None, None)
-    assert teku_xbuilder_boost_factor("   ") == (None, None)
-    assert teku_xbuilder_boost_factor("0") == ("0", None)
-    assert teku_xbuilder_boost_factor("000") == ("0", None)
-    assert teku_xbuilder_boost_factor("local") == ("0", None)
-    assert teku_xbuilder_boost_factor("always") == (TEKU_BOOST_FACTOR_UINT64_MAX, None)
-    assert teku_xbuilder_boost_factor("BUILDER_ALWAYS") == (TEKU_BOOST_FACTOR_UINT64_MAX, None)
-    assert teku_xbuilder_boost_factor("maxprofit") == ("100", None)
-    assert teku_xbuilder_boost_factor("100") == ("100", None)
-    assert teku_xbuilder_boost_factor("0100") == ("100", None)
-    assert teku_xbuilder_boost_factor("90") == ("90", None)
-    capped, warning = teku_xbuilder_boost_factor("18446744073709551616")
+def test_teku_builder_boost_factor_mapping() -> None:
+    """eth-docker build-factor tokens become Teku ``--builder-boost-factor``."""
+    assert teku_builder_boost_factor("") == (None, None)
+    assert teku_builder_boost_factor("   ") == (None, None)
+    assert teku_builder_boost_factor("0") == ("0", None)
+    assert teku_builder_boost_factor("000") == ("0", None)
+    assert teku_builder_boost_factor("local") == ("0", None)
+    assert teku_builder_boost_factor("always") == (TEKU_BOOST_FACTOR_UINT64_MAX, None)
+    assert teku_builder_boost_factor("BUILDER_ALWAYS") == (TEKU_BOOST_FACTOR_UINT64_MAX, None)
+    assert teku_builder_boost_factor("maxprofit") == ("100", None)
+    assert teku_builder_boost_factor("100") == ("100", None)
+    assert teku_builder_boost_factor("0100") == ("100", None)
+    assert teku_builder_boost_factor("90") == ("90", None)
+    capped, warning = teku_builder_boost_factor("18446744073709551616")
     assert capped == TEKU_BOOST_FACTOR_UINT64_MAX
     assert warning and "capping" in warning
-    omitted, invalid = teku_xbuilder_boost_factor("nope")
+    omitted, invalid = teku_builder_boost_factor("nope")
     assert omitted is None
     assert invalid and "invalid" in invalid
     # Keywords are case-sensitive, matching eth-docker.
-    omitted, invalid = teku_xbuilder_boost_factor("Always")
+    omitted, invalid = teku_builder_boost_factor("Always")
     assert omitted is None
     assert invalid
 
@@ -1560,7 +1561,7 @@ def test_teku_xbuilder_boost_factor_mapping() -> None:
 def test_teku_prepare_writes_xbuilder_flags_and_complete_keeps_them(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Teku v26.9.1 prepare installs builder URLs, min-bid, and boost factor."""
+    """Teku v26.11.0 prepare installs builder URLs, min-bid, and boost factor."""
     fs = _fs(tmp_path)
     _teku_stack(fs)
     monkeypatch.setenv(TEKU_EPBS_BUILD_FACTOR_ENV, "maxprofit")
@@ -1569,19 +1570,22 @@ def test_teku_prepare_writes_xbuilder_flags_and_complete_keeps_them(
     dry = prepare(fs, apply=False)
     assert dry.support == "full"
     assert dry.client == "Teku"
-    assert not any("--Xbuilder-urls" in line for line in Path(fs.unit_path("validator")).read_text(encoding="utf-8").splitlines())
+    assert not any("--builder-urls" in line for line in Path(fs.unit_path("validator")).read_text(encoding="utf-8").splitlines())
 
     plan = prepare(fs, apply=True)
     assert plan.applied
     assert "validator" in plan.services_to_restart
     vc_args = _args(Path(fs.unit_path("validator")).read_text(encoding="utf-8"))
-    urls = get_flag_value(vc_args, "--Xbuilder-urls")
+    urls = get_flag_value(vc_args, "--builder-urls")
     assert "boost-relay.flashbots.net" in urls
     assert "relay.ultrasound.money" in urls
     assert "18550" not in urls
     assert "," in urls and " " not in urls.split("=", 1)[-1]
-    assert get_flag_value(vc_args, "--Xbuilder-min-bid") == "6000000"
-    assert get_flag_value(vc_args, "--Xbuilder-boost-factor") == "100"
+    assert get_flag_value(vc_args, "--builder-min-bid") == "6000000"
+    assert get_flag_value(vc_args, "--p2p-builder-min-bid") == "6000000"
+    assert get_flag_value(vc_args, "--builder-boost-factor") == "100"
+    assert get_flag_value(vc_args, "--p2p-builder-boost-factor") == "100"
+    assert not has_flag(vc_args, "--Xbuilder-urls")
     assert has_flag(vc_args, "--validators-builder-registration-default-enabled")
     bn_text = Path(fs.unit_path("consensus")).read_text(encoding="utf-8")
     assert "--builder-endpoint=http://127.0.0.1:18550" in bn_text
@@ -1595,8 +1599,9 @@ def test_teku_prepare_writes_xbuilder_flags_and_complete_keeps_them(
     bn_args = _args(Path(fs.unit_path("consensus")).read_text(encoding="utf-8"))
     assert not has_flag(bn_args, "--builder-endpoint")
     kept = _args(Path(fs.unit_path("validator")).read_text(encoding="utf-8"))
-    assert "boost-relay.flashbots.net" in get_flag_value(kept, "--Xbuilder-urls")
-    assert get_flag_value(kept, "--Xbuilder-boost-factor") == "100"
+    assert "boost-relay.flashbots.net" in get_flag_value(kept, "--builder-urls")
+    assert get_flag_value(kept, "--builder-boost-factor") == "100"
+    assert get_flag_value(kept, "--p2p-builder-boost-factor") == "100"
     assert has_flag(kept, "--validators-builder-registration-default-enabled")
     after = status(fs)
     assert "VC relays: yes" in after
@@ -1613,21 +1618,24 @@ def test_teku_prepare_reads_bn_compare_factor_when_env_unset(
     _teku_stack(fs, bn_extra="--builder-bid-compare-factor=BUILDER_ALWAYS")
     prepare(fs, apply=True)
     vc_args = _args(Path(fs.unit_path("validator")).read_text(encoding="utf-8"))
-    assert get_flag_value(vc_args, "--Xbuilder-boost-factor") == TEKU_BOOST_FACTOR_UINT64_MAX
+    assert get_flag_value(vc_args, "--builder-boost-factor") == TEKU_BOOST_FACTOR_UINT64_MAX
+    assert get_flag_value(vc_args, "--p2p-builder-boost-factor") == TEKU_BOOST_FACTOR_UINT64_MAX
 
     plain = _fs(tmp_path / "plain")
     _teku_stack(plain)
     prepare(plain, apply=True)
     plain_args = _args(Path(plain.unit_path("validator")).read_text(encoding="utf-8"))
-    assert not has_flag(plain_args, "--Xbuilder-boost-factor")
-    assert has_flag(plain_args, "--Xbuilder-urls")
-    assert get_flag_value(plain_args, "--Xbuilder-min-bid") == "6000000"
+    assert not has_flag(plain_args, "--builder-boost-factor")
+    assert not has_flag(plain_args, "--p2p-builder-boost-factor")
+    assert has_flag(plain_args, "--builder-urls")
+    assert get_flag_value(plain_args, "--builder-min-bid") == "6000000"
+    assert get_flag_value(plain_args, "--p2p-builder-min-bid") == "6000000"
 
 
 def test_teku_prepare_skips_binary_older_than_xbuilder_release(tmp_path: Path) -> None:
-    """Teku before 26.9.0 is a prepare no-op; complete stays refused."""
+    """Teku 26.10.1 (last --Xbuilder-* release) is a prepare no-op."""
     fs = _fs(tmp_path)
-    fs.run_version = lambda _argv: "teku/v26.8.0/linux-x86_64/openjdk-java-25\n"
+    fs.run_version = lambda _argv: "teku/v26.10.1/linux-x86_64/openjdk-java-25\n"
     _write(fs, "mevboost", generate_mevboost_service("mainnet", "0.006", RELAYS))
     _write(
         fs,
@@ -1653,7 +1661,7 @@ def test_teku_prepare_skips_binary_older_than_xbuilder_release(tmp_path: Path) -
     assert plan.support == "full"
     assert plan.applied
     assert Path(fs.unit_path("validator")).read_text(encoding="utf-8") == before
-    assert any(TEKU_XBUILDER_MIN_VERSION in a.detail for a in plan.actions)
+    assert any(TEKU_EPBS_MIN_VERSION in a.detail for a in plan.actions)
     st = status(fs)
     assert "older than" in st
     assert "Prepare is a no-op" in st
@@ -1671,8 +1679,10 @@ def test_teku_invalid_build_factor_still_writes_urls(
     plan = prepare(fs, apply=True)
     assert any("invalid" in w for w in plan.warnings)
     vc_args = _args(Path(fs.unit_path("validator")).read_text(encoding="utf-8"))
-    assert has_flag(vc_args, "--Xbuilder-urls")
-    assert not has_flag(vc_args, "--Xbuilder-boost-factor")
+    assert has_flag(vc_args, "--builder-urls")
+    assert not has_flag(vc_args, "--builder-boost-factor")
+    assert not has_flag(vc_args, "--p2p-builder-boost-factor")
+    assert not has_flag(vc_args, "--Xbuilder-urls")
 
 
 def test_teku_prepare_keeps_existing_boost_factor_when_unset(
@@ -1685,14 +1695,80 @@ def test_teku_prepare_keeps_existing_boost_factor_when_unset(
     _teku_stack(fs, vc_extra="--Xbuilder-boost-factor=90")
     prepare(fs, apply=True)
     vc_args = _args(Path(fs.unit_path("validator")).read_text(encoding="utf-8"))
-    assert get_flag_value(vc_args, "--Xbuilder-boost-factor") == "90"
-    assert has_flag(vc_args, "--Xbuilder-urls")
+    assert get_flag_value(vc_args, "--builder-boost-factor") == "90"
+    assert get_flag_value(vc_args, "--p2p-builder-boost-factor") == "90"
+    assert not has_flag(vc_args, "--Xbuilder-boost-factor")
+    assert has_flag(vc_args, "--builder-urls")
+    assert not has_flag(vc_args, "--Xbuilder-urls")
+
+
+def test_promote_teku_flags_rewrites_only_on_26_11(tmp_path: Path) -> None:
+    """Upgrade rewrite drops --Xbuilder-* on 26.11.0 and leaves 26.10.1 alone."""
+    old = _fs(tmp_path / "old")
+    old.run_version = lambda _argv: "teku/v26.10.1/linux-x86_64/openjdk-java-25\n"
+    _write(
+        old,
+        "validator",
+        generate_teku_vc_service(
+            "mainnet",
+            "ep",
+            "--beacon-node-api-endpoint=http://127.0.0.1:5052",
+            extra_parameters=(
+                "--Xbuilder-urls=https://boost-relay.flashbots.net "
+                "--Xbuilder-min-bid=6000000 "
+                "--Xbuilder-boost-factor=90 "
+                "--Xbuilder-max-execution-payment=0"
+            ),
+        ),
+    )
+    assert promote_installed_teku_flags(old, apply=True) is False
+    kept = _args(Path(old.unit_path("validator")).read_text(encoding="utf-8"))
+    assert get_flag_value(kept, "--Xbuilder-boost-factor") == "90"
+    assert not has_flag(kept, "--builder-urls")
+
+    new = _fs(tmp_path / "new")
+    new.run_version = lambda _argv: "teku/v26.11.0/linux-x86_64/openjdk-java-25\n"
+    _write(
+        new,
+        "validator",
+        generate_teku_vc_service(
+            "mainnet",
+            "ep",
+            "--beacon-node-api-endpoint=http://127.0.0.1:5052",
+            extra_parameters=(
+                "--Xbuilder-urls=https://boost-relay.flashbots.net "
+                "--Xbuilder-min-bid=6000000 "
+                "--Xbuilder-boost-factor=90 "
+                "--Xbuilder-max-execution-payment=0"
+            ),
+        ),
+    )
+    assert promote_installed_teku_flags(new, apply=False) is True
+    assert has_flag(
+        _args(Path(new.unit_path("validator")).read_text(encoding="utf-8")),
+        "--Xbuilder-urls",
+    )
+    assert promote_installed_teku_flags(new, apply=True) is True
+    args = _args(Path(new.unit_path("validator")).read_text(encoding="utf-8"))
+    assert get_flag_value(args, "--builder-urls") == "https://boost-relay.flashbots.net"
+    assert get_flag_value(args, "--builder-min-bid") == "6000000"
+    assert get_flag_value(args, "--p2p-builder-min-bid") == "6000000"
+    assert get_flag_value(args, "--builder-boost-factor") == "90"
+    assert get_flag_value(args, "--p2p-builder-boost-factor") == "90"
+    assert get_flag_value(args, "--builder-max-execution-payment") == "0"
+    assert not any(has_flag(args, old_name) for old_name, _news in (
+        ("--Xbuilder-urls", None),
+        ("--Xbuilder-min-bid", None),
+        ("--Xbuilder-boost-factor", None),
+        ("--Xbuilder-max-execution-payment", None),
+    ))
+    assert promote_installed_teku_flags(new, apply=True) is False
 
 
 def test_teku_charon_prepare_skips_vc_builder_urls(tmp_path: Path) -> None:
-    """Charon + Teku: prepare must not write --Xbuilder-urls on the signer VC."""
+    """Charon + Teku: prepare must not write --builder-urls on the signer VC."""
     fs = _fs(tmp_path)
-    fs.run_version = lambda _argv: "teku/v26.9.1/linux-x86_64/openjdk-java-25\n"
+    fs.run_version = lambda _argv: "teku/v26.11.0/linux-x86_64/openjdk-java-25\n"
     _write(fs, "mevboost", generate_mevboost_service("mainnet", "0.006", RELAYS))
     _write(
         fs,
@@ -1720,6 +1796,7 @@ def test_teku_charon_prepare_skips_vc_builder_urls(tmp_path: Path) -> None:
     prep = prepare(fs, apply=True)
     assert any("Charon DVT owns builder path" in a.detail for a in prep.actions)
     vc_args = _args(Path(fs.unit_path("validator")).read_text(encoding="utf-8"))
+    assert not has_flag(vc_args, "--builder-urls")
     assert not has_flag(vc_args, "--Xbuilder-urls")
     done = complete(fs, apply=True)
     assert done.applied
@@ -1728,14 +1805,14 @@ def test_teku_charon_prepare_skips_vc_builder_urls(tmp_path: Path) -> None:
 
 
 def test_teku_import_applies_xbuilder_urls(tmp_path: Path) -> None:
-    """Import writes Teku --Xbuilder-urls from a migration file."""
+    """Import writes Teku --builder-urls from a migration file."""
     mev_fs = _fs(tmp_path / "mev")
     _write(mev_fs, "mevboost", generate_mevboost_service("mainnet", "0.006", RELAYS))
     out = tmp_path / "mig.ethpillar.epbs-migration"
     export_migration(mev_fs, output=str(out), hostname="bn")
 
     vc_fs = _fs(tmp_path / "vc")
-    vc_fs.run_version = lambda _argv: "teku/v26.9.1/linux-x86_64/openjdk-java-25\n"
+    vc_fs.run_version = lambda _argv: "teku/v26.11.0/linux-x86_64/openjdk-java-25\n"
     _write(
         vc_fs,
         "validator",
@@ -1750,8 +1827,10 @@ def test_teku_import_applies_xbuilder_urls(tmp_path: Path) -> None:
     assert plan.applied
     assert plan.support == "full"
     args = _args(Path(vc_fs.unit_path("validator")).read_text(encoding="utf-8"))
-    assert "boost-relay.flashbots.net" in get_flag_value(args, "--Xbuilder-urls")
-    assert get_flag_value(args, "--Xbuilder-min-bid") == "6000000"
+    assert "boost-relay.flashbots.net" in get_flag_value(args, "--builder-urls")
+    assert get_flag_value(args, "--builder-min-bid") == "6000000"
+    assert get_flag_value(args, "--p2p-builder-min-bid") == "6000000"
+    assert not has_flag(args, "--Xbuilder-urls")
 
 
 def test_teku_env_overrides_bn_compare_factor(
@@ -1763,7 +1842,8 @@ def test_teku_env_overrides_bn_compare_factor(
     monkeypatch.setenv(TEKU_EPBS_BUILD_FACTOR_ENV, "local")
     prepare(fs, apply=True)
     vc_args = _args(Path(fs.unit_path("validator")).read_text(encoding="utf-8"))
-    assert get_flag_value(vc_args, "--Xbuilder-boost-factor") == "0"
+    assert get_flag_value(vc_args, "--builder-boost-factor") == "0"
+    assert get_flag_value(vc_args, "--p2p-builder-boost-factor") == "0"
 
 
 def test_grandine_integrated_placeholder_and_complete(tmp_path: Path) -> None:

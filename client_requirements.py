@@ -37,7 +37,10 @@ FUSAKA_MIN_VERSIONS = {
 GLOAS_SEPOLIA_MIN_VERSIONS = {
     'lighthouse': 'v8.3.0',
     'lodestar': 'v1.49.0',
-    'teku': '26.9.1',
+    # GA --builder-urls / --builder-min-bid / --builder-boost-factor
+    # (Consensys/teku#11563, shipped in 26.11.0). 26.9.1–26.10.x only have
+    # the hidden --Xbuilder-* names, which 26.11.0 removed.
+    'teku': '26.11.0',
     'prysm': 'v7.2.0',
     # Multi-URL --payload-builder-url (status-im/nimbus-eth2#9336) + Gloas VC
     # builder flags; install still resolves GitHub LATEST when it meets this.

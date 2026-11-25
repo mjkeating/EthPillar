@@ -182,17 +182,22 @@ assert_vc_process_has_epbs_flags() {
             echo "✅ running VC pid=${pid} has --builder.urls (not sidecar)"
             ;;
         Teku)
-            if [[ "$cmdline" != *"--Xbuilder-urls"* ]]; then
-                echo "❌ running VC is missing --Xbuilder-urls"
+            if [[ "$cmdline" == *"--Xbuilder-"* ]]; then
+                echo "❌ running VC still has removed --Xbuilder-* flags"
+                echo "  cmdline: $cmdline"
+                exit 1
+            fi
+            if [[ "$cmdline" != *"--builder-urls"* ]]; then
+                echo "❌ running VC is missing --builder-urls"
                 echo "  cmdline: $cmdline"
                 exit 1
             fi
             if [[ "$cmdline" == *"$SIDECAR"* ]]; then
-                echo "❌ running VC --Xbuilder-urls still points at the MEV-Boost sidecar"
+                echo "❌ running VC --builder-urls still points at the MEV-Boost sidecar"
                 echo "  cmdline: $cmdline"
                 exit 1
             fi
-            echo "✅ running VC pid=${pid} has --Xbuilder-urls (not sidecar)"
+            echo "✅ running VC pid=${pid} has --builder-urls (not sidecar)"
             ;;
         Lighthouse)
             if [[ "$cmdline" != *"lighthouse"* || "$cmdline" != *"vc"* ]]; then
@@ -272,10 +277,16 @@ assert_prepare_units() {
             fi
             ;;
         Teku)
-            assert_unit_has "$VC_UNIT" "--Xbuilder-urls"
+            assert_unit_lacks "$VC_UNIT" "--Xbuilder-"
+            assert_unit_has "$VC_UNIT" "--builder-urls"
             assert_unit_lacks "$VC_UNIT" "$SIDECAR"
-            if ! grep -qE -- '--Xbuilder-min-bid=[0-9]+' "$VC_UNIT"; then
-                echo "❌ Teku VC --Xbuilder-min-bid must be integer Gwei (not ETH decimal)"
+            if ! grep -qE -- '--builder-min-bid=[0-9]+' "$VC_UNIT"; then
+                echo "❌ Teku VC --builder-min-bid must be integer Gwei (not ETH decimal)"
+                cat "$VC_UNIT"
+                exit 1
+            fi
+            if ! grep -qE -- '--p2p-builder-min-bid=[0-9]+' "$VC_UNIT"; then
+                echo "❌ Teku VC --p2p-builder-min-bid must be integer Gwei"
                 cat "$VC_UNIT"
                 exit 1
             fi
@@ -324,7 +335,8 @@ assert_complete_units() {
             assert_unit_lacks "$VC_UNIT" "$SIDECAR"
             ;;
         Teku)
-            assert_unit_has "$VC_UNIT" "--Xbuilder-urls"
+            assert_unit_lacks "$VC_UNIT" "--Xbuilder-"
+            assert_unit_has "$VC_UNIT" "--builder-urls"
             assert_unit_lacks "$VC_UNIT" "$SIDECAR"
             assert_unit_lacks "$BN_UNIT" "--builder-endpoint"
             ;;

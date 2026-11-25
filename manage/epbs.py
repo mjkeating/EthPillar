@@ -33,17 +33,18 @@ Support levels:
 * ``full`` — Prysm v7.2.1+ (VC ``--builder-urls`` / ``--builder-min-bid`` /
   ``--builder-boost-factor``; v7.2.0 falls back to proposer-settings schema v2),
   Lodestar v1.47.0+ (VC ``--builder.urls`` / ``--builder.minBid``),
-  Teku v26.9.0+ (VC ``--Xbuilder-urls`` / ``--Xbuilder-min-bid`` /
-  ``--Xbuilder-boost-factor``), Nimbus v26.10.2+ (VC ``--payload-builder`` /
+  Teku v26.11.0+ (VC ``--builder-urls`` / ``--builder-min-bid`` /
+  ``--p2p-builder-min-bid`` / ``--builder-boost-factor`` /
+  ``--p2p-builder-boost-factor``), Nimbus v26.10.2+ (VC ``--payload-builder`` /
   repeatable ``--payload-builder-url`` / ``--builder-min-bid`` /
   ``--builder-max-execution-payment`` / ``--builder-boost-factor``),
   Erigon-Caplin v3.7.1+ (``caplin-builders.json`` plus the existing
   ``--caplin.mev-relay-url`` sidecar), and Lighthouse v8.3.0+
   (``builder_definitions.yml`` ``builders[].url``). Lodestar prepare still
   probes ``lodestar validator --help``. Prysm, Teku, Nimbus, Caplin, and
-  Lighthouse prepare probe ``--version`` (Teku's ``--Xbuilder-*`` flags are
-  hidden from ``--help``) so older binaries are skipped or, for Prysm
-  v7.2.0, kept on the settings-file path.
+  Lighthouse prepare probe ``--version``. Teku 26.11.0 removed the hidden
+  ``--Xbuilder-*`` names, so older binaries are skipped. Prysm v7.2.0 stays
+  on the settings-file path.
 * ``placeholder`` — Grandine: no released VC relay list; prepare is a
   documented no-op. Complete is refused without ``--force``.
 """
@@ -99,9 +100,23 @@ LIGHTHOUSE_BUILDERS_FILENAME = "builder_definitions.yml"
 LIGHTHOUSE_VALIDATORS_DIRNAME = "validators"
 LIGHTHOUSE_SEPOLIA_GAS_EPOCH = "353024"
 LIGHTHOUSE_HOODI_GAS_EPOCH = "132352"
-# Teku 26.9.0 is the first release with hidden VC flags --Xbuilder-urls,
-# --Xbuilder-min-bid, and --Xbuilder-boost-factor (BuilderOptions.java).
-TEKU_XBUILDER_MIN_VERSION = "26.9.0"
+# Teku 26.11.0 promotes ePBS builder flags (Consensys/teku#11563, in the
+# 26.11.0 tag's BuilderOptions.java). The hidden --Xbuilder-* names from
+# 26.9.0–26.10.x were removed, not kept as aliases. --Xbuilder-min-bid and
+# --Xbuilder-boost-factor applied to both configured builders and p2p bids;
+# 26.11.0 splits those into --builder-* and --p2p-builder-*.
+TEKU_EPBS_MIN_VERSION = "26.11.0"
+# (old flag, production flags). A value is copied onto each production flag
+# that is not already set, then the --X name is dropped.
+TEKU_XBUILDER_REPLACEMENTS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("--Xbuilder-urls", ("--builder-urls",)),
+    ("--Xbuilder-min-bid", ("--builder-min-bid", "--p2p-builder-min-bid")),
+    (
+        "--Xbuilder-boost-factor",
+        ("--builder-boost-factor", "--p2p-builder-boost-factor"),
+    ),
+    ("--Xbuilder-max-execution-payment", ("--builder-max-execution-payment",)),
+)
 # Prysm v7.2.1 is the Sepolia pin: VC --builder-urls / --builder-min-bid /
 # --builder-boost-factor, 0x-hex builder auth, and the 200M GAS_LIMIT_SCHEDULE.
 # v7.2.0 has the settings-file builders list but none of those.
@@ -293,18 +308,24 @@ SUPPORT_NOTES: Dict[str, str] = {
         "Web3Signer 26.9.0+ for Gloas signing."
     ),
     "Teku": (
-        "Full: VC flags --Xbuilder-urls, --Xbuilder-min-bid (ETH min-bid as "
-        "integer Gwei), and --Xbuilder-boost-factor (Teku 26.9.0+). Prepare "
-        "writes them only when `teku --version` is at least 26.9.0 (the flags "
-        "are hidden, so --help is not a probe). Boost factor is read from "
-        f"{TEKU_EPBS_BUILD_FACTOR_ENV}, else {EPBS_BUILD_FACTOR_ENV}, else the "
-        "beacon node's --builder-bid-compare-factor: 0/local → 0, "
+        "Full: VC flags --builder-urls, --builder-min-bid and "
+        "--p2p-builder-min-bid (ETH min-bid as integer Gwei), and "
+        "--builder-boost-factor / --p2p-builder-boost-factor (Teku "
+        f"{TEKU_EPBS_MIN_VERSION}+). Prepare writes them only when "
+        f"`teku --version` is at least {TEKU_EPBS_MIN_VERSION}. Teku 26.11.0 "
+        "removed the hidden --Xbuilder-* names (not aliases). Boost factor is "
+        f"read from {TEKU_EPBS_BUILD_FACTOR_ENV}, else {EPBS_BUILD_FACTOR_ENV}, "
+        "else the beacon node's --builder-bid-compare-factor: 0/local → 0, "
         "always/BUILDER_ALWAYS → uint64 max, maxprofit → 100, numeric as-is. "
-        "Unset omits the flag (Teku default 90). On Sepolia, prepare sets "
+        "Unset omits the flags (Teku 26.11.0 default 100, was 90). The same "
+        "value is written on the builder and p2p flags, matching the old "
+        "combined flag. On Sepolia, prepare sets "
         f"{TEKU_SEPOLIA_GAS_FLAG}={SEPOLIA_GLOAS_GAS_LIMIT} unless already set "
         "(Teku has no 200M schedule). EthPillar uses a separate validator "
-        "client, so the flags go on validator.service. BN --builder-endpoint "
-        "stays through prepare; run complete after Gloas to remove it."
+        "client, so the flags go on validator.service. A unit that still has "
+        "--Xbuilder-* is rewritten on prepare, complete, and Teku upgrade. "
+        "BN --builder-endpoint stays through prepare; run complete after "
+        "Gloas to remove it."
     ),
     "Nimbus": (
         "Full: Nimbus v26.10.2+ writes VC --payload-builder=true, one "
@@ -886,7 +907,7 @@ def map_epbs_build_factor(
 ) -> Tuple[Optional[str], Optional[str]]:
     """Map an eth-docker build-factor token to a uint64 flag value.
 
-    Shared by Prysm ``--builder-boost-factor``, Teku ``--Xbuilder-boost-factor``,
+    Shared by Prysm ``--builder-boost-factor``, Teku ``--builder-boost-factor``
     Nimbus ``--builder-boost-factor``, and Lodestar's numeric
     ``--builder.boostFactor``.
 
@@ -1535,11 +1556,12 @@ def apply_relays_lodestar(
     return _rebuild_unit(vc_content, args), warning
 
 
-def teku_xbuilder_boost_factor(raw: str) -> Tuple[Optional[str], Optional[str]]:
-    """Map a Teku build-factor token to ``--Xbuilder-boost-factor``.
+def teku_builder_boost_factor(raw: str) -> Tuple[Optional[str], Optional[str]]:
+    """Map a Teku build-factor token to ``--builder-boost-factor``.
 
     Thin wrapper around :func:`map_epbs_build_factor` so Teku and Prysm share
-    one token table. Empty omits the flag (Teku's default is 90).
+    one token table. Empty omits the flag (Teku 26.11.0 default is 100).
+    The same value is also written to ``--p2p-builder-boost-factor``.
 
     Args:
         raw: Factor from :func:`resolve_teku_build_factor`, or empty.
@@ -1548,8 +1570,70 @@ def teku_xbuilder_boost_factor(raw: str) -> Tuple[Optional[str], Optional[str]]:
         ``(flag_value, warning)``.
     """
     return map_epbs_build_factor(
-        raw, enabled=True, client="Teku", flag="--Xbuilder-boost-factor"
+        raw, enabled=True, client="Teku", flag="--builder-boost-factor"
     )
+
+
+def promote_teku_xbuilder_args(args: Sequence[str]) -> List[str]:
+    """Copy removed ``--Xbuilder-*`` values onto Teku 26.11.0 names, then drop them.
+
+    ``--Xbuilder-min-bid`` and ``--Xbuilder-boost-factor`` applied to both
+    configured builders and p2p bids through Teku 26.10.x. Each value is
+    copied onto both production flags when that flag is absent. A production
+    flag that is already set is left as-is. ``--Xbuilder-urls`` and
+    ``--Xbuilder-max-execution-payment`` map one-to-one. Teku 26.11.0
+    removed the ``--X`` names; they are not aliases (Consensys/teku#11563).
+
+    Args:
+        args: Normalized CLI tokens, including the binary.
+
+    Returns:
+        Argument list with no ``--Xbuilder-*`` flags.
+    """
+    out = list(args)
+    for old, replacements in TEKU_XBUILDER_REPLACEMENTS:
+        if not has_flag(out, old):
+            continue
+        value = get_flag_value(out, old)
+        if value:
+            for new in replacements:
+                if not has_flag(out, new):
+                    out = upsert_flag(out, new, value)
+        out = remove_flags(out, old)
+    return out
+
+
+def promote_teku_xbuilder_unit(content: str) -> str:
+    """Rewrite ``--Xbuilder-*`` on a Teku unit to the 26.11.0 flag names.
+
+    Args:
+        content: ``validator.service`` text.
+
+    Returns:
+        The same text when no ``--Xbuilder-*`` flag is present. Otherwise
+        the unit with those flags promoted.
+    """
+    unit = parse_unit(content)
+    args = normalize_cli_args(unit.exec_args)
+    if not any(has_flag(args, old) for old, _news in TEKU_XBUILDER_REPLACEMENTS):
+        return content
+    return _rebuild_unit(content, promote_teku_xbuilder_args(args))
+
+
+def _upsert_teku_pair(args: List[str], builder_flag: str, p2p_flag: str, value: str) -> List[str]:
+    """Set the builder flag and its p2p twin to the same value.
+
+    Args:
+        args: Normalized CLI tokens.
+        builder_flag: Flag for configured ``--builder-urls`` bids.
+        p2p_flag: Flag for bids received over p2p.
+        value: Shared uint64 value.
+
+    Returns:
+        Updated argument list.
+    """
+    args = upsert_flag(args, builder_flag, value)
+    return upsert_flag(args, p2p_flag, value)
 
 
 def apply_relays_teku(
@@ -1557,12 +1641,16 @@ def apply_relays_teku(
     relays: RelaysConfig,
     build_factor: str = "",
 ) -> Tuple[str, Optional[str]]:
-    """Add Teku VC ``--Xbuilder-*`` flags (v26.9.0+).
+    """Add Teku VC production ePBS flags (v26.11.0+).
 
-    Builder URLs are the MEV-Boost relay list (sidecar URLs dropped).
-    ``--Xbuilder-min-bid`` is MEV-Boost ``-min-bid`` in integer Gwei.
-    ``--Xbuilder-boost-factor`` is written only when *build_factor* maps to
-    a value; an existing factor flag is left alone when the source is empty.
+    Builder URLs are the MEV-Boost relay list (sidecar URLs dropped), written
+    as ``--builder-urls``. ``--builder-min-bid`` and ``--p2p-builder-min-bid``
+    are MEV-Boost ``-min-bid`` in integer Gwei (the pre-26.11.0
+    ``--Xbuilder-min-bid`` covered both). ``--builder-boost-factor`` and
+    ``--p2p-builder-boost-factor`` are written only when *build_factor* maps
+    to a value; an existing factor is left alone when the source is empty.
+    Leftover ``--Xbuilder-*`` flags are promoted first so a unit prepared on
+    Teku 26.9–26.10 still starts on 26.11.0.
     On Sepolia, ``--validators-builder-registration-default-gas-limit`` is
     set to 200000000 when that flag is absent (Teku has no 200M schedule).
     Pre-Gloas ``--validators-builder-registration-default-enabled`` is kept.
@@ -1580,16 +1668,19 @@ def apply_relays_teku(
         EpbsError: If no non-sidecar relay URL remains.
     """
     unit = parse_unit(vc_content)
-    args = normalize_cli_args(unit.exec_args)
+    args = promote_teku_xbuilder_args(normalize_cli_args(unit.exec_args))
     urls = _non_sidecar_urls(relays.urls)
     if not urls:
-        raise EpbsError("No non-sidecar relay URLs to write as --Xbuilder-urls")
-    args = upsert_flag(args, "--Xbuilder-urls", ",".join(urls))
+        raise EpbsError("No non-sidecar relay URLs to write as --builder-urls")
+    args = upsert_flag(args, "--builder-urls", ",".join(urls))
     if relays.min_bid:
-        args = upsert_flag(args, "--Xbuilder-min-bid", eth_min_bid_to_gwei(relays.min_bid))
-    factor, warning = teku_xbuilder_boost_factor(build_factor)
+        gwei = eth_min_bid_to_gwei(relays.min_bid)
+        args = _upsert_teku_pair(args, "--builder-min-bid", "--p2p-builder-min-bid", gwei)
+    factor, warning = teku_builder_boost_factor(build_factor)
     if factor is not None:
-        args = upsert_flag(args, "--Xbuilder-boost-factor", factor)
+        args = _upsert_teku_pair(
+            args, "--builder-boost-factor", "--p2p-builder-boost-factor", factor
+        )
     warnings: List[str] = []
     if warning:
         warnings.append(warning)
@@ -1823,18 +1914,18 @@ def caplin_supports_epbs(fs: EpbsFilesystem, unit_content: str) -> bool:
 
 
 def teku_supports_epbs(fs: EpbsFilesystem, unit_content: str) -> bool:
-    """True when the Teku binary is at least v26.9.0 (``--Xbuilder-*``).
+    """True when the Teku binary is at least v26.11.0 (production ePBS flags).
 
-    The flags are picocli-hidden, so ``--help`` does not list them. The
-    version floor matches the first tagged release that ships
-    ``BuilderOptions``.
+    Teku 26.9.0–26.10.x only accept hidden ``--Xbuilder-*`` names. 26.11.0
+    removed those names (Consensys/teku#11563), so the floor is the first
+    release that accepts ``--builder-urls``.
 
     Args:
         fs: IO adapter used to run ``teku --version``.
         unit_content: ``validator.service`` text (binary path).
 
     Returns:
-        True for Teku v26.9.0 or newer. Older or unreadable binaries are
+        True for Teku v26.11.0 or newer. Older or unreadable binaries are
         False so prepare does not write flags the release will reject.
     """
     args = normalize_cli_args(parse_unit(unit_content).exec_args)
@@ -1842,7 +1933,34 @@ def teku_supports_epbs(fs: EpbsFilesystem, unit_content: str) -> bool:
         return False
     binary = args[0].split()[0]
     text = _binary_version(fs, [binary, "--version"])
-    return _version_meets_floor(text, TEKU_XBUILDER_MIN_VERSION)
+    return _version_meets_floor(text, TEKU_EPBS_MIN_VERSION)
+
+
+def promote_installed_teku_flags(fs: EpbsFilesystem, apply: bool = False) -> bool:
+    """Rewrite ``--Xbuilder-*`` on ``validator.service`` when Teku is 26.11.0+.
+
+    No-op when the unit is missing, is not Teku, has no ``--Xbuilder-*``
+    flag, or ``teku --version`` is older than :data:`TEKU_EPBS_MIN_VERSION`
+    (those binaries still require the hidden names).
+
+    Args:
+        fs: IO adapter.
+        apply: If True, write the unit. If False, only report whether it
+            would change.
+
+    Returns:
+        True when the unit text differs after promotion.
+    """
+    path = fs.unit_path("validator")
+    if not fs.exists(path):
+        return False
+    content = fs.read_text(path) or ""
+    if not content or parse_unit(content).client != "Teku":
+        return False
+    if not teku_supports_epbs(fs, content):
+        return False
+    new_content = promote_teku_xbuilder_unit(content)
+    return _write_unit_if_changed(fs, path, content, new_content, apply)
 
 
 def _unit_version_text(fs: EpbsFilesystem, unit_content: str) -> str:
@@ -1987,13 +2105,16 @@ def prysm_has_builder_urls(vc_content: str) -> bool:
 
 
 def teku_has_builder_urls(vc_content: str) -> bool:
-    """Return True when ``--Xbuilder-urls`` includes a non-sidecar URL.
+    """Return True when Teku builder URLs include a non-sidecar URL.
+
+    Accepts production ``--builder-urls`` and a leftover ``--Xbuilder-urls``
+    so a unit prepared before 26.11.0 still counts until it is rewritten.
 
     Args:
         vc_content: ``validator.service`` text.
     """
     args = normalize_cli_args(parse_unit(vc_content).exec_args)
-    raw = get_flag_value(args, "--Xbuilder-urls")
+    raw = get_flag_value(args, "--builder-urls") or get_flag_value(args, "--Xbuilder-urls")
     if not raw:
         return False
     parts = [part.strip() for part in raw.split(",") if part.strip()]
@@ -2810,14 +2931,16 @@ def _apply_vc_relays(
                 PlanAction(
                     "Teku VC",
                     "skipped: teku --version is older than "
-                    f"{TEKU_XBUILDER_MIN_VERSION} (no --Xbuilder-urls)",
+                    f"{TEKU_EPBS_MIN_VERSION} (no --builder-urls)",
                 )
             )
             plan.warnings.append(
                 "Prepare: no-op on this Teku build — Complete will stop "
                 "MEV-Boost without a VC relay replacement. Install Teku "
-                f"{TEKU_XBUILDER_MIN_VERSION} or later (first release with "
-                "--Xbuilder-urls / --Xbuilder-min-bid / --Xbuilder-boost-factor)."
+                f"{TEKU_EPBS_MIN_VERSION} or later (production --builder-urls "
+                "/ --builder-min-bid / --p2p-builder-min-bid / "
+                "--builder-boost-factor / --p2p-builder-boost-factor; "
+                "the hidden --Xbuilder-* names were removed)."
             )
         else:
             factor_raw = resolve_teku_build_factor(fs)
@@ -2826,12 +2949,15 @@ def _apply_vc_relays(
             )
             if factor_warning:
                 plan.warnings.append(factor_warning)
-            factor_value, _ = teku_xbuilder_boost_factor(factor_raw)
-            detail_parts = ["add --Xbuilder-urls"]
+            factor_value, _ = teku_builder_boost_factor(factor_raw)
+            detail_parts = ["add --builder-urls"]
             if relays.min_bid:
-                detail_parts.append("--Xbuilder-min-bid")
+                detail_parts.append("--builder-min-bid --p2p-builder-min-bid")
             if factor_value is not None:
-                detail_parts.append(f"--Xbuilder-boost-factor={factor_value}")
+                detail_parts.append(
+                    f"--builder-boost-factor={factor_value} "
+                    f"--p2p-builder-boost-factor={factor_value}"
+                )
             if _write_unit_if_changed(fs, vc_path, vc_content, new_vc, apply):
                 plan.actions.append(PlanAction(vc_path, " ".join(detail_parts)))
                 plan.services_to_restart.append("validator")
@@ -3044,8 +3170,13 @@ def parse_vc_relays(fs: EpbsFilesystem) -> RelaysConfig:
         if gwei:
             min_bid = gwei_min_bid_to_eth(gwei)
     elif vc_name == "Teku":
-        urls.extend(_split_csv_urls(get_flag_value(args, "--Xbuilder-urls")))
-        gwei = get_flag_value(args, "--Xbuilder-min-bid")
+        raw_urls = get_flag_value(args, "--builder-urls") or get_flag_value(
+            args, "--Xbuilder-urls"
+        )
+        urls.extend(_split_csv_urls(raw_urls))
+        gwei = get_flag_value(args, "--builder-min-bid") or get_flag_value(
+            args, "--Xbuilder-min-bid"
+        )
         if gwei:
             min_bid = gwei_min_bid_to_eth(gwei)
     elif vc_name == "Nimbus":
@@ -3199,9 +3330,9 @@ def prepare(fs: Optional[EpbsFilesystem] = None, apply: bool = False) -> Migrati
     Prysm v7.2.1+ writes ``--builder-urls`` (and keeps an existing
     proposer-settings file in sync). Older Prysm writes proposer-settings
     JSON. Lodestar gets ``--builder.urls`` when the binary documents that
-    flag. Teku gets ``--Xbuilder-urls`` (plus min-bid, boost factor, and
-    on Sepolia an explicit 200M gas limit) when ``teku --version`` is at
-    least v26.9.0. Nimbus v26.10.2+ gets repeated ``--payload-builder-url``
+    flag. Teku gets ``--builder-urls`` (plus builder and p2p min-bid, boost
+    factor, and on Sepolia an explicit 200M gas limit) when ``teku --version``
+    is at least v26.11.0. Nimbus v26.10.2+ gets repeated ``--payload-builder-url``
     (plus min-bid, max execution payment, boost factor, and on Sepolia an
     explicit 200M gas limit) when ``nimbus_validator_client --version`` is
     new enough. Erigon-Caplin writes ``caplin-builders.json`` when
@@ -3389,8 +3520,9 @@ def _vc_has_relays(fs: EpbsFilesystem, vc_name: str, vc_content: str) -> bool:
         True for Prysm when ``--builder-urls`` or
         ``default_config.builder.builders`` has a non-sidecar URL, for
         Lodestar when ``--builder.urls`` is set and is not the sidecar, for
-        Teku when ``--Xbuilder-urls`` has a non-sidecar URL and the binary
-        is v26.9.0+, for Nimbus when ``--payload-builder`` is enabled,
+        Teku when ``--builder-urls`` (or a leftover ``--Xbuilder-urls``) has
+        a non-sidecar URL and the binary is v26.11.0+, for Nimbus when
+        ``--payload-builder`` is enabled,
         ``--payload-builder-url`` has a non-sidecar URL, and the binary is
         v26.10.2+, for Erigon-Caplin when ``caplin-builders.json`` has
         a non-sidecar ``builders[].url`` and the binary is v3.7.1+, or for
@@ -3444,7 +3576,9 @@ def complete(
 ) -> MigrationPlan:
     """Disable MEV-Boost and remove BN sidecar builder flags.
 
-    Does not rewrite VC relay config from prepare. Refused when the VC has no
+    Does not change the VC relay list from prepare. When the Teku binary is
+    v26.11.0 or newer and the unit still has removed ``--Xbuilder-*`` names,
+    those flags are renamed in place (same values). Refused when the VC has no
     relay list unless *force*, *remote_vc_prepared*, or Charon ``--builder-api``
     is True.
 
@@ -3553,6 +3687,24 @@ def complete(
             "relays)."
         )
 
+    if (
+        mode == "separate"
+        and vc_name == "Teku"
+        and vc_content
+        and teku_supports_epbs(fs, vc_content)
+    ):
+        vc_path = fs.unit_path("validator")
+        new_vc = promote_teku_xbuilder_unit(vc_content)
+        if _write_unit_if_changed(fs, vc_path, vc_content, new_vc, apply):
+            plan.actions.append(
+                PlanAction(
+                    vc_path,
+                    "rename removed --Xbuilder-* flags to Teku 26.11.0 names",
+                )
+            )
+            if "validator" not in plan.services_to_restart:
+                plan.services_to_restart.append("validator")
+
     if has_bn:
         bn_key = _bn_service_key(bn_name or vc_name)
         bn_path, bn_content = _read_required_unit(fs, bn_key)
@@ -3595,7 +3747,8 @@ def complete(
         "Erigon-Caplin",
         "Lighthouse",
     ):
-        # VC flags / builder file do not change on complete; BN restart is enough.
+        # Relay lists are not rewritten here. Teku --Xbuilder-* promotion, when
+        # it changes the unit, already queued a validator restart.
         pass
 
     plan.applied = apply
@@ -3691,7 +3844,7 @@ def status(fs: Optional[EpbsFilesystem] = None) -> str:
         if vc_name == "Teku" and not teku_supports_epbs(fs, vc_content):
             lines.append(
                 "Teku binary: older than "
-                f"{TEKU_XBUILDER_MIN_VERSION}; --Xbuilder-* is not used. "
+                f"{TEKU_EPBS_MIN_VERSION}; production --builder-* flags are not used. "
                 "Prepare is a no-op."
             )
         if vc_name == "Nimbus" and not nimbus_supports_epbs(fs, vc_content):
@@ -3811,11 +3964,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     parser.add_argument(
         "command",
-        choices=("status", "prepare", "complete", "export", "import", "list-relays"),
+        choices=(
+            "status",
+            "prepare",
+            "complete",
+            "export",
+            "import",
+            "list-relays",
+            "promote-teku-flags",
+        ),
         help=(
             "status | prepare (before fork) | complete (after fork) | "
             "export (MEV host, or the VC when MEV-Boost is absent) | "
-            "import (VC/Charon host) | list-relays (one URL per line)"
+            "import (VC/Charon host) | list-relays (one URL per line) | "
+            "promote-teku-flags (rewrite removed --Xbuilder-* names)"
         ),
     )
     parser.add_argument(
@@ -3902,6 +4064,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 )
             for url in cfg.urls:
                 print(url)
+            return 0
+        if args.command == "promote-teku-flags":
+            changed = promote_installed_teku_flags(fs, apply=args.apply)
+            if args.json:
+                print(json.dumps({"changed": changed, "applied": bool(args.apply)}))
+            elif changed and args.apply:
+                print("Promoted Teku ePBS flags on validator.service")
+            elif changed:
+                print("Teku ePBS flags would be promoted (dry-run; pass --apply)")
+            else:
+                print("Teku ePBS flags already current")
             return 0
         if args.command == "export":
             out = args.output or args.path

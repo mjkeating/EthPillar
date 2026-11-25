@@ -72,6 +72,20 @@ def test_sepolia_rejects_pre_gloas_lodestar_and_teku():
     assert ok_teku is False
 
 
+def test_sepolia_teku_epbs_floor():
+    ok_x, msg = client_requirements.validate_version_for_network(
+        "teku", "26.10.1", "sepolia"
+    )
+    assert ok_x is False
+    assert msg is not None
+    assert "26.11.0" in msg
+    ok_ga, msg_ga = client_requirements.validate_version_for_network(
+        "teku", "26.11.0", "SEPOLIA"
+    )
+    assert ok_ga is True
+    assert msg_ga is None
+
+
 def test_sepolia_nimbus_gloas_floor():
     ok_old, msg = client_requirements.validate_version_for_network(
         "nimbus", "v26.10.1", "sepolia"

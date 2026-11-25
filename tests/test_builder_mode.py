@@ -850,7 +850,7 @@ def _vc(fs: EpbsFilesystem) -> str:
             ),
         ),
         (
-            "teku/v26.9.1",
+            "teku/v26.11.0",
             lambda: generate_teku_vc_service(
                 "sepolia", GRAFFITI, "--beacon-node-api-endpoint=http://127.0.0.1:5052",
                 fee_parameters=f"--validators-proposer-default-fee-recipient={FEE}",
@@ -892,9 +892,11 @@ def test_fresh_install_writes_vc_relays_without_sidecar(tmp_path: Path, version:
         assert FLASHBOTS in text and AESTUS in text
         assert "--builder.minBid=6000000" in text
     elif version.startswith("teku"):
-        assert "--Xbuilder-urls=" in text
+        assert "--builder-urls=" in text
+        assert "--Xbuilder-" not in text
         assert FLASHBOTS in text and AESTUS in text
-        assert "--Xbuilder-min-bid=6000000" in text
+        assert "--builder-min-bid=6000000" in text
+        assert "--p2p-builder-min-bid=6000000" in text
     elif version.startswith("Nimbus"):
         urls = get_flag_values(
             normalize_cli_args(parse_unit(text).exec_args), "--payload-builder-url"

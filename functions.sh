@@ -1215,6 +1215,19 @@ startValidatorStackAfterUpdate(){
     test -f /etc/systemd/system/validator.service && sudo systemctl start validator 2>/dev/null || true
 }
 
+# Rewrite Teku VC --Xbuilder-* to the 26.11.0 names before the new binary starts.
+# No-op when validator.service is not Teku, has no --Xbuilder-* flags, or
+# teku --version is older than 26.11.0 (those builds still require the hidden names).
+promoteTekuEpbsFlags() {
+    local _out
+    _out=$(PYTHONPATH="${BASE_DIR}" python3 -m manage.epbs promote-teku-flags --apply) \
+        || error "❌ Could not rewrite Teku ePBS flags for 26.11.0. The validator was not restarted."
+    if [[ "$_out" == *"Promoted Teku ePBS flags"* ]]; then
+        info "${_out}"
+        sudo systemctl daemon-reload || true
+    fi
+}
+
 # Ensure Charon is up before starting the VC (key import / loadKeys): the VC
 # talks to the beacon node through Charon's validator API. `start` starts a
 # stopped Charon and is a no-op when it is already running; key imports only
@@ -1623,7 +1636,7 @@ charonEpbsSupported() {
 # - Split LXC (MEV, no local VC): always show (export / remote complete).
 # - Charon DVT on this host: hide until charonEpbsSupported (builder path is Charon's).
 # - Solo: manage.epbs.support_level == "full" (Prysm v7.2.1+ --builder-urls,
-#   Lodestar, Teku v26.9.0+ --Xbuilder-*, Nimbus v26.10.2+ repeatable
+#   Lodestar, Teku v26.11.0+ --builder-urls/--p2p-builder-*, Nimbus v26.10.2+ repeatable
 #   --payload-builder-url, Erigon-Caplin v3.7.1+ caplin-builders.json,
 #   Lighthouse v8.3.0+ builder_definitions.yml).
 # CLI (`python -m manage.epbs`) is not gated; placeholders stay there.

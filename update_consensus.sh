@@ -150,6 +150,7 @@ function updateClient(){
 		DEST_DIR=$(dirname "$(dirname "$EXEC_PATH")")
 		test -f /etc/systemd/system/consensus.service && stopConsensusStackForUpdate
 		PYTHONPATH="${BASE_DIR}" python3 -m deploy.common extract_and_install "$FILENAME" "teku" "$DEST_DIR" "directory" 1
+		promoteTekuEpbsFlags
 		startConsensusStackAfterUpdate
 	    ;;
 	  Nimbus)

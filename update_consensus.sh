@@ -124,6 +124,9 @@ function updateClient(){
 		startConsensusStackAfterUpdate
 	    ;;
 	  Lodestar)
+		# Bundled Node.js 26 needs libatomic.so.1. Install before replacing a working binary.
+		# NOTE: keep in sync with ensure_libatomic() in deploy/common.py (deploy/lodestar.py).
+		ensureLibatomic || error "❌ libatomic1 is required by Lodestar but could not be installed. Aborting update; Lodestar was left untouched."
 		BINARIES_URL=$(echo "$RELEASE_DATA" | jq -r '.download_urls[0]')
 		FILENAME=$(echo "$RELEASE_DATA" | jq -r '.filenames[0]')
 		info "✅ Downloading URL: $BINARIES_URL"

@@ -23,6 +23,43 @@ setup() {
   ! grep -q 'tar -xzvf' update_execution.sh
 }
 
+@test "Lodestar install and upgrade paths install libatomic1 before replacing the binary" {
+  grep -Fq 'def ensure_libatomic' deploy/common.py
+  grep -Fq 'ensure_libatomic()' deploy/lodestar.py
+  grep -Fq 'ensureLibatomic()' functions.sh
+  grep -Fq 'from deploy.common import ensure_libatomic' functions.sh
+  # Fresh install aborts before the download when apt cannot install the library.
+  awk '
+    /if not ensure_libatomic/ { seen=1 }
+    seen && /download_release_file/ { found=1; exit 0 }
+    END { exit found ? 0 : 1 }
+  ' deploy/lodestar.py
+  for script in update_consensus.sh update_validator.sh; do
+    grep -Fq 'ensureLibatomic' "$script"
+    awk '
+      $0 ~ /Lodestar\)/ { in_block=1; seen=0 }
+      in_block && /ensureLibatomic/ { seen=1 }
+      in_block && /extract_and_install/ && /lodestar/ {
+        if (!seen) exit 1
+        found=1
+        exit 0
+      }
+      END { exit found ? 0 : 1 }
+    ' "$script"
+  done
+  # RC harness runs the same helper, not a one-off apt install.
+  awk '
+    $0 ~ /lodestar\)/ { in_block=1; seen=0 }
+    in_block && /ensureLibatomic/ { seen=1 }
+    in_block && /extract_and_install/ {
+      if (!seen) exit 1
+      found=1
+      exit 0
+    }
+    END { exit found ? 0 : 1 }
+  ' tests/integration/test_rc_vs_latest.sh
+}
+
 @test "update_consensus.sh uses extract_and_install for archive clients" {
   grep -Fq 'extract_and_install "$FILENAME" "lighthouse"' update_consensus.sh
   grep -Fq 'extract_and_install "$FILENAME" "lodestar"' update_consensus.sh

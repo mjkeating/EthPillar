@@ -258,6 +258,121 @@ def test_ensure_jemalloc_returns_false_on_apt_failure(monkeypatch: pytest.Monkey
     assert common.ensure_jemalloc() is False
 
 
+def test_ensure_libatomic_skips_apt_when_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ensure_libatomic does not call apt when libatomic1 is already installed."""
+    calls = []
+
+    def fake_run(cmd, check=False, env=None, **kwargs):
+        calls.append(list(cmd))
+        return make_dummy_result(returncode=0)
+
+    monkeypatch.setattr(common.subprocess, "run", fake_run)
+    assert common.ensure_libatomic() is True
+    assert calls == [["dpkg", "-s", "libatomic1"]]
+
+
+def test_ensure_libatomic_installs_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ensure_libatomic apt-installs libatomic1 non-interactively when absent."""
+    calls = []
+
+    def fake_run(cmd, check=False, env=None, **kwargs):
+        calls.append(list(cmd))
+        if cmd[0] == "dpkg":
+            return make_dummy_result(returncode=1)
+        assert env is not None and env.get("DEBIAN_FRONTEND") == "noninteractive"
+        return make_dummy_result(returncode=0)
+
+    monkeypatch.setattr(common.subprocess, "run", fake_run)
+    assert common.ensure_libatomic() is True
+    assert calls == [
+        ["dpkg", "-s", "libatomic1"],
+        ["sudo", "apt-get", "-y", "-qq", "update"],
+        [
+            "sudo",
+            "apt-get",
+            "-y",
+            "-qq",
+            "install",
+            "--no-install-recommends",
+            "libatomic1",
+        ],
+    ]
+
+
+def test_ensure_libatomic_returns_false_on_apt_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ensure_libatomic reports failure when apt cannot install libatomic1."""
+
+    def fake_run(cmd, check=False, env=None, **kwargs):
+        if cmd[0] == "dpkg":
+            return make_dummy_result(returncode=1)
+        return make_dummy_result(returncode=1)
+
+    monkeypatch.setattr(common.subprocess, "run", fake_run)
+    assert common.ensure_libatomic() is False
+
+
+def test_download_lodestar_installs_libatomic_before_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fresh BN/VC install (including Charon Lodestar VC) installs libatomic1 first."""
+    import deploy.lodestar as lodestar
+
+    order = []
+
+    monkeypatch.setattr(lodestar, "setup_client_user_and_dir", lambda *a, **k: None)
+    monkeypatch.setattr(lodestar, "get_machine_architecture", lambda: "amd64")
+    monkeypatch.setattr(
+        lodestar,
+        "get_release_info",
+        lambda *a, **k: {"version": "v2.0.0-rc.1", "download_urls": [], "filenames": []},
+    )
+    monkeypatch.setattr(lodestar, "validate_version_for_network", lambda *a, **k: (True, None))
+
+    def fake_ensure():
+        order.append("ensure")
+        return True
+
+    def fake_download(*a, **k):
+        order.append("download")
+        return "/tmp/lodestar.tar.gz"
+
+    def fake_extract(*a, **k):
+        order.append("extract")
+
+    monkeypatch.setattr(lodestar, "ensure_libatomic", fake_ensure)
+    monkeypatch.setattr(lodestar, "download_release_file", fake_download)
+    monkeypatch.setattr(lodestar, "extract_and_install", fake_extract)
+
+    assert lodestar.download_lodestar("sepolia") == "v2.0.0-rc.1"
+    assert order == ["ensure", "download", "extract"]
+
+
+def test_download_lodestar_aborts_before_replacing_binary(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed libatomic1 install leaves any existing Lodestar binary in place."""
+    import deploy.lodestar as lodestar
+
+    monkeypatch.setattr(lodestar, "setup_client_user_and_dir", lambda *a, **k: None)
+    monkeypatch.setattr(lodestar, "get_machine_architecture", lambda: "amd64")
+    monkeypatch.setattr(
+        lodestar,
+        "get_release_info",
+        lambda *a, **k: {"version": "v2.0.0-rc.1", "download_urls": [], "filenames": []},
+    )
+    monkeypatch.setattr(lodestar, "validate_version_for_network", lambda *a, **k: (True, None))
+    monkeypatch.setattr(lodestar, "ensure_libatomic", lambda: False)
+
+    def fail_download(*a, **k):
+        raise AssertionError("download must not run when libatomic1 cannot be installed")
+
+    def fail_extract(*a, **k):
+        raise AssertionError("extract must not run when libatomic1 cannot be installed")
+
+    monkeypatch.setattr(lodestar, "download_release_file", fail_download)
+    monkeypatch.setattr(lodestar, "extract_and_install", fail_extract)
+
+    with pytest.raises(SystemExit) as exc:
+        lodestar.download_lodestar("sepolia")
+    assert exc.value.code == 1
+
+
 def test_ephemery_network_override_matches_known_shapes():
     """Centralized Ephemery overrides match generators and Nimbus resync path."""
     from deploy.nimbus import EPHEMERY_NETWORK_PATH

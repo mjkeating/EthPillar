@@ -760,6 +760,74 @@ def ensure_jemalloc() -> bool:
     return False
 
 
+# Debian/Ubuntu package that provides libatomic.so.1.
+LODESTAR_LIBATOMIC_PACKAGE = "libatomic1"
+
+
+def _deb_package_installed(pkg: str) -> bool:
+    """Return True when dpkg reports *pkg* as installed.
+
+    Args:
+        pkg: Debian package name (for example ``libatomic1``).
+
+    Returns:
+        True when ``dpkg -s`` succeeds.
+    """
+    res = subprocess.run(
+        ["dpkg", "-s", pkg],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return res.returncode == 0
+
+
+def ensure_libatomic() -> bool:
+    """Install ``libatomic1`` so Lodestar's bundled Node can load ``libatomic.so.1``.
+
+    Lodestar v2 release binaries bundle Node.js 26. Official Linux Node builds
+    since Node 25 link against ``libatomic.so.1``, and minimal Debian/Ubuntu
+    images do not ship it. Without the library, ``lodestar --version`` and
+    ``consensus.service`` fail with ``error while loading shared libraries:
+    libatomic.so.1``. ChainSafe documents this in installation docs and
+    ``scripts/install-binary.sh`` (PR #10776, after hitting it on v2.0.0-rc.1).
+
+    Idempotent and non-interactive: skips apt when the package is already
+    installed. Returns True when the package is present (already or after
+    apt), False otherwise. Installing requires sudo.
+    """
+    if _deb_package_installed(LODESTAR_LIBATOMIC_PACKAGE):
+        print(">> libatomic1 already installed")
+        return True
+
+    print(">> Installing libatomic1 (required by Lodestar's bundled Node.js)")
+    env = os.environ.copy()
+    env["DEBIAN_FRONTEND"] = "noninteractive"
+    subprocess.run(
+        ["sudo", "apt-get", "-y", "-qq", "update"],
+        check=False,
+        env=env,
+    )
+    res = subprocess.run(
+        [
+            "sudo",
+            "apt-get",
+            "-y",
+            "-qq",
+            "install",
+            "--no-install-recommends",
+            LODESTAR_LIBATOMIC_PACKAGE,
+        ],
+        check=False,
+        env=env,
+    )
+    if res.returncode == 0:
+        print(">> libatomic1 installed")
+        return True
+    print(">> ❌ ERROR: could not install 'libatomic1' from apt.")
+    return False
+
+
 def clear_screen() -> None:
     """Clear the terminal screen based on the operating system."""
     if os.name == 'posix':  # Unix-based systems (e.g., Linux, macOS)

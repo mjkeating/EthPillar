@@ -806,6 +806,93 @@ upgradeEthPillar() {
     return 0
 }
 
+# ── System (OS) package updates ───────────────────────────────────────────────
+# Shared by System Administration → Update system and
+# `ethpillar check-updates|update|upgrade system`.
+
+# Prefer nala when installed; otherwise apt. Both refresh the same apt cache.
+system_pkg_frontend() {
+    if command -v nala >/dev/null 2>&1; then
+        echo nala
+    else
+        echo apt
+    fi
+}
+
+# True when /var/run/reboot-required (or ETHPILLAR_REBOOT_REQUIRED_FILE) exists.
+system_reboot_required() {
+    local marker="${ETHPILLAR_REBOOT_REQUIRED_FILE:-/var/run/reboot-required}"
+    [[ -f "$marker" ]]
+}
+
+# True when the apt cache has packages that can be upgraded.
+# Uses apt-get simulation so it works after either nala or apt update.
+system_updates_pending() {
+    apt-get -s -o Debug::NoLocking=true upgrade 2>/dev/null | grep -qE '^Inst '
+}
+
+# Refresh package indexes with nala or apt; return 1 on failure.
+system_refresh_indexes() {
+    local frontend
+    frontend=$(system_pkg_frontend)
+    echo "Refreshing package lists ($frontend)..."
+    if ! sudo "$frontend" update; then
+        echo "system: failed to refresh package lists" >&2
+        return 1
+    fi
+    return 0
+}
+
+# Report whether OS package updates are available. Refreshes indexes first.
+# Returns 0 if up to date, 2 if update(s) available, 1 on error.
+checkSystemUpdates() {
+    system_refresh_indexes || return 1
+    if system_updates_pending; then
+        echo "system: update(s) available"
+        return 2
+    fi
+    if system_reboot_required; then
+        echo "system: up to date (reboot required to complete update)"
+        return 0
+    fi
+    echo "system: up to date"
+    return 0
+}
+
+# Apply OS package updates via nala (preferred) or apt.
+# Refreshes indexes, upgrades only when packages are pending, then autoremoves
+# unused packages (same cleanup as the former TUI one-liner).
+# Returns 0 on success, 1 on error, 2 if reboot is required to complete the update.
+upgradeSystemPackages() {
+    local frontend
+    frontend=$(system_pkg_frontend)
+
+    system_refresh_indexes || return 1
+
+    if ! system_updates_pending; then
+        echo "system: already up to date — skipping upgrade"
+    else
+        echo "Upgrading system packages ($frontend)..."
+        if ! sudo "$frontend" upgrade -y; then
+            echo "system: upgrade failed" >&2
+            return 1
+        fi
+        echo "system: upgrade complete"
+    fi
+
+    echo "Removing unused packages ($frontend)..."
+    if ! sudo "$frontend" autoremove -y; then
+        echo "system: autoremove failed" >&2
+        return 1
+    fi
+
+    if system_reboot_required; then
+        echo "Reboot required to complete update"
+        return 2
+    fi
+    return 0
+}
+
 # Ensure a Java runtime is available for JVM-based clients (Teku, Besu)
 updateJRE(){
   # Delegate Java installation to the Python helper in deploy.common. This

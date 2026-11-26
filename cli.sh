@@ -98,8 +98,9 @@ cli_missing_client_targets() {
 # Resolve a user target arg into a list of concrete targets.
 # Usage: cli_resolve_targets <mode> <arg> [order_array_name]
 #   mode=clients  → start/stop/restart (no ethpillar)
-#   mode=upgrade  → check-updates/upgrade (includes ethpillar)
+#   mode=upgrade  → check-updates/upgrade (includes ethpillar + explicit system)
 # Prints targets one per line; returns 1 on invalid/not-installed target.
+# Note: 'all' never includes 'system' (OS packages are opt-in).
 cli_resolve_targets() {
     local mode="$1"
     local arg="${2:-all}"
@@ -108,7 +109,7 @@ cli_resolve_targets() {
 
     arg="${arg,,}"
     if [[ "$mode" == "upgrade" ]]; then
-        allowed="all execution consensus validator mevboost charon web3signer ssv-node ssv-dkg ssv ethpillar"
+        allowed="all execution consensus validator mevboost charon web3signer ssv-node ssv-dkg ssv ethpillar system"
         installed=$(cli_upgradable_targets)
     else
         allowed="all execution consensus validator mevboost charon web3signer ssv-node ssv-dkg ssv"
@@ -133,6 +134,12 @@ cli_resolve_targets() {
 
     if [[ "$arg" == "ethpillar" ]]; then
         echo "ethpillar"
+        return 0
+    fi
+
+    # OS packages via nala/apt; always available for check-updates/update/upgrade.
+    if [[ "$arg" == "system" ]]; then
+        echo "system"
         return 0
     fi
 
@@ -229,6 +236,7 @@ Commands:
 Targets on this node:
   logs|restart|start|status|stop:  ${clients:-none}
   check-updates|update|upgrade:  ${upgradable}
+  OS packages (opt-in; not in all): system
 
 EOF
     if [[ -n "$missing" ]]; then
@@ -241,7 +249,7 @@ Exit codes:
   logs            0 = normal exit from the log viewer; 1 = unexpected arguments or error
   start|stop|restart  0 = success; 1 = error
   status          0 = all installed clients active; 1 = any inactive/failed
-  update|upgrade  0 = success; 1 = error
+  update|upgrade  0 = success; 1 = error; 2 = reboot required (system)
 
 Examples:
   ethpillar check-updates
@@ -252,6 +260,7 @@ Examples:
   ethpillar status
   ethpillar upgrade ethpillar
   ethpillar upgrade execution
+  ethpillar update system
 EOF
 }
 
@@ -381,11 +390,11 @@ cli_cmd_check_updates() {
 
     while IFS= read -r t; do
         [[ -n "$t" ]] || continue
-        if [[ "$t" == "ethpillar" ]]; then
-            cli_check_ethpillar_update
-        else
-            cli_check_client_update "$t"
-        fi
+        case "$t" in
+            ethpillar) cli_check_ethpillar_update ;;
+            system)    checkSystemUpdates ;;
+            *)         cli_check_client_update "$t" ;;
+        esac
         case $? in
             0) ;;
             2) saw_update=1 ;;
@@ -431,12 +440,18 @@ cli_auto_update_script() {
 # also idempotent per binary (node build / DKG download skipped when current).
 # Same gate as TUI update menus: load versions, then version_matches_latest
 # (promptYesNo / promptUpdateSsv).
+# system returns 2 when /var/run/reboot-required is set after the run
+# (shared core: upgradeSystemPackages in functions.sh).
 cli_upgrade_one() {
     local target="$1"
 
     case "$target" in
         ethpillar)
             cli_upgrade_ethpillar
+            return
+            ;;
+        system)
+            upgradeSystemPackages
             return
             ;;
         execution|consensus|validator|mevboost|charon|web3signer|ssv-node|ssv-dkg|ssv)
@@ -458,7 +473,7 @@ cli_upgrade_one() {
 
 cli_cmd_upgrade() {
     local target_arg="${1:-all}"
-    local t targets rc=0
+    local t targets rc=0 reboot_required=0 one_rc
 
     if ! targets=$(cli_resolve_targets upgrade "$target_arg"); then
         return 1
@@ -469,12 +484,29 @@ cli_cmd_upgrade() {
         echo "========================================="
         echo " Upgrading: $t"
         echo "========================================="
-        if ! cli_upgrade_one "$t"; then
-            echo "Upgrade failed: $t" >&2
-            rc=1
-        fi
+        cli_upgrade_one "$t"
+        one_rc=$?
+        case "$one_rc" in
+            0) ;;
+            2)
+                # Documented only for system: reboot needed to finish the update.
+                if [[ "$t" == "system" ]]; then
+                    reboot_required=1
+                else
+                    echo "Upgrade failed: $t" >&2
+                    rc=1
+                fi
+                ;;
+            *)
+                echo "Upgrade failed: $t" >&2
+                rc=1
+                ;;
+        esac
     done <<< "$targets"
-    return "$rc"
+
+    [[ "$rc" -ne 0 ]] && return 1
+    [[ "$reboot_required" -eq 1 ]] && return 2
+    return 0
 }
 
 # ── Logs ─────────────────────────────────────────────────────────────────────

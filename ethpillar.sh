@@ -1077,7 +1077,8 @@ while true; do
     # Handle the user's choice from the submenu
     case $SUBCHOICE in
       🛠️)
-        sudo apt update && sudo apt upgrade -y && sudo apt autoremove -y
+        # Shared with `ethpillar update|upgrade system` (functions.sh).
+        upgradeSystemPackages
         ;;
       🔄)
         if whiptail --title "Reboot" --defaultno --yesno "Are you sure you want to reboot?" 8 78; then sudo reboot now; fi

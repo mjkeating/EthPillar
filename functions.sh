@@ -893,6 +893,12 @@ upgradeSystemPackages() {
     return 0
 }
 
+# Reboot the host. Shared by System Administration → Restart system and
+# `ethpillar restart system` (TUI prompts before calling; CLI does not).
+rebootSystem() {
+    sudo reboot now
+}
+
 # Ensure a Java runtime is available for JVM-based clients (Teku, Besu)
 updateJRE(){
   # Delegate Java installation to the Python helper in deploy.common. This

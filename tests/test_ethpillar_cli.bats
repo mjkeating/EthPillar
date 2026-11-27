@@ -110,7 +110,7 @@ fi
 exit 0
 EOF
 
-    for cmd in apt-get apt git python3 usermod mkdir stty pip docker ccze; do
+    for cmd in apt-get apt git python3 usermod mkdir stty pip docker ccze reboot; do
         create_mock "$cmd"
     done
     create_mock "whiptail"
@@ -364,12 +364,13 @@ set_unit_state() {
     [[ "$output" == *"mevboost"* ]]
     [[ "$output" == *"logs|restart|start|status|stop:"* ]]
     [[ "$output" == *"check-updates|update|upgrade:"* ]]
-    [[ "$output" == *"OS packages"* ]]
-    [[ "$output" == *"system"* ]]
+    [[ "$output" == *"system (opt-in"* ]]
+    [[ "$output" == *"Reboot the host"* ]]
     [[ "$output" == *"reboot required"* ]]
     [[ "$output" == *"logs [unit"* ]]
     [[ "$output" == *"ethpillar logs execution"* ]]
     [[ "$output" == *"ethpillar update system"* ]]
+    [[ "$output" == *"ethpillar restart system"* ]]
     ! [[ "$output" == *$'\n  clients:'* ]]
     ! grep -q whiptail "$COMMAND_LOG"
 }
@@ -998,4 +999,36 @@ cli_help_command_names() {
     echo "$output"
     [ "$status" -eq 0 ]
     [[ "$output" == *"system: up to date"* ]]
+}
+
+@test "restart system: reboots the host" {
+    run ./ethpillar.sh restart system
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"restart: system"* ]]
+    grep -q "reboot now" "$COMMAND_LOG"
+    ! grep -q "systemctl restart" "$COMMAND_LOG"
+}
+
+@test "restart all: does not reboot the host" {
+    write_service "$EXEC_SERVICE_FILE"
+    set_unit_state execution active
+
+    run ./ethpillar.sh restart all
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q "systemctl restart execution" "$COMMAND_LOG"
+    ! grep -q "reboot" "$COMMAND_LOG"
+}
+
+@test "start system / stop system: rejected" {
+    run ./ethpillar.sh start system
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"only valid for restart"* ]]
+    ! grep -q "reboot" "$COMMAND_LOG"
+
+    run ./ethpillar.sh stop system
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"only valid for restart"* ]]
+    ! grep -q "reboot" "$COMMAND_LOG"
 }

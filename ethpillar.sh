@@ -1081,7 +1081,10 @@ while true; do
         upgradeSystemPackages
         ;;
       🔄)
-        if whiptail --title "Reboot" --defaultno --yesno "Are you sure you want to reboot?" 8 78; then sudo reboot now; fi
+        # Shared with `ethpillar restart system` (functions.sh).
+        if whiptail --title "Reboot" --defaultno --yesno "Are you sure you want to reboot?" 8 78; then
+            rebootSystem
+        fi
         ;;
       ⏻)
         if whiptail --title "Shutdown" --defaultno --yesno "Are you sure you want to shutdown?" 8 78; then sudo shutdown now; fi

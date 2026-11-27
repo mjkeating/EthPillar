@@ -236,7 +236,9 @@ Commands:
 Targets on this node:
   logs|restart|start|status|stop:  ${clients:-none}
   check-updates|update|upgrade:  ${upgradable}
-  OS packages (opt-in; not in all): system
+  system (opt-in; not in all):
+    check-updates|update|upgrade   OS packages (nala/apt)
+    restart                        Reboot the host
 
 EOF
     if [[ -n "$missing" ]]; then
@@ -257,6 +259,7 @@ Examples:
   ethpillar logs charon validator
   ethpillar logs execution
   ethpillar restart consensus
+  ethpillar restart system
   ethpillar status
   ethpillar upgrade ethpillar
   ethpillar upgrade execution
@@ -325,6 +328,20 @@ cli_cmd_service_action() {
     local action="$1"
     local target_arg="${2:-all}"
     local t targets rc=0 order_name="CLI_CLIENT_START_ORDER"
+
+    target_arg="${target_arg,,}"
+
+    # Host reboot (opt-in; never part of restart all). Shared core:
+    # rebootSystem in functions.sh (TUI prompts before calling).
+    if [[ "$action" == "restart" && "$target_arg" == "system" ]]; then
+        echo "restart: system"
+        rebootSystem
+        return
+    fi
+    if [[ "$target_arg" == "system" ]]; then
+        echo "Target 'system' is only valid for restart (reboot) or update|upgrade|check-updates." >&2
+        return 1
+    fi
 
     # Stop tears down dependents first (validator → charon); start/restart
     # bring Charon up before the VC so :3600 is available.

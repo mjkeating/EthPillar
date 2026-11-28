@@ -110,10 +110,35 @@ fi
 exit 0
 EOF
 
-    for cmd in apt-get git python3 usermod mkdir stty pip docker ccze; do
+    for cmd in apt-get apt git python3 usermod mkdir stty pip docker ccze reboot; do
         create_mock "$cmd"
     done
     create_mock "whiptail"
+
+    # apt-get -s upgrade: emit Inst lines when MOCK_APT_UPGRADES=1.
+    cat <<EOF > "$MOCK_BIN_DIR/apt-get"
+#!/bin/bash
+echo "apt-get \$*" >> "$COMMAND_LOG"
+if [[ "\$*" == *"-s"* && "\$*" == *"upgrade"* ]]; then
+  if [[ "\${MOCK_APT_UPGRADES:-0}" == "1" ]]; then
+    echo "Inst libc6 [1.0] (1.1 Ubuntu [amd64])"
+  fi
+fi
+exit 0
+EOF
+    chmod +x "$MOCK_BIN_DIR/apt-get"
+
+    # Default package frontend is apt; tests that prefer nala install a mock.
+    cat <<EOF > "$MOCK_BIN_DIR/apt"
+#!/bin/bash
+echo "apt \$*" >> "$COMMAND_LOG"
+exit 0
+EOF
+    chmod +x "$MOCK_BIN_DIR/apt"
+
+    export ETHPILLAR_REBOOT_REQUIRED_FILE
+    ETHPILLAR_REBOOT_REQUIRED_FILE=$(mktemp -u)
+    export MOCK_APT_UPGRADES=0
 
     # git show origin/main:ethpillar.sh → EP_VERSION for self-upgrade skip.
     cat <<EOF > "$MOCK_BIN_DIR/git"
@@ -211,7 +236,16 @@ teardown() {
     rm -rf "$MOCK_BIN_DIR" "$TEST_SYSTEMD_DIR" "$SYSTEMCTL_STATE_DIR" \
         "${ETHPILLAR_UPDATE_SCRIPT_DIR:-}" \
         "${ETHPILLAR_VENV:-/tmp/ethpillar_bats_cli_venv}"
-    rm -f "$COMMAND_LOG" "$UPDATE_LOG"
+    rm -f "$COMMAND_LOG" "$UPDATE_LOG" "${ETHPILLAR_REBOOT_REQUIRED_FILE:-}"
+}
+
+install_mock_nala() {
+    cat <<EOF > "$MOCK_BIN_DIR/nala"
+#!/bin/bash
+echo "nala \$*" >> "$COMMAND_LOG"
+exit 0
+EOF
+    chmod +x "$MOCK_BIN_DIR/nala"
 }
 
 write_service() {
@@ -330,8 +364,13 @@ set_unit_state() {
     [[ "$output" == *"mevboost"* ]]
     [[ "$output" == *"logs|restart|start|status|stop:"* ]]
     [[ "$output" == *"check-updates|update|upgrade:"* ]]
+    [[ "$output" == *"system (opt-in"* ]]
+    [[ "$output" == *"Reboot the host"* ]]
+    [[ "$output" == *"reboot required"* ]]
     [[ "$output" == *"logs [unit"* ]]
     [[ "$output" == *"ethpillar logs execution"* ]]
+    [[ "$output" == *"ethpillar update system"* ]]
+    [[ "$output" == *"ethpillar restart system"* ]]
     ! [[ "$output" == *$'\n  clients:'* ]]
     ! grep -q whiptail "$COMMAND_LOG"
 }
@@ -890,4 +929,106 @@ cli_help_command_names() {
     [[ "$output" == *"Updating EthPillar"* ]]
     ! grep -q "skipping" <<< "$output"
     grep -q "git checkout" "$COMMAND_LOG"
+}
+
+@test "upgrade system: uses apt when nala is absent; skips upgrade when current" {
+    run ./ethpillar.sh upgrade system
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q "apt update" "$COMMAND_LOG"
+    grep -q "apt autoremove -y" "$COMMAND_LOG"
+    ! grep -q "apt upgrade" "$COMMAND_LOG"
+    [[ "$output" == *"already up to date"* ]]
+    ! grep -q "nala" "$COMMAND_LOG"
+}
+
+@test "update system: alias prefers nala when installed and upgrades when pending" {
+    install_mock_nala
+    export MOCK_APT_UPGRADES=1
+
+    run ./ethpillar.sh update system
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q "nala update" "$COMMAND_LOG"
+    grep -q "nala upgrade -y" "$COMMAND_LOG"
+    grep -q "nala autoremove -y" "$COMMAND_LOG"
+    ! grep -q "apt update" "$COMMAND_LOG"
+    [[ "$output" == *"upgrade complete"* ]]
+}
+
+@test "upgrade system: exits 2 and prints reboot message when reboot-required" {
+    export MOCK_APT_UPGRADES=1
+    touch "$ETHPILLAR_REBOOT_REQUIRED_FILE"
+
+    run ./ethpillar.sh upgrade system
+    echo "$output"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"Reboot required to complete update"* ]]
+    grep -q "apt upgrade -y" "$COMMAND_LOG"
+}
+
+@test "upgrade all: resolve targets excludes system" {
+    write_service "$EXEC_SERVICE_FILE"
+    write_service "$CONSENSUS_SERVICE_FILE"
+    source ./cli.sh
+
+    run cli_resolve_targets upgrade all
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"execution"* ]]
+    [[ "$output" == *"consensus"* ]]
+    [[ "$output" == *"ethpillar"* ]]
+    ! [[ "$output" == *"system"* ]]
+
+    run cli_resolve_targets upgrade system
+    [ "$status" -eq 0 ]
+    [[ "$output" == "system" ]]
+}
+
+@test "check-updates system: exits 2 when packages are pending" {
+    export MOCK_APT_UPGRADES=1
+
+    run ./ethpillar.sh check-updates system
+    echo "$output"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"system: update(s) available"* ]]
+    grep -q "apt update" "$COMMAND_LOG"
+}
+
+@test "check-updates system: exits 0 when up to date" {
+    run ./ethpillar.sh check-updates system
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"system: up to date"* ]]
+}
+
+@test "restart system: reboots the host" {
+    run ./ethpillar.sh restart system
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"restart: system"* ]]
+    grep -q "reboot now" "$COMMAND_LOG"
+    ! grep -q "systemctl restart" "$COMMAND_LOG"
+}
+
+@test "restart all: does not reboot the host" {
+    write_service "$EXEC_SERVICE_FILE"
+    set_unit_state execution active
+
+    run ./ethpillar.sh restart all
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q "systemctl restart execution" "$COMMAND_LOG"
+    ! grep -q "reboot" "$COMMAND_LOG"
+}
+
+@test "start system / stop system: rejected" {
+    run ./ethpillar.sh start system
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"only valid for restart"* ]]
+    ! grep -q "reboot" "$COMMAND_LOG"
+
+    run ./ethpillar.sh stop system
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"only valid for restart"* ]]
+    ! grep -q "reboot" "$COMMAND_LOG"
 }
